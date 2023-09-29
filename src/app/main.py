@@ -15,10 +15,7 @@ def main():
     visualize.show_mesh_camera(config)
 
     # Perform some operations
-    result = module1.some_function(processed_data)
-
-    # Output or display results
-    print(result)
+    georeference.main(config_file, mode='georeference', is_calibrated=True)
 
 if __name__ == "__main__":
     main()
