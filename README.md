@@ -12,5 +12,5 @@ for %x in (dir *.whl) do python -m pip install %x
 •	For remaining dependencies, run:
 pip install opencv-python dill geopandas h5py lmfit matplotlib numpy open3d pandas Pillow pymap3d pyproj pyvista pyvistaqt scikit-learn scipy shapely spectral xmltodict pykdtree trimesh rtree pyembree --user
 
-•	The pyvista function multi_ray_trace depends on the Embree library for CPU acceleration and could be tested with “/test/test_multi_ray_trace.py”. If it does not work, check Add pip installation directions for pyembree · Issue #1529 · pyvista/pyvista · GitHub for how to install Embree.
+•	The pyvista function multi_ray_trace depends on the Embree library for CPU acceleration and could be tested with “/test/test_multi_ray_trace.py”. If it does not work, check [Add pip installation directions for pyembree · Issue #1529 · pyvista/pyvista · GitHub](https://github.com/pyvista/pyvista/issues/1529) for how to install Embree.
 
