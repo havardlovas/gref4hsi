@@ -327,26 +327,30 @@ class RayCasting:
         self.pose = pd.read_csv(filenamePose, sep=',', header=0)
 
     def loadCamCalibration(self, filenameCal, config):
-        calHSI = CalibHSI(file_name_cal=filenameCal, config = config)  # Generates a calibration object
+        # See paper by Sun, Bo, et al. "Calibration of line-scan cameras for precision measurement." Applied optics 55.25 (2016): 6836-6843.
+        # Loads line camera parameters for the hyperspectral imager from an xml file.
+
+        # Certain imagers deliver geometry "per pixel". This can be resolved by fitting model parameters.
+        calHSI = CalibHSI(file_name_cal=filenameCal, config = config)
         self.f = calHSI.f
         self.v_c = calHSI.cx
+
+        # Radial distortion parameters
         self.k1 = calHSI.k1
         self.k2 = calHSI.k2
+
+        # Tangential distortion parameters
         self.k3 = calHSI.k3
 
+        # Translation (lever arm) of HSI with respect to vehicle frame
         self.trans_x = calHSI.tx
         self.trans_y = calHSI.ty
         self.trans_z = calHSI.tz
 
+        # Rotation of HSI (boresight) with respect to vehicle frame
         self.rot_x = calHSI.rx
         self.rot_y = calHSI.ry
         self.rot_z = calHSI.rz
-
-        #if eval(config['General']['isFlippedRGB']):
-        #    self.trans_x *= -1
-        #    self.trans_y *= -1
-        #if eval(config['General']['isFlippedHSI']):
-        #    self.rot_z += np.pi
 
     def init_hsi_rays(self):
 
@@ -543,15 +547,14 @@ def main(iniPath, mode, is_calibrated):
     if is_calibrated != True:
         hsi_cal_xml = config['Calibration']['hsiCalibFileInit']
     rc = RayCasting(config)
+
+    # Load pose and mesh
     rc.loadPose(filenamePose=path_pose)
     rc.loadSeaBed(filenameSeaBed=path_mesh)
 
 
     # Only relevant for calibration part of things
     if is_calibrated != True:
-        #calObj = FeatureCalibrationObject(type='camera calibration', config=config)
-        #calObj.loadCamCalibration(filenameCal=hsi_cal_xml, config= config)
-
         calObj1 = FeatureCalibrationObject(type='camera calibration', config=config)
         calObj1.loadCamCalibration(filenameCal=hsi_cal_xml, config=config)
 
@@ -749,7 +752,6 @@ def main(iniPath, mode, is_calibrated):
 
             print(calObj1.diff)
             print(len(diff_tot))
-            from scipy.optimize import curve_fit
 
             plot_figures_paper(fignum=2, data = diff_tot)
             #params, cov = curve_fit(f = rayleigh_pdf, xdata = r_hist, ydata=hist, p0=[1])

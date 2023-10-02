@@ -13,6 +13,7 @@ config.read(config_file)
 
 def main():
     # Extract pose.csv and model.ply data from Agisoft Metashape (photogrammetry software) through API.
+    # Fails if you do not have an appropriate project.
     agisoft_extract.main(config_file)
     # Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
     visualize.show_mesh_camera(config)
