@@ -1,18 +1,19 @@
-from pyproj import CRS, Transformer
-import numpy as np
-from shapely.geometry import Polygon
-import geopandas as gpd
-import rasterio
-from rasterio.warp import calculate_default_transform, reproject, Resampling
-from sklearn.neighbors import NearestNeighbors
-import pyproj
-import gdal
-from colours import Image as Imcol
 import cv2 as cv
+import geopandas as gpd
 import matplotlib.pyplot as plt
+import numpy as np
+import pyproj
 import rasterio
+from osgeo import gdal
+from pyproj import CRS, Transformer
 from rasterio.features import geometry_mask
+from rasterio.warp import calculate_default_transform, reproject, Resampling
+from shapely.geometry import Polygon
 from shapely.geometry import mapping
+from sklearn.neighbors import NearestNeighbors
+
+from colours import Image as Imcol
+
 
 class GeoSpatialAbstractionHSI():
     def __init__(self, point_cloud, datacube_indices, transect_string, config):

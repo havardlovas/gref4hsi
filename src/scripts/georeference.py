@@ -1,15 +1,18 @@
+import configparser
+import os
+import pickle
+import sys
+
+import h5py
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import pyvista as pv
-import numpy as np
-import h5py
 from scipy.interpolate import interp1d
-import sys
-import os
-import configparser
-from .geometry import CameraGeometry, FeatureCalibrationObject, CalibHSI
-from .gis_tools import GeoSpatialAbstractionHSI
-import pickle
-import matplotlib.pyplot as plt
+
+from geometry import CameraGeometry, FeatureCalibrationObject, CalibHSI
+from gis_tools import GeoSpatialAbstractionHSI
+
 
 def plot_figures_paper(fignum, data):
     if fignum == 1:
