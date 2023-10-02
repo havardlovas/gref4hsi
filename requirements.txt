@@ -1,3 +1,4 @@
+cv2
 dill==0.3.7
 gdal==3.7.2
 geopandas==0.14.0
