@@ -78,11 +78,11 @@ class CameraGeometry():
 
         # Define a transformation from geocentric to a local euclidian space which we will work in
         # Rotation matrix
-        if pos0[2] != 0:
-            lat0, lon0, h0 = pm.ecef2geodetic(pos0[0], pos0[1], pos0[2])
-            # Local rotations that can be composed with Rotation to get orientations in NED/ENU
-            self.Rotation_ecef_enu = RotLib.from_matrix(rotation_matrix_ecef2enu(lon = lon0, lat = lat0))
-            self.Rotation_ecef_ned = RotLib.from_matrix(rotation_matrix_ecef2enu(lon= lon0, lat= lat0))
+        #if pos0[2] != 0:
+        #    lat0, lon0, h0 = pm.ecef2geodetic(pos0[0], pos0[1], pos0[2])
+        #    # Local rotations that can be composed with Rotation to get orientations in NED/ENU
+        #    self.Rotation_ecef_enu = RotLib.from_matrix(rotation_matrix_ecef2enu(lon = lon0, lat = lat0))
+        #    self.Rotation_ecef_ned = RotLib.from_matrix(rotation_matrix_ecef2enu(lon= lon0, lat= lat0))
 
     def interpolate(self, time_hsi, minIndRGB, maxIndRGB, extrapolate):
         """"""
