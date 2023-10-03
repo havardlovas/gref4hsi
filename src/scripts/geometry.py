@@ -12,9 +12,6 @@ class CalibHSI:
         if mode == 'r':
             with open(file_name_cal, 'r', encoding='utf-8') as file:
                 my_xml = file.read()
-
-            # Use xmltodict to parse and convert
-            # the XML document
             my_dict = xmltodict.parse(my_xml)
             self.calibrationHSI = my_dict['calibration']
 
@@ -146,10 +143,6 @@ class CameraGeometry():
             print('Proper interpolation of transformation with constant velocity and rotation has not yet been implemented')
             print('See https://www.geometrictools.com/Documentation/InterpolationRigidMotions.pdf')
             #self.RotationInterpolated, self.PositionInterpolated = self.interpolateTransforms()
-
-
-
-
     def intrinsicTransformHSI(self, translation_rgb_hsi, rot_hsi_rgb, euler = True):
         # An intrinsic transform is a transformation to another reference frame on the moving body, i.e. the IMU or UHI
         self.PositionHSI = self.PositionInterpolated + self.RotationInterpolated.apply(translation_rgb_hsi)
@@ -200,7 +193,6 @@ class CameraGeometry():
                 print('Frame must be ENU or NED')
         else:
             print('Poses are defined Globally already')
-
     def defineRayDirections(self, dir_local):
         self.rayDirectionsLocal = dir_local
 
@@ -212,7 +204,6 @@ class CameraGeometry():
         #self.rayDirectionsGlobal = self.RotationHSI.apply(np.transpose(dir_local))
         for i in range(n):
             self.rayDirectionsGlobal[i, :, :] = self.RotationHSI[i].apply(dir_local)
-
     def intersectWithMesh(self, mesh, max_ray_length):
 
         n = self.rayDirectionsGlobal.shape[0]

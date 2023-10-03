@@ -52,7 +52,7 @@ class GeoSpatialAbstractionHSI():
         self.side_1 = self.points_proj[:, 0, 0:2].reshape((-1,2))
         self.side_2 = self.points_proj[:, -1, 0:2].reshape((-1,2))
 
-        import matplotlib.pyplot as plt
+
         # Do it clockwise
         self.hull_line = np.concatenate((
             self.edge_start,
@@ -63,7 +63,7 @@ class GeoSpatialAbstractionHSI():
         ), axis = 0)
 
 
-        self.polygon = Polygon(self.hull_line)
+        self.footprint_shp = Polygon(self.hull_line)
 
         if self.is_global:
             self.crs = 'EPSG:' + str(self.epsg_proj)
@@ -75,7 +75,7 @@ class GeoSpatialAbstractionHSI():
             #self.crs = pyproj.CRS.from_dict(proj_dict=geo_dict)
             self.crs = pyproj.CRS.from_wkt(wkt)
 
-        gdf = gpd.GeoDataFrame(geometry=[self.polygon], crs=self.crs)
+        gdf = gpd.GeoDataFrame(geometry=[self.footprint_shp], crs=self.crs)
 
         shape_path = self.config['Georeferencing']['footPrintPaths'] + self.name + '.shp'
 
@@ -88,18 +88,20 @@ class GeoSpatialAbstractionHSI():
         wl_blue = float(self.config['General']['BlueWavelength'])
 
         rgb_composite_path = self.config['Georeferencing']['rgbCompositePaths']
+        datacube_path = self.config['Georeferencing']['orthoCubePaths']
         resamplingMethod = self.config['Georeferencing']['resamplingMethod']
-
-        xmin, ymin, xmax, ymax = self.polygon.bounds
+        
+        # The footprint-shape is a in a vectorized format and needs to be mapped into a raster-mask
+        xmin, ymin, xmax, ymax = self.footprint_shp.bounds
         width = int((xmax - xmin) / self.res)
         height = int((ymax - ymin) / self.res)
         transform = rasterio.transform.from_bounds(xmin, ymin, xmax, ymax, width, height)
 
-        # Create mask from polygon
-        geoms = [mapping(self.polygon)]
+        # Create mask from the polygon
+        geoms = [mapping(self.footprint_shp)]
         mask = geometry_mask(geoms, out_shape=(height, width), transform=transform)
 
-        # Set custom RGB bands
+        # Set custom RGB bands from *.ini file
         wavelength_nm = np.array([wl_red, wl_green, wl_blue])
         band_ind_R = np.argmin(np.abs(wavelength_nm[0] - hyp.band2Wavelength))
         band_ind_G = np.argmin(np.abs(wavelength_nm[1] - hyp.band2Wavelength))
@@ -137,12 +139,14 @@ class GeoSpatialAbstractionHSI():
             ortho_permuted = np.transpose(ortho, axes = [2, 0, 1])
 
 
-            # Write to a desired location
+            # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
             with rasterio.open(rgb_composite_path + self.name + '.tif', 'w', driver='GTiff',
                                    height=height, width=width, count=3, dtype=np.float64,
                                    crs=self.crs, transform=transform, nodata=nodata) as dst:
 
                 dst.write(ortho_permuted)
+            # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
+            
 
 
 
@@ -212,7 +216,7 @@ class GeoSpatialAbstractionHSI():
 
 
     def resample_rgb_ortho_to_hsi_ortho(self):
-        """Reproject a file to match the shape and projection of existing raster.
+        """Reproject RGB orthophoto to match the shape and projection of HSI raster.
 
         Parameters
         ----------
@@ -341,12 +345,6 @@ class GeoSpatialAbstractionHSI():
         draw_params = dict(matchColor=(0, 255, 0),  # draw matches in green color
                            flags=2)
 
-        #rgb1 = np.concatenate((gray1,gray1, gra))
-        #print(len(good))
-
-
-
-
         diff_u = np.zeros(len(good))
         diff_v = np.zeros(len(good))
         uv_vec_hsi = np.zeros((len(good), 2))
@@ -412,6 +410,7 @@ class GeoSpatialAbstractionHSI():
         #plt.title('MAD u: ' + str(np.round(MAD_u,2)))
         #plt.xlim([-100, 100])
         #plt.show()
+
         plt.hist(diff[diff < 10]*0.002, 50)
         #plt.title('MAD v: ' + str(np.round(MAD_v, 2)))
         #plt.xlim([-100, 100])
