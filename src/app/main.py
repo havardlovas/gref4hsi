@@ -6,6 +6,7 @@ import visualize
 # Import the configuration file and read it into dictionary
 home_path = 'C:/Users/haavasl/PycharmProjects/hyperspectral_toolchain'
 data_dir = home_path + '/data/Skogn21012021'
+# TODO: update config.ini automatically with paths for simple reproducability
 config_file = data_dir + '/configuration.ini'
 config = configparser.ConfigParser()
 config.read(config_file)

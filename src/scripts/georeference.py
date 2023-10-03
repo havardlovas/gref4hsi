@@ -441,8 +441,6 @@ class RayCasting:
 
         self.RGBCamera.interpolate(time_hsi=self.time_hsi, minIndRGB=self.minInd, maxIndRGB=self.maxInd, extrapolate=True)
 
-        #print(self.transect_string)
-
     def select_timestamps(self, mode):
         if mode == 'georeference': ## Geometric upsampling of footprints. Only for georeferencing.
             if self.upsample_factor != 1:
@@ -507,27 +505,16 @@ class RayCasting:
 
 
 
-def optimize_function(param, calObj):
+def objective_function(param, calObj):
     calObj.computeDirections(param) # Computes the directions in a local frame
 
     calObj.reprojectFeaturesHSI() # reprojects to the same frame
 
-    errorx = calObj.x_norm - calObj.HSIToFeaturesLocal[:, 0]
-    errory = -calObj.HSIToFeaturesLocal[:, 1]
+    errorx = calObj.x_norm - calObj.HSIToFeaturesLocal[:, 0] # Determination of across-track reprojection error
+    errory = -calObj.HSIToFeaturesLocal[:, 1] # Determination of along-track reprojection error
 
     print(np.median(np.abs(errorx)))
     print(np.median(np.abs(errory)))
-    #if np.median(np.abs(errorx)) < 0.01:
-    #import matplotlib.pyplot as plt
-##
-    #plt.scatter(calObj.pixel, errorx)
-    #plt.scatter(errorx, errory)
-
-
-
-
-    #print(np.median(np.abs(errorx)))
-    #print(np.median(np.abs(errory)))
 
 
 
@@ -640,31 +627,16 @@ def main(iniPath, mode, is_calibrated):
                         normals_local_name = dir + 'normals_local'
                         rc.hyp.addDataset(data=normals_local, name=normals_local_name)
 
-                    # Append datasets
-    #
-                    ##file_pi = open( 'C:/Users/haavasl/PycharmProjects/newGit/TautraReflectanceTools/Missions/BarentsSea06052021/Pickle/RayCasting.pkl','wb')
-                    ##pickle.dump(rc, file_pi)
-    ##
-                    ##file = open(
-                    ##    'C:/Users/haavasl/PycharmProjects/newGit/TautraReflectanceTools/Missions/BarentsSea06052021/Pickle/RayCasting.pkl',
-                    ##    'rb')
-                    #### dump information to that file
-                    ##rc = pickle.load(file)
-    #
-
                     if rc.hyp.spatial_binning == 1:
                         calObj1.appendGeometry(hsiGis=rc.gisHSI, cameraGeometry=rc.HSICamera, binning = rc.hyp.spatial_binning)
+                        calObjPath1 = config['Calibration']['hsicalibObjPathB1']
+                        file_cal1 = open(calObjPath1, 'wb')
+                        pickle.dump(calObj1, file_cal1)
                     if rc.hyp.spatial_binning == 2:
                         calObj2.appendGeometry(hsiGis=rc.gisHSI, cameraGeometry=rc.HSICamera, binning = rc.hyp.spatial_binning)
-
-                    # After aquiring a bunch of calibration data
-                    calObjPath1 = config['Calibration']['hsicalibObjPathB1']
-                    file_cal1 = open(calObjPath1, 'wb')
-                    pickle.dump(calObj1, file_cal1)
-
-                    #calObjPath2 = config['Calibration']['hsicalibObjPathB2']
-                    #file_cal2 = open(calObjPath2, 'wb')
-                    #pickle.dump(calObj2, file_cal2)
+                        calObjPath2 = config['Calibration']['hsicalibObjPathB2']
+                        file_cal2 = open(calObjPath2, 'wb')
+                        pickle.dump(calObj2, file_cal2)
 
                 count += 1
                 if count == 1:
@@ -702,7 +674,7 @@ def main(iniPath, mode, is_calibrated):
             param0 = np.array([calObj1.rot_x, calObj1.rot_y, calObj1.rot_z, calObj1.v_c, calObj1.f, calObj1.k1, calObj1.k2, calObj1.k3])
 
             from scipy.optimize import least_squares
-            res = least_squares(fun = optimize_function, x0 = param0, args= (calObj1,) , x_scale='jac', method='lm')
+            res = least_squares(fun = objective_function, x0 = param0, args= (calObj1,) , x_scale='jac', method='lm')
 
 
             file_name_calib = config['Georeferencing']['hsicalibfileb1']
@@ -723,7 +695,7 @@ def main(iniPath, mode, is_calibrated):
                 [calObj2.rot_x, calObj2.rot_y, calObj2.rot_z, calObj2.v_c, calObj2.f, calObj2.k1, calObj2.k2, calObj2.k3])
 
             from scipy.optimize import least_squares
-            res2 = least_squares(fun=optimize_function, x0=param02, args=(calObj2,), x_scale='jac', method='lm')
+            res2 = least_squares(fun=objective_function, x0=param02, args=(calObj2,), x_scale='jac', method='lm')
 
             file_name_calib2 = config['Georeferencing']['hsicalibfileb2']
 
