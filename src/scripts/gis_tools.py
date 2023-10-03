@@ -11,6 +11,8 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 from shapely.geometry import Polygon
 from shapely.geometry import mapping
 from sklearn.neighbors import NearestNeighbors
+from spectral import envi
+import os
 
 from colours import Image as Imcol
 
@@ -106,23 +108,33 @@ class GeoSpatialAbstractionHSI():
         band_ind_R = np.argmin(np.abs(wavelength_nm[0] - hyp.band2Wavelength))
         band_ind_G = np.argmin(np.abs(wavelength_nm[1] - hyp.band2Wavelength))
         band_ind_B = np.argmin(np.abs(wavelength_nm[2] - hyp.band2Wavelength))
+        n_bands = len(hyp.band2Wavelength)
 
         if rgb_composite:
             if extrapolate == False:
-                rgb_cube = hyp.dataCubeRadiance[minInd:maxInd, :, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+                datacube = hyp.dataCubeRadiance[minInd:maxInd, :, :].reshape((-1, n_bands))
+                rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+
             elif extrapolate == True:
-                rgb_cube = hyp.dataCubeRadiance[:, :, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+                datacube = hyp.dataCubeRadiance[:, :, :].reshape((-1, n_bands))
+                rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
             transform = rasterio.transform.from_bounds(xmin, ymin, xmax, ymax, width, height)
 
-            # Horizontal coordinates
+            # Horizontal coordinates of intersections
             coords = self.points_proj[:, :, 0:2].reshape((-1, 2))
             if resamplingMethod == 'Nearest':
                 tree = NearestNeighbors(radius=0.01).fit(coords)
                 xi, yi = np.meshgrid(np.linspace(xmin, xmax, width), np.linspace(ymin, ymax, height))
                 xy = np.vstack((xi.flatten(), yi.flatten())).T
                 dist, indexes = tree.kneighbors(xy, 1)
-                ortho_pt = rgb_cube[indexes, :].flatten() # Point cloud formatting
-                ortho = np.flip(ortho_pt.reshape((height, width, 3)).astype(np.float64), axis = 0)
+
+                # Build the RGB cube from the indices
+                ortho_rgb = rgb_cube[indexes, :].flatten()
+                # Build datacube
+                ortho_datacube = datacube[indexes, :].flatten()
+
+                ortho_rgb = np.flip(ortho_rgb.reshape((height, width, 3)).astype(np.float64), axis = 0)
+                ortho_datacube = np.flip(ortho_datacube.reshape((height, width, n_bands)).astype(np.float64), axis=0)
 
                 self.width_rectified = width
                 self.height_rectified = height
@@ -133,10 +145,12 @@ class GeoSpatialAbstractionHSI():
 
             # Set nodata value
             nodata = -9999
-            ortho[mask == 1, :] = nodata
+            ortho_rgb[mask == 1, :] = nodata
+            ortho_datacube[mask == 1, :] = nodata
 
             # Arange datacube or composite in rasterio-friendly structure
-            ortho_permuted = np.transpose(ortho, axes = [2, 0, 1])
+            ortho_rgb = np.transpose(ortho_rgb, axes = [2, 0, 1])
+            ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])
 
 
             # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
@@ -144,9 +158,9 @@ class GeoSpatialAbstractionHSI():
                                    height=height, width=width, count=3, dtype=np.float64,
                                    crs=self.crs, transform=transform, nodata=nodata) as dst:
 
-                dst.write(ortho_permuted)
+                dst.write(ortho_rgb)
             # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
-            
+            self.write_datacube_ENVI(ortho_datacube, nodata, transform, datacube_path = datacube_path + self.name, wavelengths=hyp.band2Wavelength)
 
 
 
@@ -154,6 +168,36 @@ class GeoSpatialAbstractionHSI():
         else:
             print('The software does not support writing a full datacube yet')
 
+    def write_datacube_ENVI(self, ortho_datacube, nodata, transform, datacube_path, wavelengths):
+        nx = ortho_datacube.shape[1]
+        mx = ortho_datacube.shape[2]
+        k = ortho_datacube.shape[0]
+
+        # Create the bsq file
+        with rasterio.open(datacube_path + '.bsq', 'w', driver='ENVI', height=nx, width=mx, count=k, crs=self.crs, dtype=ortho_datacube[0].dtype, transform=transform , nodata=nodata) as dst:
+            for i, band_data in enumerate(ortho_datacube, start=1):
+                dst.write(band_data, i)
+
+
+        # Make some simple modifications
+        data_file_path = datacube_path + '.bsq'
+
+
+
+        # Include meta data regarding the unit
+        unit_str = self.config['General']['radiometric_unit']
+        header_file_path = datacube_path + '.hdr'
+        header = envi.open(header_file_path)
+        # Set the unit of the signal in the header
+        header.metadata['unit'] = unit_str
+        # Set wavelengths array in the header
+        header.bands.centers = wavelengths
+        # TODO: include support for the bandwidths
+        # header.bands.bandwidths = wl
+        envi.save_image(header_file_path, header, metadata={}, interleave='bsq', filename=data_file_path, force=True)
+
+
+        os.remove(datacube_path + '.img')
 
 
     def compare_hsi_composite_with_rgb_mosaic(self):
