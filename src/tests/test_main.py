@@ -1,5 +1,5 @@
 import configparser
-
+import parsing_utils
 import georeference
 import visualize
 
@@ -14,8 +14,9 @@ config.read(config_file)
 
 def main():
     ## Extract pose.csv and model.ply data from Agisoft Metashape (photogrammetry software) through API.
-    ## Fails if you do not have an appropriate project. Commented out
-    # agisoft_extract.main(config_file)
+    ## Fails if you do not have an appropriate project.
+    config = parsing_utils.agisoft_export_pose(config_file)
+    parsing_utils.agisoft_export_model(config_file)
 
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
     visualize.show_mesh_camera(config)
