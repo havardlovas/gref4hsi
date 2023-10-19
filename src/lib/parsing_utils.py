@@ -1,6 +1,8 @@
 
 
 import Metashape as MS
+import pandas as pd
+from scipy.spatial.transform import Rotation as RotLib
 
 from Metashape import Vector as vec
 import pickle
@@ -10,7 +12,137 @@ import numpy as np
 from os import path
 import configparser
 from scipy.spatial.transform import Rotation
+import h5py
+import os
 
+from geometry import CameraGeometry
+
+
+class Hyperspectral:
+    def __init__(self, filename, config):
+        self.name = filename
+        # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
+        with h5py.File(filename, 'r', libver='latest') as self.f:
+            # Special case
+            if eval(config['HDF']['isMarmineUHISpring2017']):
+                self.dataCube = self.f['uhi/pixels'][()]
+
+                # Perform division by some value
+
+                self.t_exp = self.f['uhi/parameters'][()][0, 0] / 1000
+                self.dataCubeTimeStamps = self.f['uhi/parameters'][()][:, 2]
+                self.band2Wavelength = self.f['uhi/calib'][()]
+
+                self.RGBTimeStamps = self.f['rgb/parameters'][()][:, 2]
+                self.RGBImgs = self.f['rgb/pixels'][()]
+
+                # Check if the dataset exists
+                if 'georeference' in self.f:
+                    dir = 'georeference/'
+                    self.normals_local = self.f[dir + 'normals_local'][()]
+                    self.points_global = self.f[dir + 'points_global'][()]
+                    self.points_local = self.f[dir + 'points_local'][()]
+                    self.position_hsi = self.f[dir + 'position_hsi'][()]
+                    self.quaternion_hsi = self.f[dir + 'quaternion_hsi'][()]
+                # Check if the dataset exists
+                if 'nav' in self.f:
+                    dir = 'nav/'
+                    self.pos_rgb = self.f[dir + 'position_rgb'][()]
+                    self.quat_rgb = self.f[dir + 'quaternion_rgb'][()]
+                    self.pose_time = self.f[dir + 'time_stamp'][()]
+
+            else:
+                dataCubePath = config['HDF.hyperspectral']['dataCube']
+                exposureTimePath = config['HDF.hyperspectral']['exposureTime']
+                timestampHyperspectralPath = config['HDF.hyperspectral']['timestamp']
+                band2WavelengthPath = config['HDF.calibration']['band2Wavelength']
+                radiometricFramePath = config['HDF.calibration']['radiometricFrame']
+                darkFramePath = config['HDF.calibration']['darkFrame']
+                RGBFramesPath = config['HDF.rgb']['rgbFrames']
+                timestampRGBPath = config['HDF.rgb']['timestamp']
+
+                self.dataCube = self.f[dataCubePath][()]
+
+                self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
+                self.dataCubeTimeStamps = self.f[timestampHyperspectralPath][()]
+                self.band2Wavelength = self.f[band2WavelengthPath][()]
+                self.darkFrame = self.f[darkFramePath][()]
+                self.radiometricFrame = self.f[radiometricFramePath][()]
+                self.RGBTimeStamps = self.f[timestampRGBPath][()]
+                self.RGBImgs = self.f[RGBFramesPath][()]
+
+                # Check if the dataset exists
+                if 'georeference' in self.f:
+                    dir = 'georeference/'
+                    self.normals_local = self.f[dir + 'normals_local'][()]
+                    self.points_global = self.f[dir + 'points_global'][()]
+                    self.points_local = self.f[dir + 'points_local'][()]
+                    self.position_hsi = self.f[dir + 'position_hsi'][()]
+                    self.quaternion_hsi = self.f[dir + 'quaternion_hsi'][()]
+                # Check if the dataset exists
+                if 'nav' in self.f:
+                    dir = 'nav/'
+                    self.pos_rgb = self.f[dir + 'position_rgb'][()]
+                    self.quat_rgb = self.f[dir + 'quaternion_rgb'][()]
+                    self.pose_time = self.f[dir + 'time_stamp'][()]
+
+
+
+
+
+        self.n_scanlines = self.dataCube.shape[0]
+        self.n_pix = self.dataCube.shape[1]
+        self.n_bands = self.dataCube.shape[1]
+        self.n_imgs = self.RGBTimeStamps.shape[0]
+
+        # The maximal image size is typically 1920 by 1200. It is however cropped during recording
+        # And there can be similar issues. The binning below is somewhat heuristic but general
+        if self.n_pix > 1000:
+            self.spatial_binning = 0
+        elif self.n_pix > 500:
+            self.spatial_binning = 1
+        elif self.n_pix > 250:
+            self.spatial_binning = 2
+
+        if self.n_bands  > 600:
+            self.spectral_binning = 0
+        elif self.n_bands  > 250:
+            self.spectral_binning = 1
+        elif self.n_bands  > 125:
+            self.spectral_binning = 2
+
+
+
+    def DN2Radiance(self, config):
+
+        # Special case
+        if eval(config['HDF']['isMarmineUHISpring2017']):
+            calibFolder = config['HDF']['calibFolder']
+            if self.dataCube.shape[1] == 480:
+                self.radiometricFrame = np.load(calibFolder + '/radiometricFrame480.npy')
+                self.darkFrame = np.load(calibFolder + '/darkFrame480.npy')
+                self.spatial_binning = 2
+            elif self.dataCube.shape[1] == 960:
+                self.radiometricFrame = np.load(calibFolder + '/radiometricFrame.npy')
+                self.darkFrame = np.load(calibFolder + '/darkFrame.npy')
+                self.spatial_binning = 1
+
+
+
+
+        self.dataCubeRadiance = np.zeros(self.dataCube.shape, dtype = np.float64)
+        for i in range(self.dataCube.shape[0]):
+            self.dataCubeRadiance[i, :, :] = (self.dataCube[i, :, :] - self.darkFrame) / (
+                    self.radiometricFrame * self.t_exp)
+
+    def addDataset(self, data, name):
+        # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
+        with h5py.File(self.name, 'a', libver='latest') as self.f:
+            # Check if the dataset exists
+            if name in self.f:
+                del self.f[name]
+
+            dset = self.f.create_dataset(name=name, data = data)
 
 class DataLogger:
     def __init__(self, filename, header):
@@ -124,13 +256,13 @@ def extract_model_MS(chunkName, chunks, model_name):
             return chunk
 
 
-def agisoft_export(iniPath):
+def agisoft_export(config_file):
     MS.License().activate("EE2Z6-O5ZVF-1JYNV-NKSRY-UXTGR")
     doc = MS.Document()
     doc.read_only = False
 
     config = configparser.ConfigParser()
-    config.read(iniPath)
+    config.read(config_file)
 
     # When exporting, it is relevant to export data in a suitable format
     # CRSExport
@@ -174,7 +306,7 @@ def agisoft_export(iniPath):
     offsetX = float(config['General']['offsetX'])
     offsetY = float(config['General']['offsetY'])
     offsetZ = float(config['General']['offsetZ'])
-    with open(iniPath, 'w') as configfile:
+    with open(config_file, 'w') as configfile:
         config.write(configfile)
 
 
@@ -187,14 +319,13 @@ def agisoft_export(iniPath):
     else:
         chunk.exportModel(path=model_name, crs=crs_export, shift=vec((offsetX, offsetY, offsetZ)))
 
-
-def agisoft_export_pose(iniPath):
+def agisoft_export_pose(config, config_file):
+    
     MS.License().activate("EE2Z6-O5ZVF-1JYNV-NKSRY-UXTGR")
     doc = MS.Document()
     doc.read_only = False
 
-    config = configparser.ConfigParser()
-    config.read(iniPath)
+
 
     # When exporting, it is relevant to export data in a suitable format
     # CRSExport
@@ -231,17 +362,17 @@ def agisoft_export_pose(iniPath):
                                  config=config)
 
     # Exporting models with offsets might be convenient
-    with open(iniPath, 'w') as configfile:
+    with open(config_file, 'w') as configfile:
         config.write(configfile)
     return config
 
-def agisoft_export_model(iniPath):
+def agisoft_export_model(config_file):
     MS.License().activate("EE2Z6-O5ZVF-1JYNV-NKSRY-UXTGR")
     doc = MS.Document()
     doc.read_only = False
 
     config = configparser.ConfigParser()
-    config.read(iniPath)
+    config.read(config_file)
 
     # When exporting, it is relevant to export data in a suitable format
     # CRSExport
@@ -279,8 +410,151 @@ def agisoft_export_model(iniPath):
         chunk.exportModel(path=model_name, crs=chunk.crs, shift=vec((offsetX, offsetY, offsetZ)))
     else:
         chunk.exportModel(path=model_name, crs=crs_export, shift=vec((offsetX, offsetY, offsetZ)))
+
+def append_agisoft_data_h5(config):
+    """
+            Parses pose and embeds it into the *.h5 file. Writes the positions and orientations of hyperspectral frames to
+                dataset under the /Nav folder
+
+            Args:
+                config_file: The *.ini file containing the paths and configurations.
+
+            Returns:
+                None: The function returns nothing.
+    """
+    # Retrieve the pose file (per RGB image, with RGB image name tags)
+    filenamePose = config['General']['posePath']
+    pose = pd.read_csv(filenamePose, sep=',', header=0)
+
+    # Offsets should correspond with polygon model offset
+    offX = float(config['General']['offsetX'])
+    offY = float(config['General']['offsetY'])
+    offZ = float(config['General']['offsetZ'])
+    pos0 = np.array([offX, offY, offZ]).reshape([-1, 1])
+
+
+    # Traverse through h5 dir to append the data to file
+    h5dir = config['HDF']['h5dir']
+    for filename in sorted(os.listdir(h5dir)):
+        # Find the interesting prefixes
+        if filename.endswith('h5') or filename.endswith('hdf'):
+            # Identify the total path
+            path_hdf = h5dir + filename
+
+            # Read out the data of a file
+            hyp = Hyperspectral(path_hdf, config)
+
+            # Split file names
+            filename_splitted = filename.split('_')
+            transect_string = filename_splitted[2] + '_' + filename_splitted[3].split('.')[0]
+            print(transect_string)
+            # Interpolate
+            # Select the images wiht a label containing the string
+            relevant_images = pose.iloc[:, 0].str.contains(transect_string)
+            ind_vec = np.arange(len(relevant_images))
+
+            # The last part of the camera label holds the index
+            rgb_ind = [int(pose["CameraLabel"].str.split("_")[i][-1]) for i in
+                            ind_vec[relevant_images == True]]
+
+            # The images containing the string
+            agisoft_ind = ind_vec[relevant_images == True]
+
+            # The relevant image indices (based on which images were matched during alignment)
+            # 0-CameraLabel, 1-X, 2-Y, 3-Z, 4-Roll, 5-Pitch, 6-Yaw, 7-RotX, 8-RotY, 9-RotZ
+            agisoft_poses = pose.values[agisoft_ind, 1:10]
+
+            # Selects timestamps for RGB frames
+            time_rgb = hyp.RGBTimeStamps[rgb_ind]
+
+            # Selects timestamps for HSI frames
+            time_hsi = hyp.dataCubeTimeStamps
+
+            # Interpolate for the selected time stamps.
+            # First find the time stamps within the RGB time stamps to avoid extrapolation
+
+            minRGB = np.min(time_rgb)
+            maxRGB = np.max(time_rgb)
+
+            minInd = np.argmin(np.abs(minRGB - time_hsi))
+            maxInd = np.argmin(np.abs(maxRGB - time_hsi))
+            if time_hsi[minInd] < minRGB:
+                minInd += 1
+            if time_hsi[maxInd] > maxRGB:
+                maxInd -= 1
+
+            rotZXY = np.concatenate((agisoft_poses[:, 8].reshape((-1, 1)),
+                                     agisoft_poses[:, 7].reshape((-1, 1)),
+                                     agisoft_poses[:, 6].reshape((-1, 1))), axis=1)
+
+            rot_obj = RotLib.from_euler("ZYX", rotZXY, degrees=True)
+            # Establish a camera geometry object
+            RGBCamera = CameraGeometry(pos0=pos0, pos=agisoft_poses[:, 0:3], rot=rot_obj, time=time_rgb)
+
+            # A method of the object is interpolation
+            RGBCamera.interpolate(time_hsi=time_hsi, minIndRGB=minInd, maxIndRGB=maxInd,
+                                  extrapolate=True)
+
+            # Add camera position
+            position_hsi = RGBCamera.PositionInterpolated
+            position_hsi_name = 'nav/position_rgb'
+            hyp.addDataset(data=position_hsi, name=position_hsi_name)
+
+            # Add camera quaternion
+            quaternion_hsi = RGBCamera.RotationInterpolated.as_quat()
+            quaternion_hsi_name = 'nav/quaternion_rgb'
+            hyp.addDataset(data=quaternion_hsi, name=quaternion_hsi_name)
+
+            # Add time stamp
+            time_stamps = RGBCamera.time_hsi  # Use projected system for global description
+            time_stamps_name = 'nav/time_stamp'
+            hyp.addDataset(data=time_stamps, name=time_stamps_name)
+
+
+
+        
+def export_pose(config_file):
+    """
+        Parses pose and embeds it into the *.h5 file. Writes the positions and orientations of hyperspectral frames to
+            dataset under the /Nav folder
+
+        Args:
+            config_file: The *.ini file containing the paths and configurations.
+
+        Returns:
+            config: The function returns config object to allow that it is modified.
+    """
+    config = configparser.ConfigParser()
+    config.read(config_file)
+
+    # This file handles pose exports of various types
+    # As of now there are three types:
+    # 1) Agisoft, h5_embedded and independent_file
+    poseExportType = config['General']['poseExportType']
+
+    if poseExportType == 'agisoft':
+        # Just take in use the already existing parser
+        config = agisoft_export_pose(config = config, config_file=config_file)
+        # This gives a csv file with RGB poses, but they should be appended to each H5 file.
+        append_agisoft_data_h5(config=config)
+
+    elif poseExportType == 'h5_embedded':
+        print('There is no support for this export functionality! Fix immediately!')
+        config = -1
+    elif poseExportType == 'independent_file':
+        print('There is no support for this export functionality! Fix immediately!')
+        config = -1
+    else:
+        print('There is no support for this export functionality')
+        config = -1
+
+    return config
+    
+    
+    
+    
 if __name__ == "__main__":
     args = sys.argv[1:]
-    iniPath = args[0]
+    config_file = args[0]
     # Running parsing_utils is per now the same as running agisoft_extract
-    agisoft_export(iniPath)
+    agisoft_export(config_file)
