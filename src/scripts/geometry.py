@@ -65,26 +65,32 @@ class CalibHSI:
 
 
 class CameraGeometry():
-    def __init__(self, pos0, pos, rot, time):
+    def __init__(self, pos0, pos, rot, time, is_interpolated = False, is_offset = False):
         self.pos0 = pos0
-        self.Position = pos - np.transpose(pos0) # Camera pos
-        self.Rotation = RotLib.from_euler("ZYX", rot, degrees=True)
+        if is_offset:
+            self.Position = pos
+        else:
+            self.Position = pos - np.transpose(pos0) # Camera pos
+
+
+
+        self.Rotation = rot
+
         self.time = time
         self.IsLocal = False
         self.decoupled = True
 
-        # Define a transformation from geocentric to a local euclidian space which we will work in
-        # Rotation matrix
-        #if pos0[2] != 0:
-        #    lat0, lon0, h0 = pm.ecef2geodetic(pos0[0], pos0[1], pos0[2])
-        #    # Local rotations that can be composed with Rotation to get orientations in NED/ENU
-        #    self.Rotation_ecef_enu = RotLib.from_matrix(rotation_matrix_ecef2enu(lon = lon0, lat = lat0))
-        #    self.Rotation_ecef_ned = RotLib.from_matrix(rotation_matrix_ecef2enu(lon= lon0, lat= lat0))
+        if is_interpolated:
+            self.PositionInterpolated = self.Position
+            self.RotationInterpolated = self.Rotation
+
+
 
     def interpolate(self, time_hsi, minIndRGB, maxIndRGB, extrapolate):
         """"""
         # A simple interpolation of transforms where all images should be aligned.
         # Should also implement a more sensor fusion-like Kalman filter implementation
+        self.time_hsi = time_hsi
         if self.decoupled == True:
 
             if extrapolate == False:
@@ -260,7 +266,7 @@ class CameraGeometry():
 
 
         print('Finished ray tracing')
-    def writeRGBPointCloud(self, config, hyp, minInd, maxInd, transect_string, extrapolate = True):
+    def writeRGBPointCloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
         wl_red = float(config['General']['RedWavelength'])
         wl_green = float(config['General']['GreenWavelength'])
         wl_blue = float(config['General']['BlueWavelength'])
@@ -268,6 +274,7 @@ class CameraGeometry():
 
         wavelength_nm = np.array([wl_red, wl_green, wl_blue])
 
+        # Localize the appropriate bands for analysis
         band_ind_R = np.argmin(np.abs(wavelength_nm[0] - hyp.band2Wavelength))
         band_ind_G = np.argmin(np.abs(wavelength_nm[1] - hyp.band2Wavelength))
         band_ind_B = np.argmin(np.abs(wavelength_nm[2] - hyp.band2Wavelength))
@@ -298,7 +305,7 @@ class FeatureCalibrationObject():
         self.HSIRotationFeature = [] #
         self.isfirst = True
 
-    def loadCamCalibration(self, filenameCal, config):
+    def load_cam_calibration(self, filenameCal, config):
         calHSI = CalibHSI(file_name_cal=filenameCal, config = config)  # Generates a calibration object
         self.f = calHSI.f
         self.v_c = calHSI.cx
