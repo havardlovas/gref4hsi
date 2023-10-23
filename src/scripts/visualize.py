@@ -7,9 +7,21 @@ import open3d as o3d
 # A simple visualization of various types of data
 
 def show_mesh_camera(config):
+    """
+    # Reads the mesh file and pose info, and plots the trajectory next to the mesh.
+
+    :param config: Dictionary-like (configuration) object
+    :return: Nothing
+
+    """
+
+
+    # Todo: encode show mesh camera to use h5-embedded data? Or is this a loss of performance?
     mesh_path = config['General']['modelPath']
     texture_path = config['General']['texPath']
     pose_path = config['General']['posePath']
+
+    # Offsets used for plotting
     offsetX = float(config['General']['offsetX'])
     offsetY = float(config['General']['offsetY'])
     offsetZ = float(config['General']['offsetZ'])

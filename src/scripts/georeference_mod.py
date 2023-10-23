@@ -162,7 +162,6 @@ class RayCasting:
         #
         self.minInd = 0
         self.maxInd = self.hyp.n_scanlines
-
         self.init_hsi_rays()
 
         self.HSICamera.intersectWithMesh(mesh = self.mesh, max_ray_length=self.max_ray_length)
@@ -243,6 +242,7 @@ def main(iniPath, mode, is_calibrated):
         calObj2 = FeatureCalibrationObject(type='camera calibration', config=config)
         calObj2.load_cam_calibration(filenameCal=hsi_cal_xml, config=config)
     else:
+        # Not the most elegant approach. Could encode it somehow
         calObj1 = FeatureCalibrationObject(type='camera calibration', config=config)
         calObj1.load_cam_calibration(filenameCal=hsi_cal_xml_b1, config=config)
 

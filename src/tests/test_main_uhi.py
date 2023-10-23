@@ -16,15 +16,16 @@ def main():
     ## Fails if you do not have an appropriate project.
 
     # The minimum for georeferencing is to parse 1) Mesh model and 2) The pose of the reference
-    #config = parsing_utils.export_pose(config_file)
-    #parsing_utils.agisoft_export_model(config_file)
+    config = parsing_utils.export_pose(config_file)
+    parsing_utils.agisoft_export_model(config_file)
 
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
     #visualize.show_mesh_camera(config)
 
-    # Georeference the line scans of the hyperspectral imager. Depends only on time-resolved positions.
+    # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
     georeference_mod.main(config_file, mode='georeference', is_calibrated=True)
     # Alternatively mode = 'calibrate'
+    # georeference_mod.main(config_file, mode='calibrate', is_calibrated=True)
 
 
 if __name__ == "__main__":

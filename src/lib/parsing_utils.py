@@ -14,8 +14,14 @@ import configparser
 from scipy.spatial.transform import Rotation
 import h5py
 import os
-
+from scipy.spatial.transform import Rotation as RotLib
+import pandas as pd
+import pymap3d as pm
+from scipy.spatial.transform import Slerp
+from scipy.interpolate import interp1d
 from geometry import CameraGeometry
+from pyproj import CRS, Transformer
+from geometry import rot_mat_ned_2_ecef
 
 
 class Hyperspectral:
@@ -72,19 +78,20 @@ class Hyperspectral:
                 self.RGBImgs = self.f[RGBFramesPath][()]
 
                 # Check if the dataset exists
-                if 'georeference' in self.f:
-                    dir = 'georeference/'
-                    self.normals_local = self.f[dir + 'normals_local'][()]
-                    self.points_global = self.f[dir + 'points_global'][()]
-                    self.points_local = self.f[dir + 'points_local'][()]
-                    self.position_hsi = self.f[dir + 'position_hsi'][()]
-                    self.quaternion_hsi = self.f[dir + 'quaternion_hsi'][()]
-                # Check if the dataset exists
+                #if 'georeference' in self.f:
+                #    dir_geo = 'georeference/'
+                #    self.normals_local = self.f[dir_geo + 'normals_local'][()]
+                #    self.points_global = self.f[dir_geo + 'points_global'][()]
+                #    self.points_local = self.f[dir_geo + 'points_local'][()]
+                #    self.position_hsi = self.f[dir_geo + 'position_hsi'][()]
+                #    self.quaternion_hsi = self.f[dir_geo + 'quaternion_hsi'][()]
+
                 if 'nav' in self.f:
-                    dir = 'nav/'
-                    self.pos_rgb = self.f[dir + 'position_rgb'][()]
-                    self.quat_rgb = self.f[dir + 'quaternion_rgb'][()]
-                    self.pose_time = self.f[dir + 'time_stamp'][()]
+                    # Navigation data for the reference (Typically IMU or RGB cam)
+                    dir_nav = 'nav/'
+                    self.pos_rgb = self.f[dir_nav + 'position_rgb'][()]
+                    self.quat_rgb = self.f[dir_nav + 'quaternion_rgb'][()]
+                    self.pose_time = self.f[dir_nav + 'time_stamp'][()]
 
 
 
@@ -161,13 +168,165 @@ class DataLogger:
                 # Append line to file
                 fh.write(line + '\n')
 
+def extract_pose_ardupilot(config, iniPath):
+    
+    """
+    
+    :param config: 
+    :param iniPath: 
+    :return: 
+    """
+    
+    # Attitude retrieved from an ardupilot CSV
+    att_path = config['General']['ardupath'] + 'Att.csv'
+    df_att = pd.read_csv(att_path)
 
-def extract_pose_MS(chunkName, chunks, csv_name, crs_export, config):
-    # Define the data logger:
+    # Convert the DataFrame to a matrix (list of lists)
+    matrix_att = np.array(df_att.values.tolist())
+    
+    # Rotations in roll-pitch-yaw define the rotation of the vehicle's body frame (i.e. IMU)
+    Rotation = RotLib.from_euler("ZYX", np.flip(matrix_att[:,1:4], axis = 1), degrees=True)
+    time_rot = matrix_att[:,0]
+    
+    # Position retrieved from an ardupilot CSV
+    pos_path = config['General']['ardupath'] + 'pos.csv'
+    df_pos = pd.read_csv(pos_path)
+    matrix_pos = np.array(df_pos.values.tolist())
 
-    # crs_export is a coordinate system based on configurations
+    time_pos = matrix_pos[:, 0]
+    Position = matrix_pos[:, 1:4]
+
+    linearPositionInterpolator = interp1d(time_pos, np.transpose(Position), fill_value='extrapolate')
+    PositionInterpolated = np.transpose(linearPositionInterpolator(time_rot))
+
+    pose_path = config['General']['ardupath'] + 'pose.csv'
+
+    config.set('General', 'posepath', pose_path)
+
+    epsg_proj = 4326 # Standard
+    epsg_geocsc = config['General']['modelepsg']
+    # Transform the mesh points to ECEF.
+
+    geocsc = CRS.from_epsg(epsg_geocsc)
+    proj = CRS.from_epsg(epsg_proj)
+    transformer = Transformer.from_crs(proj, geocsc)
+
+    points_proj = PositionInterpolated
+
+    lat = points_proj[:, 0].reshape((-1, 1))
+    lon = points_proj[:, 1].reshape((-1, 1))
+    hei = points_proj[:, 2].reshape((-1, 1))
+
+    (xECEF, yECEF, zECEF) = transformer.transform(xx=lat, yy=lon, zz=hei)
+
+    pos_geocsc = np.concatenate((xECEF.reshape((-1,1)), yECEF.reshape((-1,1)), zECEF.reshape((-1,1))), axis = 1)
+
+    #dlogr = DataLogger(pose_path, 'CameraLabel, X, Y, Z, Roll, Pitch, Yaw, RotX, RotY, RotZ')
+
+
+
+    data_matrix = np.zeros((len(time_rot), 10))
+    for i in range(len(time_rot)):
+
+        # Ardupilot delivers geodetic positions (EPSG::
+        pos_geod = PositionInterpolated[i, :]
+
+        # Define rotation matrix between local tangential plane (NED, North-East-Down) and Earth-Centered-Earth-Fixed (ECEF).
+        R_n_e = rot_mat_ned_2_ecef(lat=pos_geod[0], lon=pos_geod[1])
+
+        Rotation_n = RotLib.from_matrix(R_n_e)
+
+        Rotation_e = Rotation_n*Rotation[i] # Composing rotations
+
+        roll = matrix_att[i, 1]
+        pitch = matrix_att[i, 2]
+        yaw = matrix_att[i, 3]
+
+        if i%1000 == 0:
+            print(i)
+
+        rotz, roty, rotx = Rotation_e.as_euler("ZYX", degrees=True)
+
+        pos = pos_geocsc[i,:]
+
+        data_matrix[i,:] = np.array([time_rot[i], pos[0], pos[1], pos[2], roll, pitch, yaw, rotx, roty, rotz])
+
+        #dlogr.append_data([time_rot[i], pos[0], pos[1], pos[2], roll, pitch, yaw, rotx, roty, rotz])
+
+
+
+    headers = ['Timestamp', ' X', ' Y', ' Z', ' Roll', ' Pitch', ' Yaw', ' RotX', ' RotY', ' RotZ']
+
+    # Create a DataFrame from the data_matrix and headers
+    df = pd.DataFrame(data_matrix, columns=headers)
+
+    # Save the DataFrame as a CSV file
+    df.to_csv(pose_path, index=False)
+
+    with open(iniPath, 'w') as configfile:
+        config.write(configfile)
+        
+    return config
+
+def find_desired_chunk(chunkName, chunks, model_name):
     for chunk in chunks:
+        if chunk.label in chunkName:
+            cameras = chunk.cameras
+            if not len(cameras):
+                MS.app.messageBox("No camera in this chunk called {0}!".format(chunk.label))
+                continue
+            chunk.remove(chunk.markers)  # Clear all markers
 
+            return chunk
+
+def agisoft_export_pose(config, config_file):
+    # Activating Licence
+    print('Activating Licence')
+    MS.License().activate("EE2Z6-O5ZVF-1JYNV-NKSRY-UXTGR")
+    print('Licence Activated')
+
+    doc = MS.Document()
+    doc.read_only = False
+
+
+
+    # When exporting, it is relevant to export data in a suitable format
+    # CRSExport
+
+    proj_string = config['Coordinate Reference Systems']['ExportEPSG']
+    if proj_string != 'Local':
+        crs_export = MS.CoordinateSystem(str(proj_string))
+        local = False
+    else:
+        local = True
+
+    # Define *.psx file
+    path_psx = config['General']['pathPsx']
+    doc.open(path_psx, read_only=False)
+
+    chunk_str = config['General']['chunkName']
+    chunkName = [chunk_str]
+
+    # Output. CSV contains labeled roll, pitch, yaw
+    csv_name = config['General']['posePath']
+    model_name = config['General']['modelPath']
+
+    chunks = doc.chunks
+
+    # Extract the positions of cameras and the orientations
+    if path.exists(csv_name):
+        print('Pose File Already exists. Overwriting')
+    # Find the relevant chunk within the project (with name according to chunkName).
+
+    chunk = find_desired_chunk(chunkName=chunkName, chunks=chunks, model_name=model_name)
+
+    # If CRS is local, adopt it from project
+    if local:
+        crs_export=chunk.crs
+
+    # Iterate to find right chunk
+    for chunk in chunks:
+        # Locate the right chunk
         if chunk.label in chunkName:
             cameras = chunk.cameras
             count = 0
@@ -188,33 +347,32 @@ def extract_pose_MS(chunkName, chunks, csv_name, crs_export, config):
 
                     # T describes the transformation from the arbitrary crs to the
 
-
                     cam_center_local = cam.center
                     cam_center_global = T.mulp(cam_center_local)
-
 
                     # Position is projected onto projected geographic coordinates that is used in
                     pos = crs_export.project(cam_center_global)
 
+                    # Not sure about this stuff
                     if np.max(np.abs(pos)) > 1000:
                         mean_pos[0] += pos[0]
                         mean_pos[1] += pos[1]
                         mean_pos[2] += pos[2]
 
                     count += 1
-                    # Now it is in the crs_export
+
 
                     m = chunk.crs.localframe(cam_center_global)
                     # m is a transformation matrix at the point of
 
-                    T_cam_chunk = cam.transform # Transformation from cam to chunk euclidian space CES
-                    T_chunk_world = T # Transformation from chunk euclidian space to ECEF
+                    T_cam_chunk = cam.transform  # Transformation from cam to chunk euclidian space CES
+                    T_chunk_world = T  # Transformation from chunk euclidian space to ECEF
 
-                    cam_transform = T_chunk_world*T_cam_chunk
+                    cam_transform = T_chunk_world * T_cam_chunk
 
-                    location_ecef = cam_transform.translation() # Location in ECEF
+                    location_ecef = cam_transform.translation()  # Location in ECEF
 
-                    rotation_cam_ecef = cam_transform.rotation() # Rotation of camera with respect to ECEF
+                    rotation_cam_ecef = cam_transform.rotation()  # Rotation of camera with respect to ECEF
 
                     # Rotation from ECEF to ENU. This will be identity for local coordinate definitions
                     rotation_ecef_enu = ecef_crs.localframe(location_ecef).rotation()
@@ -223,7 +381,7 @@ def extract_pose_MS(chunkName, chunks, csv_name, crs_export, config):
 
                     pos = MS.CoordinateSystem.transform(location_ecef, source=ecef_crs, target=crs_export)
 
-                    R_cam_ned = rotation_cam_enu*MS.Matrix().Diag([1, -1, -1])
+                    R_cam_ned = rotation_cam_enu * MS.Matrix().Diag([1, -1, -1])
                     R_cam_ecef = rotation_cam_ecef
 
                     # Extracting roll-pitch-yaw is a bit wierd due to axis conventions
@@ -236,130 +394,12 @@ def extract_pose_MS(chunkName, chunks, csv_name, crs_export, config):
 
                     # We append
                     dlogr.append_data([cam.label, pos[0], pos[1], pos[2], roll, pitch, -yaw, rotx, roty, rotz])
+
     mean_pos /= count
 
     config.set('General', 'offsetX', str(mean_pos[0]))
     config.set('General', 'offsetY', str(mean_pos[1]))
     config.set('General', 'offsetZ', str(mean_pos[2]))
-    return config
-
-
-def extract_model_MS(chunkName, chunks, model_name):
-    for chunk in chunks:
-        if chunk.label in chunkName:
-            cameras = chunk.cameras
-            if not len(cameras):
-                MS.app.messageBox("No camera in this chunk called {0}!".format(chunk.label))
-                continue
-            chunk.remove(chunk.markers)  # Clear all markers
-
-            return chunk
-
-
-def agisoft_export(config_file):
-    MS.License().activate("EE2Z6-O5ZVF-1JYNV-NKSRY-UXTGR")
-    doc = MS.Document()
-    doc.read_only = False
-
-    config = configparser.ConfigParser()
-    config.read(config_file)
-
-    # When exporting, it is relevant to export data in a suitable format
-    # CRSExport
-
-    proj_string = config['Coordinate Reference Systems']['ExportEPSG']
-    if proj_string != 'Local':
-        crs_export = MS.CoordinateSystem(str(proj_string))
-        local = False
-    else:
-        local = True
-
-
-    # Define *.psx file
-    path_psx = config['General']['pathPsx']
-    doc.open(path_psx, read_only=False)
-
-    chunk_str = config['General']['chunkName']
-    chunkName = [chunk_str]
-
-    # Output. CSV contains labeled roll, pitch, yaw
-    csv_name = config['General']['posePath']
-    model_name = config['General']['modelPath']
-
-
-
-    chunks = doc.chunks
-
-
-    # Extract the positions of cameras and the orientations
-    if path.exists(csv_name):
-        print('Pose File Already exists. Overwriting')
-
-    if local:
-        config = extract_pose_MS(chunkName=chunkName, chunks=chunks, csv_name=csv_name, crs_export=chunk.crs, config = config)
-    else:
-        config = extract_pose_MS(chunkName=chunkName, chunks=chunks, csv_name=csv_name, crs_export=crs_export, config = config)
-
-    # Extract camera model from project
-
-    # Exporting models with offsets might be convenient
-    offsetX = float(config['General']['offsetX'])
-    offsetY = float(config['General']['offsetY'])
-    offsetZ = float(config['General']['offsetZ'])
-    with open(config_file, 'w') as configfile:
-        config.write(configfile)
-
-
-    # Extract the 3D model and texture file
-    if path.exists(model_name):
-        print('Model File Already exists. Overwriting')
-    chunk = extract_model_MS(chunkName=chunkName, chunks=chunks, model_name=model_name)
-    if local:
-        chunk.exportModel(path=model_name, crs=chunk.crs, shift=vec((offsetX, offsetY, offsetZ)))
-    else:
-        chunk.exportModel(path=model_name, crs=crs_export, shift=vec((offsetX, offsetY, offsetZ)))
-
-def agisoft_export_pose(config, config_file):
-    
-    MS.License().activate("EE2Z6-O5ZVF-1JYNV-NKSRY-UXTGR")
-    doc = MS.Document()
-    doc.read_only = False
-
-
-
-    # When exporting, it is relevant to export data in a suitable format
-    # CRSExport
-
-    proj_string = config['Coordinate Reference Systems']['ExportEPSG']
-    if proj_string != 'Local':
-        crs_export = MS.CoordinateSystem(str(proj_string))
-        local = False
-    else:
-        local = True
-
-    # Define *.psx file
-    path_psx = config['General']['pathPsx']
-    doc.open(path_psx, read_only=False)
-
-    chunk_str = config['General']['chunkName']
-    chunkName = [chunk_str]
-
-    # Output. CSV contains labeled roll, pitch, yaw
-    csv_name = config['General']['posePath']
-    model_name = config['General']['modelPath']
-
-    chunks = doc.chunks
-
-    # Extract the positions of cameras and the orientations
-    if path.exists(csv_name):
-        print('Pose File Already exists. Overwriting')
-
-    if local:
-        config = extract_pose_MS(chunkName=chunkName, chunks=chunks, csv_name=csv_name, crs_export=chunk.crs,
-                                 config=config)
-    else:
-        config = extract_pose_MS(chunkName=chunkName, chunks=chunks, csv_name=csv_name, crs_export=crs_export,
-                                 config=config)
 
     # Exporting models with offsets might be convenient
     with open(config_file, 'w') as configfile:
@@ -367,6 +407,15 @@ def agisoft_export_pose(config, config_file):
     return config
 
 def agisoft_export_model(config_file):
+    """
+            Exports a model from an agisoft (metashape) project
+
+            Args:
+                config_file: The *.ini file containing the paths and configurations.
+
+            Returns:
+                config: The function returns config object to allow that it is modified.
+        """
     MS.License().activate("EE2Z6-O5ZVF-1JYNV-NKSRY-UXTGR")
     doc = MS.Document()
     doc.read_only = False
@@ -405,7 +454,7 @@ def agisoft_export_model(config_file):
     # Extract the 3D model and texture file
     if path.exists(model_name):
         print('Model File Already exists. Overwriting')
-    chunk = extract_model_MS(chunkName=chunkName, chunks=chunks, model_name=model_name)
+    chunk = find_desired_chunk(chunkName=chunkName, chunks=chunks, model_name=model_name)
     if local:
         chunk.exportModel(path=model_name, crs=chunk.crs, shift=vec((offsetX, offsetY, offsetZ)))
     else:
@@ -512,7 +561,7 @@ def append_agisoft_data_h5(config):
 
 
 
-        
+# The main script for aquiring pose.        
 def export_pose(config_file):
     """
         Parses pose and embeds it into the *.h5 file. Writes the positions and orientations of hyperspectral frames to
@@ -554,7 +603,6 @@ def export_pose(config_file):
     
     
 if __name__ == "__main__":
+    # Here we could set up necessary steps on a high level. 
     args = sys.argv[1:]
     config_file = args[0]
-    # Running parsing_utils is per now the same as running agisoft_extract
-    agisoft_export(config_file)
