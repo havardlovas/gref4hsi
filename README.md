@@ -4,17 +4,15 @@ The hyperspectral toolchain is a toolbox for the post-processing of hyperspectra
 
 Installation instructions:
 
-•	Set up a virtual environment with python 3.8. It is possible to attempt this from the requirements.txt or *.yml file but then I would put gdal to the top of the dependency list.
+•	Set up a virtual environment with python 3.8+. It is possible to attempt this from the requirements.txt or *.yml file but then I would put gdal to the top of the dependency list.
 
 •	Metashape, GDAL and rasterio: These are downloaded as wheel (*.whl) files to the “/dependencies” folder. Navigate here “cd /dependencies” and run the following to install these:
 for %x in (dir *.whl) do python -m pip install %x
 
+•	For pyembree install: conda install -c conda-forge pyembree (pip install is prone to some errors)
+
 •	For remaining dependencies, run:
 pip install opencv-python dill geopandas h5py lmfit matplotlib numpy open3d pandas Pillow pymap3d pyproj pyvista pyvistaqt scikit-learn scipy shapely spectral xmltodict pykdtree trimesh rtree pyembree sphinx --user
 
-•	The pyvista function multi_ray_trace depends on the Embree library for CPU acceleration and could be tested with “/test/test_multi_ray_trace.py”. If it does not work, check:
-
-https://github.com/pyvista/pyvista/issues/1529 
-
-for how to install Embree.
+•	The pyvista function multi_ray_trace depends on the pyembree install and could be tested with “/test/test_multi_ray_trace.py”.
 
