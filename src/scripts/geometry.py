@@ -481,6 +481,18 @@ class FeatureCalibrationObject():
 
 
 
+def rot_mat_ned_2_ecef(lat, lon):
+    l = np.deg2rad(lon)
+    mu = np.deg2rad(lat)
+
+    R_ned_ecef = np.array([[-np.cos(l) * np.sin(mu), -np.sin(l), -np.cos(l) * np.cos(mu)],
+                          [-np.sin(l) * np.sin(mu), np.cos(l), -np.sin(l) * np.cos(mu)],
+                          [np.cos(mu), 0, -np.sin(mu)]])
+    return R_ned_ecef
+
+
+
+
 
 
 
