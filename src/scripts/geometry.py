@@ -1,19 +1,31 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as RotLib
-import pandas as pd
-import pymap3d as pm
 from scipy.spatial.transform import Slerp
 from scipy.interpolate import interp1d
 import open3d as o3d
 import xmltodict
 # A file were we define geometry and geometric transforms.
+
+# Perhaps a class with one "__init__.py
 class CalibHSI:
-    def __init__(self, file_name_cal, config, mode = 'r', param = None):
+    def __init__(self, file_name_cal_xml, config, mode = 'r', param = None):
+        """
+        :param file_name_cal_xml: str
+        File name of calibration file for line camera model
+        :param config: config
+        global configuration object.
+        :param mode: str
+        open file for reading (for general use) or writing (post calibration)
+        :param param: ndarray:
+        1D array with data type float. Is the line camera parameter vector (currently numpy array) with order
+        "rotation_x, rotation_y, rotation_z, translation_x, translation_y, translation_z, c_x, focal_length,
+        distortion_coeff_1, distortion_coeff_2, distortion_coeff_3"
+        """
         if mode == 'r':
-            with open(file_name_cal, 'r', encoding='utf-8') as file:
+            with open(file_name_cal_xml, 'r', encoding='utf-8') as file:
                 my_xml = file.read()
-            my_dict = xmltodict.parse(my_xml)
-            self.calibrationHSI = my_dict['calibration']
+            xml_dict = xmltodict.parse(my_xml)
+            self.calibrationHSI = xml_dict['calibration']
 
             self.w = float(self.calibrationHSI['width'])
             self.f = float(self.calibrationHSI['f'])
@@ -29,6 +41,8 @@ class CalibHSI:
             self.ty = float(self.calibrationHSI['ty'])
             self.tz = float(self.calibrationHSI['tz'])
 
+
+            # If encoding this into
             if eval(config['General']['isFlippedRGB']):
                 self.tx *= -1
                 self.ty *= -1
@@ -40,29 +54,25 @@ class CalibHSI:
             self.k2 = float(self.calibrationHSI['k2'])
             self.k3 = float(self.calibrationHSI['k3'])
         elif mode == 'w':
-            with open(file_name_cal, 'r', encoding='utf-8') as file:
+            with open(file_name_cal_xml, 'r', encoding='utf-8') as file:
                 my_xml = file.read()
-            my_dict = xmltodict.parse(my_xml)
+            xml_dict = xmltodict.parse(my_xml)
 
-            my_dict['calibration']['rx'] = param[0]
-            my_dict['calibration']['ry'] = param[1]
-            my_dict['calibration']['rz'] = param[2]
+            xml_dict['calibration']['rx'] = param[0]
+            xml_dict['calibration']['ry'] = param[1]
+            xml_dict['calibration']['rz'] = param[2]
 
-            #my_dict['calibration']['tx'] = param[3]
-            #my_dict['calibration']['ty'] = param[4]
-            #my_dict['calibration']['tz'] = param[5]
+            #xml_dict['calibration']['tx'] = param[3]
+            #xml_dict['calibration']['ty'] = param[4]
+            #xml_dict['calibration']['tz'] = param[5]
 
-            my_dict['calibration']['cx'] = param[3]
-            my_dict['calibration']['f'] = param[4]
-            my_dict['calibration']['k1'] = param[5]
-            my_dict['calibration']['k2'] = param[6]
-            my_dict['calibration']['k3'] = param[7]
-            with open(file_name_cal, 'w') as fd:
-                fd.write(xmltodict.unparse(my_dict))
-
-
-
-
+            xml_dict['calibration']['cx'] = param[3]
+            xml_dict['calibration']['f'] = param[4]
+            xml_dict['calibration']['k1'] = param[5]
+            xml_dict['calibration']['k2'] = param[6]
+            xml_dict['calibration']['k3'] = param[7]
+            with open(file_name_cal_xml, 'w') as fd:
+                fd.write(xmltodict.unparse(xml_dict))
 
 class CameraGeometry():
     def __init__(self, pos0, pos, rot, time, is_interpolated = False, is_offset = False):
@@ -198,7 +208,7 @@ class CameraGeometry():
             else:
                 print('Frame must be ENU or NED')
         else:
-            print('Poses are defined Globally already')
+            print('Poses are defined globally already')
     def defineRayDirections(self, dir_local):
         self.rayDirectionsLocal = dir_local
 
@@ -274,7 +284,7 @@ class CameraGeometry():
 
         wavelength_nm = np.array([wl_red, wl_green, wl_blue])
 
-        # Localize the appropriate bands for analysis
+        # Localize the appropriate band indices used for analysis
         band_ind_R = np.argmin(np.abs(wavelength_nm[0] - hyp.band2Wavelength))
         band_ind_G = np.argmin(np.abs(wavelength_nm[1] - hyp.band2Wavelength))
         band_ind_B = np.argmin(np.abs(wavelength_nm[2] - hyp.band2Wavelength))
