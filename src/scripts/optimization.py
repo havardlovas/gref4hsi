@@ -623,7 +623,7 @@ def compute_variables_measurements(iniPath, pathH51, pathH52, radPicklePath):
 
 
     hyp1 = Hyperspectral(filename=pathH51, config = config)
-    hyp1.DN2Radiance(config)
+    hyp1.digital_counts_2_radiance(config)
     points_1 = hyp1.points_global.reshape((-1, 3))
 
 
@@ -641,7 +641,7 @@ def compute_variables_measurements(iniPath, pathH51, pathH52, radPicklePath):
 
     print('Loaded 1')
     hyp2 = Hyperspectral(filename=pathH52, config = config)
-    hyp2.DN2Radiance(config)
+    hyp2.digital_counts_2_radiance(config)
 
     visualize.show_point_clouds(pathPcl1=pathPcl1, pathPcl2=pathPcl2, hyp1 = hyp1, hyp2 = hyp2)
     pix = 0
@@ -894,12 +894,12 @@ def compute_variables_measurements_white_plate(iniPath, pathH51, pathH52, radPic
     # visualize.show_point_clouds(pathPcl1=pathPcl1, pathPcl2=pathPcl2)
 
     hyp1 = Hyperspectral(filename=pathH51, config=config)
-    hyp1.DN2Radiance(config)
+    hyp1.digital_counts_2_radiance(config)
     points_1 = hyp1.points_global.reshape((-1, 3))
 
     print('Loaded 1')
     hyp2 = Hyperspectral(filename=pathH52, config=config)
-    hyp2.DN2Radiance(config)
+    hyp2.digital_counts_2_radiance(config)
 
     min_image1 = np.min(hyp1.dataCubeRadiance, axis=0).reshape((960, 225, 1))
     min_image2 = np.min(hyp2.dataCubeRadiance, axis=0).reshape((960, 225, 1))
@@ -997,12 +997,12 @@ def compute_variables_measurements_white_coral(iniPath, pathH51, pathH52, radPic
     # visualize.show_point_clouds(pathPcl1=pathPcl1, pathPcl2=pathPcl2)
 
     hyp1 = Hyperspectral(filename=pathH51, config=config)
-    hyp1.DN2Radiance(config)
+    hyp1.digital_counts_2_radiance(config)
     points_1 = hyp1.points_global.reshape((-1, 3))
 
     print('Loaded 1')
     hyp2 = Hyperspectral(filename=pathH52, config=config)
-    hyp2.DN2Radiance(config)
+    hyp2.digital_counts_2_radiance(config)
 
     min_image1 = np.min(hyp1.dataCubeRadiance, axis=0).reshape((960, hyp1.dataCubeRadiance.shape[2], 1))
     min_image2 = np.min(hyp2.dataCubeRadiance, axis=0).reshape((960, hyp1.dataCubeRadiance.shape[2], 1))
@@ -1112,7 +1112,7 @@ config = configparser.ConfigParser()
 config.read(iniPathTautra)
 #config.read(iniPathSkogn)
 hyp1 = Hyperspectral(filename=pathH51, config = config)
-hyp1.DN2Radiance(config)
+hyp1.digital_counts_2_radiance(config)
 #
 sp.imshow(hyp1.dataCubeRadiance, bands =(150, 97, 50))
 plt.savefig('C:/Users/haavasl/Downloads/image.png', dpi=600)

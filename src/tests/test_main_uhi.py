@@ -1,7 +1,9 @@
 import configparser
 import parsing_utils
-import georeference_mod
+import georeference
 import visualize
+
+# This file is meant to be used for testing the processing pipeline of UHI data
 
 # Import the configuration file and read it into dictionary
 home_path = 'C:/Users/haavasl/PycharmProjects/hyperspectral_toolchain'
@@ -23,7 +25,7 @@ def main():
     #visualize.show_mesh_camera(config)
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference_mod.main(config_file, mode='georeference', is_calibrated=True)
+    georeference.main(config_file, mode='georeference', is_calibrated=True)
     # Alternatively mode = 'calibrate'
     # georeference_mod.main(config_file, mode='calibrate', is_calibrated=True)
 

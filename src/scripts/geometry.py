@@ -4,6 +4,7 @@ from scipy.spatial.transform import Slerp
 from scipy.interpolate import interp1d
 import open3d as o3d
 import xmltodict
+from pyproj import CRS, Transformer
 # A file were we define geometry and geometric transforms.
 
 # Perhaps a class with one "__init__.py
@@ -110,9 +111,12 @@ class CameraGeometry():
                 linearSphericalInterpolator = Slerp(self.time, self.Rotation)
                 self.RotationInterpolated = linearSphericalInterpolator(time_interpolation)
             else:
+                # Extrapolation of position:
                 time_interpolation = time_hsi
                 linearPositionInterpolator = interp1d(self.time, np.transpose(self.Position), fill_value='extrapolate')
                 self.PositionInterpolated = np.transpose(linearPositionInterpolator(time_interpolation))
+
+                # Extrapolation of orientation/rotation:
 
                 # Synthetizize additional frames
                 delta_rot_b1_b2 = (self.Rotation[-1].inv()) * (self.Rotation[-2])
@@ -128,7 +132,8 @@ class CameraGeometry():
                 rot_first = self.Rotation[0] * (delta_rot_b1_b2.inv())  # Assuming a continuation of the rotation
                 time_concatenated = np.concatenate((np.array(time_first).reshape((1,-1)),
                                                     self.time.reshape((1,-1)),
-                                                    np.array(time_last).reshape((1,-1))), axis = 1).reshape(-1).astype(np.float64)
+                                                    np.array(time_last).reshape((1,-1))), axis = 1)\
+                    .reshape(-1).astype(np.float64)
                 rotation_list = [self.Rotation]
                 rotation_list.append(rot_last)
                 rotation_list.insert(0, rot_first)
@@ -491,14 +496,49 @@ class FeatureCalibrationObject():
 
 
 
-def rot_mat_ned_2_ecef(lat, lon):
-    l = np.deg2rad(lon)
-    mu = np.deg2rad(lat)
 
-    R_ned_ecef = np.array([[-np.cos(l) * np.sin(mu), -np.sin(l), -np.cos(l) * np.cos(mu)],
-                          [-np.sin(l) * np.sin(mu), np.cos(l), -np.sin(l) * np.cos(mu)],
-                          [np.cos(mu), 0, -np.sin(mu)]])
-    return R_ned_ecef
+def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, extrapolate = True):
+    """
+
+    :param timestamp_from:
+    Original timestamps
+    :param pos_from: numpy array (n,3)
+    Original positions
+    :param rot_from: Rotation-object (n rotations)
+    Original orientations
+    :param timestamps_to:
+    Timestamps desired for position and orientations
+    :return:
+    """
+
+    minRGB = np.min(timestamp_from)
+    maxRGB = np.max(timestamp_from)
+
+    minInd = np.argmin(np.abs(minRGB - timestamps_to))
+    maxInd = np.argmin(np.abs(maxRGB - timestamps_to))
+
+    if timestamps_to[minInd] < minRGB:
+        minInd += 1
+    if timestamps_to[maxInd] > maxRGB:
+        maxInd -= 1
+
+    # Interpolate poses
+    referenceGeometry = CameraGeometry(pos0=pos0,
+                               pos=pos_from,
+                               rot=rot_from,
+                               time=timestamp_from)
+
+    # We borrow a method from the camera object
+    referenceGeometry.interpolate(time_hsi=timestamps_to,
+                          minIndRGB=minInd,
+                          maxIndRGB=maxInd,
+                          extrapolate=extrapolate)
+
+
+    position_to = referenceGeometry.PositionInterpolated
+    quaternion_to = referenceGeometry.RotationInterpolated.as_quat()
+
+    return position_to, quaternion_to
 
 
 
@@ -525,14 +565,16 @@ class MeshGeometry():
 
 
 def rotation_matrix_ecef2ned(lon, lat):
-    l = np.deg2rad(lon)
-    mu = np.deg2rad(lat)
-
-    R_ned_ecef = np.array([[-np.cos(l) * np.sin(mu), -np.sin(l), -np.cos(l) * np.cos(mu)],
-                           [-np.sin(l) * np.sin(mu), np.cos(l), -np.sin(l) * np.cos(mu)],
-                           [np.cos(mu), 0, -np.sin(mu)]])
-    R_ecef_ned = np.transpose(R_ned_ecef)
-    return R_ecef_ned
+    """
+    Computes the rotation matrix R from earth-fixed-earth centered (ECEF) to north-east-down (NED).
+    :param lat: float in range [-90, 90]
+    The latitude in degrees
+    :param lon: float in range [-180, 180]
+    :return R_ned_ecef: numpy array of shape (3,3)
+    rotation matrix ECEF to NED
+    """
+    R_ned_ecef = rot_mat_ned_2_ecef(lon=lon, lat=lat)
+    return np.transpose(R_ned_ecef)
 
 def rotation_matrix_ecef2enu(lon, lat):
     l = np.deg2rad(lon)
@@ -548,3 +590,163 @@ def rotation_matrix_ecef2enu(lon, lat):
 
     R_ecef_enu = np.transpose(R_enu_ecef)
     return R_ecef_enu
+
+
+def convert_rotation_ned_2_ecef(rot_obj_ned, position, is_geodetic = True, epsg_pos = 4326):
+    """
+
+    :param rot_obj_:
+    :param position:
+    The position
+    :param is_geodetic: bool
+    Whether position is geodetic
+    :return:
+    """
+
+
+class GeoPose:
+    def __init__(self, timestamps, rot_obj, rot_ref, pos, pos_epsg, is_pos_geocentric):
+        self.timestamps = timestamps
+        if rot_ref == 'NED':
+            self.rot_obj_ned = rot_obj
+            self.rot_obj_ecef = None
+        elif rot_ref == 'ECEF':
+            self.rot_obj_ned = None
+            self.rot_obj_ecef = rot_obj
+        else:
+            print('This rotation reference is not supported')
+            TypeError
+
+        # Define position
+        self.position = pos
+        self.epsg = pos_epsg
+
+
+        if is_pos_geocentric:
+            self.pos_geocsc = self.position
+        else:
+            self.pos_geocsc = None
+
+        self.lat = None
+        self.lon = None
+        self.hei = None
+
+
+    def compute_geodetic_position(self, epsg_geod):
+        """
+            Function for transforming positions to latitude longitude height
+            :param epsg_geod: int
+            EPSG code of the transformed geodetic coordinate system
+        """
+        # If geocentric position has not been defined.
+        if (self.pos_geocsc == None):
+            from_CRS = CRS.from_epsg(self.epsg)
+            geod_CRS = CRS.from_epsg(epsg_geod)
+            transformer = Transformer.from_crs(from_CRS, geod_CRS)
+
+            x = self.position[:, 0].reshape((-1, 1))
+            y = self.position[:, 1].reshape((-1, 1))
+            z = self.position[:, 2].reshape((-1, 1))
+
+            (lat, lon, hei) = transformer.transform(xx=x, yy=y, zz=z)
+
+            self.epsg_geod = epsg_geod
+            self.lat = lat.reshape((self.position.shape[0], 1))
+            self.lon = lon.reshape((self.position.shape[0], 1))
+            self.hei = hei.reshape((self.position.shape[0], 1))
+        else:
+            pass
+
+    def compute_geocentric_position(self, epsg_geocsc):
+        """
+            Function for transforming positions to geocentric
+            :param epsg_geod: int
+            EPSG code of the transformed geodetic coordinate system
+        """
+
+        from_CRS = CRS.from_epsg(self.epsg)
+        geod_CRS = CRS.from_epsg(epsg_geocsc)
+        transformer = Transformer.from_crs(from_CRS, geod_CRS)
+
+        x = self.position[:, 0].reshape((-1, 1))
+        y = self.position[:, 1].reshape((-1, 1))
+        z = self.position[:, 2].reshape((-1, 1))
+
+        (x, y, z) = transformer.transform(xx=x, yy=y, zz=z)
+
+        self.pos_geocsc = np.concatenate((x,y,z), axis = 1)
+
+
+    def compute_geocentric_orientation(self):
+        if self.rot_obj_ecef == None:
+            # Define rotations from ned to ecef
+            if self.lat == None:
+                # Needed to encode rotation between NED and ECEF
+                self.compute_geodetic_position()
+
+            R_body_2_ned = self.rot_obj_ned
+            R_ned_2_ecef = self.compute_rot_obj_ned_2_ecef()
+            R_body_2_ecef = R_ned_2_ecef*R_body_2_ned
+
+            self.rot_obj_ecef = R_body_2_ecef
+
+        else:
+            pass
+
+    def compute_ned_orientation(self):
+        if self.rot_obj_ned == None:
+            # Define rotations from body to ecef
+            R_body_2_ecef = self.rot_obj_ecef
+
+            # Define rotation from ecef 2 ned
+            R_ecef_2_ned = self.compute_rot_obj_ned_2_ecef().inv()
+
+            # Compose
+            R_body_2_ned = R_ecef_2_ned*R_body_2_ecef
+
+            self.rot_obj_ned = R_body_2_ned
+
+
+        else:
+            pass
+
+
+
+    def compute_rot_obj_ned_2_ecef(self):
+
+        N = self.lat.shape[0]
+        rot_mats_ned_to_ecef = np.zeros((N, 3, 3), dtype=np.float64)
+
+
+
+        for i in range(N):
+            rot_mats_ned_to_ecef[i,:,:] = rot_mat_ned_2_ecef(lat=self.lat[i], lon = self.lon[i])
+
+
+        self.rots_obj_ned_2_ecef = RotLib.from_matrix(rot_mats_ned_to_ecef)
+
+        return self.rots_obj_ned_2_ecef
+
+
+
+
+def rot_mat_ned_2_ecef(lat, lon):
+    """
+    Computes the rotation matrix R from north-east-down (NED) to earth-fixed-earth centered (ECEF)
+    :param lat: float in range [-90, 90]
+    The latitude in degrees
+    :param lon: float in range [-180, 180]
+    :return R_ned_ecef: numpy array of shape (3,3)
+    rotation matrix from NED to ECEF
+    """
+
+    # Convert to radians
+    l = np.deg2rad(lon)
+    mu = np.deg2rad(lat)
+
+    # Compute rotation matrix
+    # TODO: add source
+    R_ned_ecef = np.array([[-np.cos(l) * np.sin(mu), -np.sin(l), -np.cos(l) * np.cos(mu)],
+                           [-np.sin(l) * np.sin(mu), np.cos(l), -np.sin(l) * np.cos(mu)],
+                           [np.cos(mu), 0, -np.sin(mu)]])
+    return R_ned_ecef

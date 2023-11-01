@@ -19,27 +19,49 @@ import pandas as pd
 import pymap3d as pm
 from scipy.spatial.transform import Slerp
 from scipy.interpolate import interp1d
-from geometry import CameraGeometry
+from geometry import CameraGeometry, GeoPose
 from pyproj import CRS, Transformer
-from geometry import rot_mat_ned_2_ecef
+from geometry import rot_mat_ned_2_ecef, interpolate_poses
+from gis_tools import dem_2_mesh, position_transform_ecef_2_llh
 
 
 class Hyperspectral:
+    """
+    Class for storing/accessing acquired hyperspectral data. One instance corresponds to a transect chunk (*.h5).
+    """
     def __init__(self, filename, config):
+        """
+        Instantiate transect chunk object from chunk file name and config file.
+        :param filename: string
+        path to *.h5 file
+        :param config: config type
+        dictionary-like interface to configuration file
+        """
+        # Chunk filename
         self.name = filename
-        # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
+        # If errors arise due to improper dataset paths below, open the *.h5 file in hdfviewer and edit the path.
         with h5py.File(filename, 'r', libver='latest') as self.f:
-            # Special case
+            # Special case of an old UHI format from 2017.
+            # TODO: Embed the paths from this special format into confic file
             if eval(config['HDF']['isMarmineUHISpring2017']):
+                # The raw data cube
                 self.dataCube = self.f['uhi/pixels'][()]
 
-                # Perform division by some value
-
+                # Exposure time of HSI
                 self.t_exp = self.f['uhi/parameters'][()][0, 0] / 1000
+
+                # Time stamps of line scans
                 self.dataCubeTimeStamps = self.f['uhi/parameters'][()][:, 2]
+
+                # Correspondence describing the wavelength corresponding to each band
                 self.band2Wavelength = self.f['uhi/calib'][()]
 
+                # The time stamps corresponding to each RGB image
                 self.RGBTimeStamps = self.f['rgb/parameters'][()][:, 2]
+
+                # The actual RGB images
+                # TODO: Make a class method for writing these to *.png files with apropriate name conventions. Including Exif tagging
+                # TODO: Make a class method for performing grey-world correction of images
                 self.RGBImgs = self.f['rgb/pixels'][()]
 
                 # Check if the dataset exists
@@ -69,13 +91,25 @@ class Hyperspectral:
 
                 self.dataCube = self.f[dataCubePath][()]
 
-                self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
+                try:
+                    self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
+                except KeyError:
+                    pass
                 self.dataCubeTimeStamps = self.f[timestampHyperspectralPath][()]
                 self.band2Wavelength = self.f[band2WavelengthPath][()]
-                self.darkFrame = self.f[darkFramePath][()]
-                self.radiometricFrame = self.f[radiometricFramePath][()]
-                self.RGBTimeStamps = self.f[timestampRGBPath][()]
-                self.RGBImgs = self.f[RGBFramesPath][()]
+                try:
+                    self.darkFrame = self.f[darkFramePath][()]
+                    self.radiometricFrame = self.f[radiometricFramePath][()]
+                except KeyError:
+                    pass
+
+
+                try:
+                    self.RGBTimeStamps = self.f[timestampRGBPath][()]
+                    self.RGBImgs = self.f[RGBFramesPath][()]
+                except (KeyError, TypeError):
+                    pass
+
 
                 # Check if the dataset exists
                 #if 'georeference' in self.f:
@@ -120,7 +154,7 @@ class Hyperspectral:
 
 
 
-    def DN2Radiance(self, config):
+    def digital_counts_2_radiance(self, config):
 
         # Special case
         if eval(config['HDF']['isMarmineUHISpring2017']):
@@ -142,7 +176,15 @@ class Hyperspectral:
             self.dataCubeRadiance[i, :, :] = (self.dataCube[i, :, :] - self.darkFrame) / (
                     self.radiometricFrame * self.t_exp)
 
-    def addDataset(self, data, name):
+    def add_dataset(self, data, name):
+        """
+        Method to write a dataset to the h5 file
+        :param data: type any permitted (see h5py doc)
+        The data to be written
+        :param name: string
+        The path/name of the dataset
+        :return: None
+        """
         # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
         with h5py.File(self.name, 'a', libver='latest') as self.f:
             # Check if the dataset exists
@@ -150,6 +192,19 @@ class Hyperspectral:
                 del self.f[name]
 
             dset = self.f.create_dataset(name=name, data = data)
+
+    def get_dataset(self, dataset_name):
+        """
+        Method to return a dataset by the name
+        :param dataset_name: string
+        The h5 dataset path
+        :return: dataset
+        Returns the queried dataset. Could be many datatypes, but mainly numpy arrays in our usage.
+        """
+        # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
+        with h5py.File(self.name, 'a', libver='latest') as self.f:
+            dataset = self.f[dataset_name][()]
+        return dataset
 
 class DataLogger:
     def __init__(self, filename, header):
@@ -168,7 +223,7 @@ class DataLogger:
                 # Append line to file
                 fh.write(line + '\n')
 
-def extract_pose_ardupilot(config, iniPath):
+def ardupilot_extract_pose(config, iniPath):
     
     """
     
@@ -330,23 +385,35 @@ def agisoft_export_pose(config, config_file):
         if chunk.label in chunkName:
             cameras = chunk.cameras
             count = 0
+            # Mean position is used for mean shifting the 3D model to avoid unnecessarily large coordinates
             mean_pos = np.zeros(3)
+            # TODO: Condider replacing Datalogger with Pandas implementation
+            # Log data X,Y,Z are in selected geocentric coordinate system (a.k.a. ECEF)
+            # Rotations are stored as local orientation (roll, pitch, yaw) and orientation w.r.t. ECEF (rotX...)
+            # Encoding, decoding and abstraction of orientations are done with Rotation class from scipy.spatial.transform
             dlogr = DataLogger(csv_name, 'CameraLabel, X, Y, Z, Roll, Pitch, Yaw, RotX, RotY, RotZ')
             if not len(cameras):
                 MS.app.messageBox("No camera in this chunk called {0}!".format(chunk.label))
                 continue
-            chunk.remove(chunk.markers)  # Clear all markers
+
+            # Not sure why markers are removed here?
+            chunk.remove(chunk.markers)
+
+            # Chunk transform matrix (arbitrary and no transform if local CRS)
             T = chunk.transform.matrix
 
+            # Global CRS is inherited from MS projects
             ecef_crs = chunk.crs.geoccs
+
+            # Certain UHI projects use local/engineering CRS
             if ecef_crs is None:
                 ecef_crs = MS.CoordinateSystem('LOCAL')
             for cam in cameras:
+                # If the camera is aligned do something
+                if cam.center != None: # Ugly condition formulation
 
-                if cam.center != None:
-
-                    # T describes the transformation from the arbitrary crs to the
-
+                    # T describes the transformation from the arbitrary chunk crs to ECEF
+                    # Cam center local describes camera origin in chunk crs
                     cam_center_local = cam.center
                     cam_center_global = T.mulp(cam_center_local)
 
@@ -547,19 +614,124 @@ def append_agisoft_data_h5(config):
             # Add camera position
             position_hsi = RGBCamera.PositionInterpolated
             position_hsi_name = 'nav/position_rgb'
-            hyp.addDataset(data=position_hsi, name=position_hsi_name)
+            hyp.add_dataset(data=position_hsi, name=position_hsi_name)
 
             # Add camera quaternion
             quaternion_hsi = RGBCamera.RotationInterpolated.as_quat()
             quaternion_hsi_name = 'nav/quaternion_rgb'
-            hyp.addDataset(data=quaternion_hsi, name=quaternion_hsi_name)
+            hyp.add_dataset(data=quaternion_hsi, name=quaternion_hsi_name)
 
             # Add time stamp
             time_stamps = RGBCamera.time_hsi  # Use projected system for global description
             time_stamps_name = 'nav/time_stamp'
-            hyp.addDataset(data=time_stamps, name=time_stamps_name)
+            hyp.add_dataset(data=time_stamps, name=time_stamps_name)
 
 
+def reformat_h5_embedded_data_h5(config):
+    """
+                Parses pose from h5, interpolates and reformats. Writes the positions and orientations of hyperspectral frames to
+                    dataset under the /Nav folder
+
+                Args:
+                    config_file: The *.ini file containing the paths and configurations.
+
+                Returns:
+                    None: The function returns nothing.
+        """
+
+    # Offsets should correspond with polygon model offset
+    offX = float(config['General']['offsetX'])
+    offY = float(config['General']['offsetY'])
+    offZ = float(config['General']['offsetZ'])
+    pos0 = np.array([offX, offY, offZ]).reshape([-1, 1])
+
+    # Traverse through h5 dir to append the data to file
+    h5dir = config['HDF']['h5dir']
+    is_first = True
+    for filename in sorted(os.listdir(h5dir)):
+        # Find the interesting prefixes
+        if filename.endswith('h5') or filename.endswith('hdf'):
+            # Identify the total path
+            path_hdf = h5dir + filename
+
+            # Read out the data of a file
+            hyp = Hyperspectral(path_hdf, config)
+
+            quaternion_ned_imu = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['quaternion'])
+            if quaternion_ned_imu.shape[0] == 4:
+                quaternion_ned_imu = np.transpose(quaternion_ned_imu)
+            is_global_rot = config['HDF.raw_nav']['is_global_rot']
+
+            # Parse position
+            position_ecef_imu = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['position_ecef'])\
+                .reshape((-1,3))
+            if position_ecef_imu.shape[0] == 3:
+                position_ecef_imu = np.transpose(position_ecef_imu)
+
+
+            timestamps_imu = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['timestamp'])\
+                .reshape(-1)
+
+            condition_for_setting_offsets = (offZ == -1 and is_first)
+
+
+
+
+            # The rotation of the reference
+            rot_obj = RotLib.from_quat(quaternion_ned_imu)
+
+            timestamp_hsi = hyp.dataCubeTimeStamps\
+                .reshape(-1)
+
+
+            # Compute position and orientation:
+            position_hsi, quaternion_hsi = interpolate_poses(timestamp_from=timestamps_imu,
+                                                             pos_from=position_ecef_imu,
+                                                             pos0=pos0,
+                                                             rot_from=rot_obj,
+                                                             timestamps_to=timestamp_hsi)
+
+
+
+            if not is_global_rot:
+                # Need to compose NED rotations
+
+                pos_epsg_orig = config['General']['pos_epsg_orig']
+                pos_epsg_export = config['Coordinate Reference Systems']['exportepsg']
+
+                rot_body_local = RotLib.from_quat(quaternion_hsi)
+                geo_pose_ref = GeoPose(timestamps=timestamp_hsi, rot_obj= rot_body_local, rot_ref='NED', pos = position_hsi, pos_epsg=pos_epsg)
+
+                # Ensure that position in correct EPSG
+                geo_pose_ref.compute_geocentric_position(epsg_geocsc=pos_epsg_export)
+                #
+                epsg_wgs84 = 4326
+                # calculate the geodetic position
+                geo_pose_ref.compute_geodetic_position(epsg_geod=epsg_wgs84)
+                # calculate orientation
+                geo_pose_ref.compute_geocentric_orientation()
+
+                # Ensure that both are in correct form
+                position_hsi = geo_pose_ref.pos_geocsc
+
+                quaternion_hsi = geo_pose_ref.rot_obj_ecef\
+                    .as_quat()
+
+
+
+
+
+            # Add camera position
+            position_hsi_name = 'nav/position_rgb'
+            hyp.add_dataset(data=position_hsi, name=position_hsi_name)
+
+            # Add camera quaternion
+            quaternion_hsi_name = 'nav/quaternion_rgb'
+            hyp.add_dataset(data=quaternion_hsi, name=quaternion_hsi_name)
+
+            # Add time stamps
+            time_stamps_name = 'nav/time_stamp'
+            hyp.add_dataset(data=timestamp_hsi, name=time_stamps_name)
 
 # The main script for aquiring pose.        
 def export_pose(config_file):
@@ -588,13 +760,14 @@ def export_pose(config_file):
         append_agisoft_data_h5(config=config)
 
     elif poseExportType == 'h5_embedded':
-        print('There is no support for this export functionality! Fix immediately!')
+        reformat_h5_embedded_data_h5(config=config)
+        print('There is no support for ' + poseExportType +' pose export type! Fix immediately!')
         config = -1
     elif poseExportType == 'independent_file':
         print('There is no support for this export functionality! Fix immediately!')
         config = -1
     else:
-        print('There is no support for this export functionality')
+        print('File type: ' + poseExportType + 'type is not defined!')
         config = -1
 
     return config
