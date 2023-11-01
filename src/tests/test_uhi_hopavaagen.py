@@ -1,6 +1,6 @@
 import configparser
 from parsing_utils import Hyperspectral
-import georeference_mod
+import georeference
 import visualize
 import os
 import numpy as np
@@ -28,11 +28,13 @@ config.read(config_file)
 
 def main():
     """
-    Writes each *.h5 file radiance to a *.tif file
+    Writes each *.h5 file (in "h5dir") radiance to a *.tif file (in "tiff_dir").
     """
 
-    # Iterate through the data cubes
+
+
     # Traverse through h5 dir to append the data to file
+
     h5dir = config['HDF']['h5dir']
     tiff_dir = 'E:/double-blueye/Radiance_composites/'
 
@@ -41,8 +43,12 @@ def main():
     prev_chunk_number = 0
     prev_transect_name = ''
     files = os.listdir(h5dir)
+
+    # TODO: Make numerical sort properly sort last element
     # Sort the filenames based on the numeric part
     sorted_filenames = sorted(files, key=numerical_sort_key, reverse=False)
+
+    # TODO: Consider making list of lists (transect_chunks)
     print(sorted_filenames)
     print(len(sorted_filenames))
     count = 0
@@ -65,7 +71,7 @@ def main():
 
 
                 # Convert data cube to radiance
-                hyp.DN2Radiance(config)
+                hyp.digital_counts_2_radiance(config)
 
                 # Set custom RGB bands from *.ini file
                 wl_red = float(config['General']['RedWavelength'])
@@ -78,7 +84,7 @@ def main():
                 band_ind_G = np.argmin(np.abs(wavelength_nm[1] - hyp.band2Wavelength))
                 band_ind_B = np.argmin(np.abs(wavelength_nm[2] - hyp.band2Wavelength))
 
-                radiance_composite_rgb = hyp.dataCubeRadiance[:,:, [band_ind_R, band_ind_G, band_ind_B]]
+                radiance_composite_rgb = hyp.dataCubeRadiance[:, :, [band_ind_R, band_ind_G, band_ind_B]]
 
 
                 # Determine if current chunk_number is one greater then the previous
