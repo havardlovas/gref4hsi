@@ -3,14 +3,18 @@ import parsing_utils
 import georeference
 import visualize
 
+from scripts.modulate_config import
+
 # This script is meant to be used for testing the processing pipeline of airborne HI data
 
-# Import the configuration file and read it into dictionary-like config object
-home_path = 'C:/Users/haavasl/PycharmProjects/hyperspectral_toolchain'
-data_dir = home_path + '/data/NyAlesundAirborne28052023'
-config_file = data_dir + '/configuration.ini'
-# TODO: update config.ini automatically with paths for simple reproducability
+# The configuration file stores the settings for georeferencing
+config_file = 'C:/Users/haavasl/PycharmProjects/hyperspectral_toolchain/data/NyAlesundAirborne28052023/configuration.ini'
 
+# Set the data directory for the mission (locally where the data is stored)
+
+
+
+# TODO: update config.ini automatically with paths for simple reproducability
 config = configparser.ConfigParser()
 config.read(config_file)
 
@@ -22,13 +26,13 @@ def main():
     config = parsing_utils.export_pose(config_file)
 
     # TODO: replace "agisoft_export_model" with generic "export_model"
-    parsing_utils.agisoft_export_model(config_file)
+    #parsing_utils.agisoft_export_model(config_file)
 
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
     #visualize.show_mesh_camera(config)
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference.main(config_file, mode='georeference', is_calibrated=True)
+    # georeference.main(config_file, mode='georeference', is_calibrated=True)
     # Alternatively mode = 'calibrate'
     # georeference_mod.main(config_file, mode='calibrate', is_calibrated=True)
 

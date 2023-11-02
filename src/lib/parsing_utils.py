@@ -684,7 +684,7 @@ def reformat_h5_embedded_data_h5(config):
                 .reshape(-1)
 
 
-            # Compute position and orientation:
+            # Compute non-offset positions and orientation:
             position_hsi, quaternion_hsi = interpolate_poses(timestamp_from=timestamps_imu,
                                                              pos_from=position_ecef_imu,
                                                              pos0=pos0,
@@ -692,7 +692,7 @@ def reformat_h5_embedded_data_h5(config):
                                                              timestamps_to=timestamp_hsi)
 
 
-
+            # If the original orientations are with respect to NED
             if not is_global_rot:
                 # Need to compose NED rotations
 
@@ -733,6 +733,15 @@ def reformat_h5_embedded_data_h5(config):
             time_stamps_name = 'nav/time_stamp'
             hyp.add_dataset(data=timestamp_hsi, name=time_stamps_name)
 
+    config.set('General', 'offsetX', str(pos0[0]))
+    config.set('General', 'offsetY', str(pos0[1]))
+    config.set('General', 'offsetZ', str(pos0[2]))
+
+    # Exporting models with offsets might be convenient
+    with open(config_file, 'w') as configfile:
+        config.write(configfile)
+    return config
+    return config
 # The main script for aquiring pose.        
 def export_pose(config_file):
     """
@@ -760,9 +769,7 @@ def export_pose(config_file):
         append_agisoft_data_h5(config=config)
 
     elif poseExportType == 'h5_embedded':
-        reformat_h5_embedded_data_h5(config=config)
-        print('There is no support for ' + poseExportType +' pose export type! Fix immediately!')
-        config = -1
+        config = reformat_h5_embedded_data_h5(config=config)
     elif poseExportType == 'independent_file':
         print('There is no support for this export functionality! Fix immediately!')
         config = -1
