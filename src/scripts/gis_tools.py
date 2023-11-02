@@ -17,7 +17,7 @@ from spectral import envi
 import os
 
 # Local module
-from colours import Image as Imcol
+from scripts.colours import Image as Imcol
 
 GRAVITY = 9.81 # m/s^2
 

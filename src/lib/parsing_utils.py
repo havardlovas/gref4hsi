@@ -1,28 +1,30 @@
-
-
-import Metashape as MS
-import pandas as pd
-from scipy.spatial.transform import Rotation as RotLib
-
-from Metashape import Vector as vec
+# Python built-ins
 import pickle
 import time
 import sys
-import numpy as np
-from os import path
+import os
 import configparser
+from os import path
+
+# Third party libraries
+import numpy as np
+import Metashape as MS
+import pandas as pd
+from scipy.spatial.transform import Rotation as RotLib
 from scipy.spatial.transform import Rotation
 import h5py
-import os
+from Metashape import Vector as vec
 from scipy.spatial.transform import Rotation as RotLib
 import pandas as pd
 import pymap3d as pm
 from scipy.spatial.transform import Slerp
 from scipy.interpolate import interp1d
-from geometry import CameraGeometry, GeoPose
 from pyproj import CRS, Transformer
-from geometry import rot_mat_ned_2_ecef, interpolate_poses
-from gis_tools import dem_2_mesh, position_transform_ecef_2_llh
+
+# Local modules
+from scripts.geometry import CameraGeometry, GeoPose
+from scripts.geometry import rot_mat_ned_2_ecef, interpolate_poses
+from scripts.gis_tools import dem_2_mesh, position_transform_ecef_2_llh
 
 
 class Hyperspectral:
