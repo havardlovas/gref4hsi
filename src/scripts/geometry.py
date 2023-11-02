@@ -511,6 +511,9 @@ def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, e
     :return:
     """
 
+    minHSI = np.min(timestamps_to)
+    maxHSI = np.max(timestamps_to)
+
     minRGB = np.min(timestamp_from)
     maxRGB = np.max(timestamp_from)
 
@@ -522,7 +525,7 @@ def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, e
     if timestamps_to[maxInd] > maxRGB:
         maxInd -= 1
 
-    # Interpolate poses
+    # Interpolate poses. The offsets and everything is pretty hopeless.
     referenceGeometry = CameraGeometry(pos0=pos0,
                                pos=pos_from,
                                rot=rot_from,
