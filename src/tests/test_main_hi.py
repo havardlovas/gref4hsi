@@ -17,10 +17,8 @@ from scripts.modulate_config import prepend_data_dir_to_relative_paths
 
 # The configuration file stores the settings for georeferencing
 config_file = 'C:/Users/haavasl/PycharmProjects/hyperspectral_toolchain/data/NyAlesundAirborne28052023/configuration.ini'
-
 # Set the data directory for the mission (locally where the data is stored)
-
-
+prepend_data_dir_to_relative_paths(config_path=config_file)
 
 # TODO: update config.ini automatically with paths for simple reproducability
 config = configparser.ConfigParser()
