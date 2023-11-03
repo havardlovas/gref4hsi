@@ -121,13 +121,13 @@ class Hyperspectral:
                 #    self.points_local = self.f[dir_geo + 'points_local'][()]
                 #    self.position_hsi = self.f[dir_geo + 'position_hsi'][()]
                 #    self.quaternion_hsi = self.f[dir_geo + 'quaternion_hsi'][()]
-
-                if 'nav' in self.f:
-                    # Navigation data for the reference (Typically IMU or RGB cam)
-                    dir_nav = 'nav/'
-                    self.pos_rgb = self.f[dir_nav + 'position_rgb'][()]
-                    self.quat_rgb = self.f[dir_nav + 'quaternion_rgb'][()]
-                    self.pose_time = self.f[dir_nav + 'time_stamp'][()]
+#
+                #if 'nav' in self.f:
+                #    # Navigation data for the reference (Typically IMU or RGB cam)
+                #    dir_nav = 'nav/'
+                #    self.pos_rgb = self.f[dir_nav + 'position_rgb'][()]
+                #    self.quat_rgb = self.f[dir_nav + 'quaternion_rgb'][()]
+                #    self.pose_time = self.f[dir_nav + 'time_stamp'][()]
 
 
 
@@ -552,7 +552,7 @@ def append_agisoft_data_h5(config):
 
 
     # Traverse through h5 dir to append the data to file
-    h5dir = config['HDF']['h5dir']
+    h5dir = config['Absolute Paths']['h5dir']
     for filename in sorted(os.listdir(h5dir)):
         # Find the interesting prefixes
         if filename.endswith('h5') or filename.endswith('hdf'):
@@ -629,7 +629,7 @@ def append_agisoft_data_h5(config):
             hyp.add_dataset(data=time_stamps, name=time_stamps_name)
 
 
-def reformat_h5_embedded_data_h5(config):
+def reformat_h5_embedded_data_h5(config, config_file):
     """
                 Parses pose from h5, interpolates and reformats. Writes the positions and orientations of hyperspectral frames to
                     dataset under the /Nav folder
@@ -645,10 +645,12 @@ def reformat_h5_embedded_data_h5(config):
     offX = float(config['General']['offsetX'])
     offY = float(config['General']['offsetY'])
     offZ = float(config['General']['offsetZ'])
-    pos0 = np.array([offX, offY, offZ]).reshape([-1, 1])
+    if offX == -1:
+        # Set pos0 to None to ensure that error is raised if it is used for anything
+        pos0 = None
 
     # Traverse through h5 dir to append the data to file
-    h5dir = config['HDF']['h5dir']
+    h5dir = config['Absolute Paths']['h5dir']
     is_first = True
     for filename in sorted(os.listdir(h5dir)):
         # Find the interesting prefixes
@@ -659,81 +661,97 @@ def reformat_h5_embedded_data_h5(config):
             # Read out the data of a file
             hyp = Hyperspectral(path_hdf, config)
 
-            quaternion_ned_imu = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['quaternion'])
-            if quaternion_ned_imu.shape[0] == 4:
-                quaternion_ned_imu = np.transpose(quaternion_ned_imu)
+            quaternion_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['quaternion'])
+            if quaternion_ref.shape[0] == 4:
+                quaternion_ref = np.transpose(quaternion_ref)
             is_global_rot = config['HDF.raw_nav']['is_global_rot']
 
             # Parse position
-            position_ecef_imu = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['position_ecef'])\
+            position_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['position_ecef'])\
                 .reshape((-1,3))
-            if position_ecef_imu.shape[0] == 3:
-                position_ecef_imu = np.transpose(position_ecef_imu)
+            if position_ref.shape[0] == 3:
+                position_ref = np.transpose(position_ref)
 
 
             timestamps_imu = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['timestamp'])\
                 .reshape(-1)
 
-            condition_for_setting_offsets = (offZ == -1 and is_first)
+
+
 
 
 
 
             # The rotation of the reference
-            rot_obj = RotLib.from_quat(quaternion_ned_imu)
+            rot_obj = RotLib.from_quat(quaternion_ref)
 
             timestamp_hsi = hyp.dataCubeTimeStamps\
                 .reshape(-1)
 
 
-            # Compute non-offset positions and orientation:
-            position_hsi, quaternion_hsi = interpolate_poses(timestamp_from=timestamps_imu,
-                                                             pos_from=position_ecef_imu,
+            # Compute absolute positions positions and orientation:
+            position_interpolated, quaternion_interpolated = interpolate_poses(timestamp_from=timestamps_imu,
+                                                             pos_from=position_ref,
                                                              pos0=pos0,
                                                              rot_from=rot_obj,
-                                                             timestamps_to=timestamp_hsi)
+                                                             timestamps_to=timestamp_hsi,
+                                                             use_absolute_position = True)
 
 
             # If the original orientations are with respect to NED
             if not is_global_rot:
-                # Need to compose NED rotations
+                rot_ref = 'NED'
+            else:
+                rot_ref = 'ECEF'
 
-                pos_epsg_orig = config['General']['pos_epsg_orig']
-                pos_epsg_export = config['Coordinate Reference Systems']['exportepsg']
+            # The positions supplied for the reference
+            pos_epsg_orig = config['General']['pos_epsg_orig']
 
-                rot_body_local = RotLib.from_quat(quaternion_hsi)
-                geo_pose_ref = GeoPose(timestamps=timestamp_hsi, rot_obj= rot_body_local, rot_ref='NED', pos = position_hsi, pos_epsg=pos_epsg)
+            # The positions supplied for exporting the model
+            pos_epsg_export = config['Coordinate Reference Systems']['exportepsg']
 
-                # Ensure that position in correct EPSG
-                geo_pose_ref.compute_geocentric_position(epsg_geocsc=pos_epsg_export)
-                #
-                epsg_wgs84 = 4326
-                # calculate the geodetic position
-                geo_pose_ref.compute_geodetic_position(epsg_geod=epsg_wgs84)
-                # calculate orientation
-                geo_pose_ref.compute_geocentric_orientation()
+            rot_interpolated = RotLib.from_quat(quaternion_interpolated)
+            geo_pose_ref = GeoPose(timestamps=timestamp_hsi,
+                                   rot_obj= rot_interpolated, rot_ref=rot_ref,
+                                   pos = position_interpolated, pos_epsg=pos_epsg_orig)
 
-                # Ensure that both are in correct form
-                position_hsi = geo_pose_ref.pos_geocsc
-
-                quaternion_hsi = geo_pose_ref.rot_obj_ecef\
-                    .as_quat()
+            # Convert position to the epsg used for the 3D model
+            geo_pose_ref.compute_geocentric_position(epsg_geocsc=pos_epsg_export)
 
 
+            # calculate the geodetic position using the WGS-84 (for conversion of orientations)
+            epsg_wgs84 = 4326
+            geo_pose_ref.compute_geodetic_position(epsg_geod=epsg_wgs84)
+
+            # calculate ECEF orientation
+            geo_pose_ref.compute_geocentric_orientation()
+
+            # For readability
+            position_ref_ecef = geo_pose_ref.pos_geocsc
+
+            quaternion_ref_ecef = geo_pose_ref.rot_obj_ecef.as_quat()
+
+            condition_for_setting_offsets = (offX == -1 and is_first)
+
+            if condition_for_setting_offsets:
+                # Ensure that flag is not raised again. Offsets should only be set once.
+                is_first = False
+                # Calculate some appropriate offsets in ECEF
+                pos0 = np.mean(position_ref_ecef, axis=0)
 
 
 
-            # Add camera position
-            position_hsi_name = 'nav/position_rgb'
-            hyp.add_dataset(data=position_hsi, name=position_hsi_name)
+        # Add camera position
+        position_ref_name = config['HDF.processed_nav']['quaternion_ref_ecef']
+        hyp.add_dataset(data=position_ref_ecef, name=position_ref_name)
 
-            # Add camera quaternion
-            quaternion_hsi_name = 'nav/quaternion_rgb'
-            hyp.add_dataset(data=quaternion_hsi, name=quaternion_hsi_name)
+        # Add camera quaternion
+        quaternion_ref_name = config['HDF.processed_nav']['quaternion_ref_ecef']
+        hyp.add_dataset(data=quaternion_ref_ecef, name=quaternion_ref_name)
 
-            # Add time stamps
-            time_stamps_name = 'nav/time_stamp'
-            hyp.add_dataset(data=timestamp_hsi, name=time_stamps_name)
+        # Add time stamps
+        time_stamps_name = config['HDF.processed_nav']['timestamp_hsi']
+        hyp.add_dataset(data=timestamp_hsi, name=time_stamps_name)
 
     config.set('General', 'offsetX', str(pos0[0]))
     config.set('General', 'offsetY', str(pos0[1]))
@@ -743,7 +761,7 @@ def reformat_h5_embedded_data_h5(config):
     with open(config_file, 'w') as configfile:
         config.write(configfile)
     return config
-    return config
+
 # The main script for aquiring pose.        
 def export_pose(config_file):
     """
@@ -771,7 +789,8 @@ def export_pose(config_file):
         append_agisoft_data_h5(config=config)
 
     elif poseExportType == 'h5_embedded':
-        config = reformat_h5_embedded_data_h5(config=config)
+        config = reformat_h5_embedded_data_h5(config=config,
+                                              config_file=config_file)
     elif poseExportType == 'independent_file':
         print('There is no support for this export functionality! Fix immediately!')
         config = -1

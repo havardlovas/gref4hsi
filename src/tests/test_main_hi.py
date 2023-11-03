@@ -27,7 +27,6 @@ config.read(config_file)
 def main():
     ## Extract pose.csv and model.ply data from Agisoft Metashape (photogrammetry software) through API.
     ## Fails if you do not have an appropriate project.
-
     # The minimum for georeferencing is to parse 1) Mesh model and 2) The pose of the reference
     config = parsing_utils.export_pose(config_file)
 

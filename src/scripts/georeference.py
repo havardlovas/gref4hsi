@@ -120,14 +120,14 @@ class RayCasting:
     def interpolate_poses(self):
         # Instantiate a camera geometry object from the h5 pose data
 
-        pos = self.hyp.pos_rgb # RGB
-        quat = RotLib.from_quat(self.hyp.quat_rgb) # RGB
+        pos = self.hyp.pos_rgb # Reference positions in ECEF offset by pos0
+        quat = RotLib.from_quat(self.hyp.quat_rgb) # Reference orientations wrt ECEF
         time_pose = self.hyp.pose_time # RGB
 
         # Create a dictionary with keyword arguments
         kwargs_dict = {
             "is_interpolated": "True",
-            "is_offset": "True"
+            "use_absolute_position": "True"
         }
 
         self.RGBCamera = CameraGeometry(pos0=self.pos0, pos=pos, rot=quat, time=time_pose, **kwargs_dict)
@@ -297,31 +297,30 @@ def main(iniPath, mode, is_calibrated):
 
                     if is_calibrated == True:
                         # Append key info to data
-                        dir = 'georeference/'
 
                         # Add global points
                         points_global = rc.gisHSI.points_proj # Use projected system for global description
-                        points_global_name = dir + 'points_global'
+                        points_global_name = config['Georeferencing']['points_ecef_crs']
                         rc.hyp.add_dataset(data = points_global, name=points_global_name)
 
                         # Add local points
                         points_local = rc.HSICamera.camera_to_seabed_local  # Use projected system for global description
-                        points_local_name = dir + 'points_local'
+                        points_local_name = config['Georeferencing']['points_hsi_crs']
                         rc.hyp.add_dataset(data=points_local, name=points_local_name)
 
                         # Add camera position
                         position_hsi = rc.HSICamera.PositionHSI  # Use projected system for global description
-                        position_hsi_name = dir + 'position_hsi'
+                        position_hsi_name = config['Georeferencing']['position_hsi_ecef']
                         rc.hyp.add_dataset(data=position_hsi, name=position_hsi_name)
 
                         # Add camera quaternion
                         quaternion_hsi = rc.HSICamera.RotationHSI.as_quat()  # Use projected system for global description
-                        quaternion_hsi_name = dir + 'quaternion_hsi'
+                        quaternion_hsi_name = config['Georeferencing']['quaternion_hsi_ecef']
                         rc.hyp.add_dataset(data=quaternion_hsi, name=quaternion_hsi_name)
 
                         # Add normals
                         normals_local = rc.HSICamera.normalsLocal # Use projected system for global description
-                        normals_local_name = dir + 'normals_local'
+                        normals_local_name = config['Georeferencing']['normals_hsi_crs']
                         rc.hyp.add_dataset(data=normals_local, name=normals_local_name)
 
                     if rc.hyp.spatial_binning == 1:
