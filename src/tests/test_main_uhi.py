@@ -1,9 +1,7 @@
 import configparser
-import parsing_utils
-import georeference
-import visualize
-
-# This file is meant to be used for testing the processing pipeline of UHI data
+from lib import parsing_utils
+from scripts import georeference
+from scripts import visualize
 
 # Import the configuration file and read it into dictionary
 home_path = 'C:/Users/haavasl/PycharmProjects/hyperspectral_toolchain'

@@ -10,9 +10,10 @@ import pandas as pd
 import pyvista as pv
 from scipy.interpolate import interp1d
 
-from geometry import CameraGeometry, FeatureCalibrationObject, CalibHSI
-from gis_tools import GeoSpatialAbstractionHSI
-from parsing_utils import Hyperspectral
+# Local resources:
+from scripts.geometry import CameraGeometry, FeatureCalibrationObject, CalibHSI
+from scripts.gis_tools import GeoSpatialAbstractionHSI
+from lib.parsing_utils import Hyperspectral
 
 
 class RayCasting:
@@ -60,7 +61,7 @@ class RayCasting:
         self.trans_y = calHSI.ty
         self.trans_z = calHSI.tz
 
-        # Rotation of HSI (boresight) with respect to vehicle frame
+        # Rotation of HSI (boresight) with respect to vehicle navigation frame (often defined by IMU or RGB cam)
         self.rot_x = calHSI.rx
         self.rot_y = calHSI.ry
         self.rot_z = calHSI.rz

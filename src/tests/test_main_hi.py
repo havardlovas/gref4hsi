@@ -1,7 +1,15 @@
+# Standard python library
 import configparser
-import parsing_utils
-import georeference
-import visualize
+import sys
+import os
+
+# Local resources
+from scripts import georeference
+from lib import parsing_utils
+from scripts import visualize
+
+
+
 
 from scripts.modulate_config import
 
