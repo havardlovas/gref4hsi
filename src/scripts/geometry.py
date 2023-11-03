@@ -76,9 +76,10 @@ class CalibHSI:
                 fd.write(xmltodict.unparse(xml_dict))
 
 class CameraGeometry():
-    def __init__(self, pos0, pos, rot, time, is_interpolated = False, is_offset = False):
+    def __init__(self, pos0, pos, rot, time, is_interpolated = False, use_absolute_position = False):
         self.pos0 = pos0
-        if is_offset:
+
+        if use_absolute_position:
             self.Position = pos
         else:
             self.Position = pos - np.transpose(pos0) # Camera pos
@@ -497,7 +498,7 @@ class FeatureCalibrationObject():
 
 
 
-def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, extrapolate = True):
+def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, extrapolate = True, use_absolute_position = True):
     """
 
     :param timestamp_from:
@@ -525,20 +526,26 @@ def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, e
     if timestamps_to[maxInd] > maxRGB:
         maxInd -= 1
 
-    # Interpolate poses. The offsets and everything is pretty hopeless.
+
+
+    # Setting use_absolute_position to True means that position calculations are done with absolute
     referenceGeometry = CameraGeometry(pos0=pos0,
                                pos=pos_from,
                                rot=rot_from,
-                               time=timestamp_from)
+                               time=timestamp_from,
+                               use_absolute_position=use_absolute_position)
 
-    # We borrow a method from the camera object
+    # We exploit a method from the camera object
     referenceGeometry.interpolate(time_hsi=timestamps_to,
                           minIndRGB=minInd,
                           maxIndRGB=maxInd,
                           extrapolate=extrapolate)
 
 
+
     position_to = referenceGeometry.PositionInterpolated
+
+
     quaternion_to = referenceGeometry.RotationInterpolated.as_quat()
 
     return position_to, quaternion_to
@@ -608,7 +615,12 @@ def convert_rotation_ned_2_ecef(rot_obj_ned, position, is_geodetic = True, epsg_
 
 
 class GeoPose:
-    def __init__(self, timestamps, rot_obj, rot_ref, pos, pos_epsg, is_pos_geocentric):
+    """
+    An object that allows to input positions with arbitrary CRS, and orientations either wrt ECEF or NED. As in other
+    places in the project, the orientations are abstracted with rotation objects. The main use case is formatting poses
+    to the correct CRS.
+    """
+    def __init__(self, timestamps, rot_obj, rot_ref, pos, pos_epsg):
         self.timestamps = timestamps
         if rot_ref == 'NED':
             self.rot_obj_ned = rot_obj
@@ -625,15 +637,9 @@ class GeoPose:
         self.epsg = pos_epsg
 
 
-        if is_pos_geocentric:
-            self.pos_geocsc = self.position
-        else:
-            self.pos_geocsc = None
-
         self.lat = None
         self.lon = None
         self.hei = None
-
 
     def compute_geodetic_position(self, epsg_geod):
         """
@@ -642,23 +648,20 @@ class GeoPose:
             EPSG code of the transformed geodetic coordinate system
         """
         # If geocentric position has not been defined.
-        if (self.pos_geocsc == None):
-            from_CRS = CRS.from_epsg(self.epsg)
-            geod_CRS = CRS.from_epsg(epsg_geod)
-            transformer = Transformer.from_crs(from_CRS, geod_CRS)
+        from_CRS = CRS.from_epsg(self.epsg)
+        geod_CRS = CRS.from_epsg(epsg_geod)
+        transformer = Transformer.from_crs(from_CRS, geod_CRS)
 
-            x = self.position[:, 0].reshape((-1, 1))
-            y = self.position[:, 1].reshape((-1, 1))
-            z = self.position[:, 2].reshape((-1, 1))
+        x = self.position[:, 0].reshape((-1, 1))
+        y = self.position[:, 1].reshape((-1, 1))
+        z = self.position[:, 2].reshape((-1, 1))
 
-            (lat, lon, hei) = transformer.transform(xx=x, yy=y, zz=z)
+        (lat, lon, hei) = transformer.transform(xx=x, yy=y, zz=z)
 
-            self.epsg_geod = epsg_geod
-            self.lat = lat.reshape((self.position.shape[0], 1))
-            self.lon = lon.reshape((self.position.shape[0], 1))
-            self.hei = hei.reshape((self.position.shape[0], 1))
-        else:
-            pass
+        self.epsg_geod = epsg_geod
+        self.lat = lat.reshape((self.position.shape[0], 1))
+        self.lon = lon.reshape((self.position.shape[0], 1))
+        self.hei = hei.reshape((self.position.shape[0], 1))
 
     def compute_geocentric_position(self, epsg_geocsc):
         """
@@ -677,8 +680,7 @@ class GeoPose:
 
         (x, y, z) = transformer.transform(xx=x, yy=y, zz=z)
 
-        self.pos_geocsc = np.concatenate((x,y,z), axis = 1)
-
+        self.pos_geocsc = np.concatenate((x, y, z), axis = 1)
 
     def compute_geocentric_orientation(self):
         if self.rot_obj_ecef == None:
@@ -712,8 +714,6 @@ class GeoPose:
 
         else:
             pass
-
-
 
     def compute_rot_obj_ned_2_ecef(self):
 
