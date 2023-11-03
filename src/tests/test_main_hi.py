@@ -3,22 +3,9 @@ import configparser
 import sys
 import os
 
-current_directory = os.getcwd()
-print("Current working directory:", current_directory)
-
 # Local resources
 from scripts import georeference
-# Relative import
 from lib import parsing_utils
-
-
-from tests.test_main_uhi import TestClass
-
-TestClass.say_hello()
-
-
-# Equivalent absolute import
-
 from scripts import visualize
 
 
