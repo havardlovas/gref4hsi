@@ -11,7 +11,7 @@ from scripts import visualize
 
 
 
-from scripts.modulate_config import
+from scripts.modulate_config import prepend_data_dir_to_relative_paths
 
 # This script is meant to be used for testing the processing pipeline of airborne HI data
 
