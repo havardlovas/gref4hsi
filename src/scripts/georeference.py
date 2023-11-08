@@ -40,12 +40,12 @@ class RayCasting:
             print('Consult georeference_drone_imagery_multi_ray.py to see more about including a texture image')
 
 
-    def load_cam_calibration(self, filenameCal, config):
+    def load_cam_calibration(self, filename_cal, config):
         # See paper by Sun, Bo, et al. "Calibration of line-scan cameras for precision measurement." Applied optics 55.25 (2016): 6836-6843.
         # Loads line camera parameters for the hyperspectral imager from an xml file.
 
         # Certain imagers deliver geometry "per pixel". This can be resolved by fitting model parameters.
-        calHSI = CalibHSI(file_name_cal=filenameCal, config = config)
+        calHSI = CalibHSI(file_name_cal_xml=filename_cal, config = config)
         self.f = calHSI.f
         self.v_c = calHSI.cx
 
@@ -171,7 +171,7 @@ class RayCasting:
         self.HSICamera.writeRGBPointCloud(config = self.config, hyp = self.hyp, transect_string=self.transect_string)
 
         print('Point cloud written')
-        import visualize
+        from scripts import visualize
         visualize.show_projected_hsi_points(HSICameraGeometry=self.HSICamera, config=self.config, transect_string=self.transect_string)
 
 
@@ -182,7 +182,7 @@ class RayCasting:
 
         gisHSI.footprint_to_shape_file()
 
-        gisHSI.resample_datacube(self.hyp, rgb_composite=True, minInd=self.minInd, maxInd=self.maxInd, extrapolate = True)
+        gisHSI.resample_datacube(self.hyp, rgb_composite_only=False, minInd=self.minInd, maxInd=self.maxInd, extrapolate = True)
 
         gisHSI.compare_hsi_composite_with_rgb_mosaic()
 
@@ -221,14 +221,14 @@ def main(iniPath, mode, is_calibrated):
     config.read(iniPath)
 
     # Paths to pose csv, 3D model ply file and the directory of H5 files
-    path_pose = config['General']['posePath']
-    path_mesh = config['General']['modelPath']
-    dir_r = config['HDF']['h5Dir']
+    path_pose = config['Absolute Paths']['posePath']
+    path_mesh = config['Absolute Paths']['modelPath']
+    dir_r = config['Absolute Paths']['h5Dir']
     # The path to the XML file
-    hsi_cal_xml_b1 = config['Georeferencing']['HSICalibFileB1']
-    hsi_cal_xml_b2 = config['Georeferencing']['HSICalibFileB2']
+    hsi_cal_xml_b1 = config['Absolute Paths']['HSICalibFileB1']
+    hsi_cal_xml_b2 = config['Absolute Paths']['HSICalibFileB2']
     if is_calibrated != True:
-        hsi_cal_xml = config['Calibration']['hsiCalibFileInit']
+        hsi_cal_xml = config['Absolute Paths']['hsiCalibFileInit']
     rc = RayCasting(config)
 
     # Load mesh
@@ -238,17 +238,17 @@ def main(iniPath, mode, is_calibrated):
     # Only relevant for calibration part of things
     if is_calibrated != True:
         calObj1 = FeatureCalibrationObject(type='camera calibration', config=config)
-        calObj1.load_cam_calibration(filenameCal=hsi_cal_xml, config=config)
+        calObj1.load_cam_calibration(filename_cal=hsi_cal_xml, config=config)
 
         calObj2 = FeatureCalibrationObject(type='camera calibration', config=config)
-        calObj2.load_cam_calibration(filenameCal=hsi_cal_xml, config=config)
+        calObj2.load_cam_calibration(filename_cal=hsi_cal_xml, config=config)
     else:
         # Not the most elegant approach. Could encode it somehow
         calObj1 = FeatureCalibrationObject(type='camera calibration', config=config)
-        calObj1.load_cam_calibration(filenameCal=hsi_cal_xml_b1, config=config)
+        calObj1.load_cam_calibration(filename_cal=hsi_cal_xml_b1, config=config)
 
         calObj2 = FeatureCalibrationObject(type='camera calibration', config=config)
-        calObj2.load_cam_calibration(filenameCal=hsi_cal_xml_b2, config=config)
+        calObj2.load_cam_calibration(filename_cal=hsi_cal_xml_b2, config=config)
 
 
 
@@ -282,11 +282,11 @@ def main(iniPath, mode, is_calibrated):
                     # binning settings
                     if is_calibrated == True:
                         if rc.hyp.spatial_binning == 1:
-                            rc.load_cam_calibration(filenameCal=hsi_cal_xml_b1, config=config)
+                            rc.load_cam_calibration(filename_cal=hsi_cal_xml_b1, config=config)
                         if rc.hyp.spatial_binning == 2:
-                            rc.load_cam_calibration(filenameCal=hsi_cal_xml_b2, config=config)
+                            rc.load_cam_calibration(filename_cal=hsi_cal_xml_b2, config=config)
                     else:
-                        rc.load_cam_calibration(filenameCal=hsi_cal_xml, config= config)
+                        rc.load_cam_calibration(filename_cal=hsi_cal_xml, config= config)
 
 
                     # The interpolation of poses can be done prior to calibration. We want a position and orientation
@@ -310,12 +310,12 @@ def main(iniPath, mode, is_calibrated):
 
                         # Add camera position
                         position_hsi = rc.HSICamera.PositionHSI  # Use projected system for global description
-                        position_hsi_name = config['Georeferencing']['position_hsi_ecef']
+                        position_hsi_name = config['Georeferencing']['position_ecef']
                         rc.hyp.add_dataset(data=position_hsi, name=position_hsi_name)
 
                         # Add camera quaternion
                         quaternion_hsi = rc.HSICamera.RotationHSI.as_quat()  # Use projected system for global description
-                        quaternion_hsi_name = config['Georeferencing']['quaternion_hsi_ecef']
+                        quaternion_hsi_name = config['Georeferencing']['quaternion_ecef']
                         rc.hyp.add_dataset(data=quaternion_hsi, name=quaternion_hsi_name)
 
                         # Add normals
@@ -325,12 +325,12 @@ def main(iniPath, mode, is_calibrated):
 
                     if rc.hyp.spatial_binning == 1:
                         calObj1.appendGeometry(hsiGis=rc.gisHSI, cameraGeometry=rc.HSICamera, binning = rc.hyp.spatial_binning)
-                        calObjPath1 = config['Calibration']['hsicalibObjPathB1']
+                        calObjPath1 = config['Absolute Paths']['hsicalibObjPathB1']
                         file_cal1 = open(calObjPath1, 'wb')
                         pickle.dump(calObj1, file_cal1)
                     if rc.hyp.spatial_binning == 2:
                         calObj2.appendGeometry(hsiGis=rc.gisHSI, cameraGeometry=rc.HSICamera, binning = rc.hyp.spatial_binning)
-                        calObjPath2 = config['Calibration']['hsicalibObjPathB2']
+                        calObjPath2 = config['Absolute Paths']['hsicalibObjPathB2']
                         file_cal2 = open(calObjPath2, 'wb')
                         pickle.dump(calObj2, file_cal2)
 
@@ -347,13 +347,13 @@ def main(iniPath, mode, is_calibrated):
         config = configparser.ConfigParser()
         config.read(iniPath)
 
-        calObjPath1 = config['Calibration']['hsicalibObjPathB1']
+        config['Absolute Paths']['hsicalibObjPathB1']
 
         file1 = open(calObjPath1, 'rb')
         ## dump information to that file
         calObj1 = pickle.load(file1)
 
-        #calObjPath2 = config['Calibration']['hsicalibObjPathB2']
+        #calObjPath2 = config['Absolute Paths']['hsicalibObjPathB2']
 
         #file2 = open(calObjPath2, 'rb')
         #### dump information to that file
@@ -370,7 +370,7 @@ def main(iniPath, mode, is_calibrated):
             res = least_squares(fun = objective_function, x0 = param0, args= (calObj1,) , x_scale='jac', method='lm')
 
 
-            file_name_calib = config['Georeferencing']['hsicalibfileb1']
+            file_name_calib = config['Absolute Paths']['hsicalibfileb1']
 
 
             param_calib = res.x
@@ -390,7 +390,7 @@ def main(iniPath, mode, is_calibrated):
             from scipy.optimize import least_squares
             res2 = least_squares(fun=objective_function, x0=param02, args=(calObj2,), x_scale='jac', method='lm')
 
-            file_name_calib2 = config['Georeferencing']['hsicalibfileb2']
+            file_name_calib2 = config['Absolute Paths']['hsicalibfileb2']
 
             param_calib2 = res2.x
 

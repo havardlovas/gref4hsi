@@ -286,7 +286,7 @@ class CameraGeometry():
         wl_red = float(config['General']['RedWavelength'])
         wl_green = float(config['General']['GreenWavelength'])
         wl_blue = float(config['General']['BlueWavelength'])
-        dir_point_cloud = config['Georeferencing']['rgbPointCloudPath']
+        dir_point_cloud = config['Absolute Paths']['rgbPointCloudPath']
 
         wavelength_nm = np.array([wl_red, wl_green, wl_blue])
 
@@ -321,8 +321,8 @@ class FeatureCalibrationObject():
         self.HSIRotationFeature = [] #
         self.isfirst = True
 
-    def load_cam_calibration(self, filenameCal, config):
-        calHSI = CalibHSI(file_name_cal=filenameCal, config = config)  # Generates a calibration object
+    def load_cam_calibration(self, filename_cal, config):
+        calHSI = CalibHSI(file_name_cal_xml=filename_cal, config = config)  # Generates a calibration object
         self.f = calHSI.f
         self.v_c = calHSI.cx
         self.k1 = calHSI.k1
@@ -544,7 +544,6 @@ def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, e
 
 
     position_to = referenceGeometry.PositionInterpolated
-
 
     quaternion_to = referenceGeometry.RotationInterpolated.as_quat()
 

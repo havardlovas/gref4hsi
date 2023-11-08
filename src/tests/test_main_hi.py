@@ -7,16 +7,15 @@ import os
 from scripts import georeference
 from lib import parsing_utils
 from scripts import visualize
-
-
-
-
 from scripts.modulate_config import prepend_data_dir_to_relative_paths
 
-# This script is meant to be used for testing the processing pipeline of airborne HI data
+"""
+This script is meant to be used for testing the processing pipeline of airborne HI data.
+""" 
 
 # The configuration file stores the settings for georeferencing
-config_file = 'C:/Users/haavasl/PycharmProjects/hyperspectral_toolchain/data/NyAlesundAirborne28052023/configuration.ini'
+cwd = os.getcwd()
+config_file = cwd + '/data/Skogn21012021/configuration.ini'
 # Set the data directory for the mission (locally where the data is stored)
 prepend_data_dir_to_relative_paths(config_path=config_file)
 
