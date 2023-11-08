@@ -1,13 +1,19 @@
 import configparser
+import os
+
 from lib import parsing_utils
 from scripts import georeference
 from scripts import visualize
+from scripts.modulate_config import prepend_data_dir_to_relative_paths
 
-# Import the configuration file and read it into dictionary
-home_path = 'C:/Users/haavasl/PycharmProjects/hyperspectral_toolchain'
-data_dir = home_path + '/data/Skogn21012021'
+# The configuration file stores the settings for georeferencing
+cwd = os.getcwd()
+config_file = cwd + '/data/Skogn21012021/configuration.ini'
+print(config_file)
+# Set the data directory for the mission (locally where the data is stored)
+prepend_data_dir_to_relative_paths(config_path=config_file)
+
 # TODO: update config.ini automatically with paths for simple reproducability
-config_file = data_dir + '/configuration.ini'
 config = configparser.ConfigParser()
 config.read(config_file)
 
@@ -16,8 +22,8 @@ def main():
     ## Fails if you do not have an appropriate project.
 
     # The minimum for georeferencing is to parse 1) Mesh model and 2) The pose of the reference
-    config = parsing_utils.export_pose(config_file)
-    parsing_utils.agisoft_export_model(config_file)
+    #config = parsing_utils.export_pose(config_file)
+    #parsing_utils.agisoft_export_model(config_file)
 
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
     #visualize.show_mesh_camera(config)

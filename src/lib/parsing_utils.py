@@ -67,19 +67,22 @@ class Hyperspectral:
                 self.RGBImgs = self.f['rgb/pixels'][()]
 
                 # Check if the dataset exists
-                if 'georeference' in self.f:
-                    dir = 'georeference/'
-                    self.normals_local = self.f[dir + 'normals_local'][()]
-                    self.points_global = self.f[dir + 'points_global'][()]
-                    self.points_local = self.f[dir + 'points_local'][()]
-                    self.position_hsi = self.f[dir + 'position_hsi'][()]
-                    self.quaternion_hsi = self.f[dir + 'quaternion_hsi'][()]
+                georeferenced_nav_folder = config['Georeferencing']['folder']
+                processed_nav_folder = config['HDF.processed_nav']['folder']
+                if georeferenced_nav_folder in self.f:
+                    georef_config = config['Georeferencing']
+                    self.normals_local = self.f[georef_config['normals_hsi_crs']][()]
+                    self.points_global = self.f[georef_config['points_ecef_crs']][()]
+                    self.points_local = self.f[georef_config['points_hsi_crs']][()]
+
+                    self.position_hsi = self.f[georef_config['position_ecef']][()]
+                    self.quaternion_hsi = self.f[georef_config['quaternion_ecef']][()]
                 # Check if the dataset exists
-                if 'nav' in self.f:
-                    dir = 'nav/'
-                    self.pos_rgb = self.f[dir + 'position_rgb'][()]
-                    self.quat_rgb = self.f[dir + 'quaternion_rgb'][()]
-                    self.pose_time = self.f[dir + 'time_stamp'][()]
+                if processed_nav_folder in self.f:
+                    processed_nav_config = config['HDF.processed_nav']
+                    self.pos_rgb = self.f[processed_nav_config['position_ecef']][()]
+                    self.quat_rgb = self.f[processed_nav_config['quaternion_ecef']][()]
+                    self.pose_time = self.f[processed_nav_config['timestamp']][()]
 
             else:
                 dataCubePath = config['HDF.hyperspectral']['dataCube']
@@ -112,22 +115,23 @@ class Hyperspectral:
                 except (KeyError, TypeError):
                     pass
 
+                georeferenced_nav_folder = config['Georeferencing']['folder']
+                """if georeferenced_nav_folder in self.f:
+                    georef_config = config['Georeferencing']
+                    self.normals_local = self.f[georef_config['normals_hsi_crs']][()]
+                    self.points_global = self.f[georef_config['points_ecef_crs']][()]
+                    self.points_local = self.f[georef_config['points_hsi_crs']][()]
 
+                    self.position_hsi = self.f[georef_config['position_ecef']][()]
+                    self.quaternion_hsi = self.f[georef_config['quaternion_ecef']][()]"""
                 # Check if the dataset exists
-                #if 'georeference' in self.f:
-                #    dir_geo = 'georeference/'
-                #    self.normals_local = self.f[dir_geo + 'normals_local'][()]
-                #    self.points_global = self.f[dir_geo + 'points_global'][()]
-                #    self.points_local = self.f[dir_geo + 'points_local'][()]
-                #    self.position_hsi = self.f[dir_geo + 'position_hsi'][()]
-                #    self.quaternion_hsi = self.f[dir_geo + 'quaternion_hsi'][()]
-#
-                #if 'nav' in self.f:
-                #    # Navigation data for the reference (Typically IMU or RGB cam)
-                #    dir_nav = 'nav/'
-                #    self.pos_rgb = self.f[dir_nav + 'position_rgb'][()]
-                #    self.quat_rgb = self.f[dir_nav + 'quaternion_rgb'][()]
-                #    self.pose_time = self.f[dir_nav + 'time_stamp'][()]
+                processed_nav_folder = config['HDF.processed_nav']['folder']
+                if processed_nav_folder in self.f:
+                    processed_nav_config = config['HDF.processed_nav']
+                    self.pos_rgb = self.f[processed_nav_config['position_ecef']][()]
+                    self.quat_rgb = self.f[processed_nav_config['quaternion_ecef']][()]
+                    self.pose_time = self.f[processed_nav_config['timestamp']][()]
+                    
 
 
 
@@ -365,8 +369,8 @@ def agisoft_export_pose(config, config_file):
     chunkName = [chunk_str]
 
     # Output. CSV contains labeled roll, pitch, yaw
-    csv_name = config['General']['posePath']
-    model_name = config['General']['modelPath']
+    csv_name = config['Absolute Paths']['posePath']
+    model_name = config['Absolute Paths']['modelPath']
 
     chunks = doc.chunks
 
@@ -510,7 +514,7 @@ def agisoft_export_model(config_file):
     chunkName = [chunk_str]
 
     # Output.
-    model_name = config['General']['modelPath']
+    model_name = config['Absolute Paths']['modelPath']
 
     chunks = doc.chunks
     # Extract camera model from project
@@ -541,7 +545,7 @@ def append_agisoft_data_h5(config):
                 None: The function returns nothing.
     """
     # Retrieve the pose file (per RGB image, with RGB image name tags)
-    filenamePose = config['General']['posePath']
+    filenamePose = config['Absolute Paths']['posePath']
     pose = pd.read_csv(filenamePose, sep=',', header=0)
 
     # Offsets should correspond with polygon model offset
@@ -615,17 +619,28 @@ def append_agisoft_data_h5(config):
 
             # Add camera position
             position_hsi = RGBCamera.PositionInterpolated
-            position_hsi_name = 'nav/position_rgb'
-            hyp.add_dataset(data=position_hsi, name=position_hsi_name)
+
+
+            # Add camera position
+            
+
+            # Add camera quaternion
+            
+
+            # Add time stamps
+            
+            
+            position_ref_name = config['HDF.processed_nav']['position_ecef']
+            hyp.add_dataset(data=position_hsi, name=position_ref_name)
 
             # Add camera quaternion
             quaternion_hsi = RGBCamera.RotationInterpolated.as_quat()
-            quaternion_hsi_name = 'nav/quaternion_rgb'
-            hyp.add_dataset(data=quaternion_hsi, name=quaternion_hsi_name)
+            quaternion_ref_name = config['HDF.processed_nav']['quaternion_ecef']
+            hyp.add_dataset(data=quaternion_hsi, name=quaternion_ref_name)
 
             # Add time stamp
             time_stamps = RGBCamera.time_hsi  # Use projected system for global description
-            time_stamps_name = 'nav/time_stamp'
+            time_stamps_name = config['HDF.processed_nav']['timestamp']
             hyp.add_dataset(data=time_stamps, name=time_stamps_name)
 
 
@@ -648,6 +663,8 @@ def reformat_h5_embedded_data_h5(config, config_file):
     if offX == -1:
         # Set pos0 to None to ensure that error is raised if it is used for anything
         pos0 = None
+    else:
+        pos0 = np.array([offX, offY, offZ])
 
     # Traverse through h5 dir to append the data to file
     h5dir = config['Absolute Paths']['h5dir']
@@ -667,19 +684,15 @@ def reformat_h5_embedded_data_h5(config, config_file):
             is_global_rot = config['HDF.raw_nav']['is_global_rot']
 
             # Parse position
-            position_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['position_ecef'])\
-                .reshape((-1,3))
+            position_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['position'])
+
+            print('Something in the month of may')
             if position_ref.shape[0] == 3:
                 position_ref = np.transpose(position_ref)
 
 
             timestamps_imu = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['timestamp'])\
                 .reshape(-1)
-
-
-
-
-
 
 
             # The rotation of the reference
@@ -741,17 +754,17 @@ def reformat_h5_embedded_data_h5(config, config_file):
 
 
 
-        # Add camera position
-        position_ref_name = config['HDF.processed_nav']['quaternion_ref_ecef']
-        hyp.add_dataset(data=position_ref_ecef, name=position_ref_name)
+            # Add camera position
+            position_ref_name = config['HDF.processed_nav']['position_ecef']
+            hyp.add_dataset(data=position_ref_ecef, name=position_ref_name)
 
-        # Add camera quaternion
-        quaternion_ref_name = config['HDF.processed_nav']['quaternion_ref_ecef']
-        hyp.add_dataset(data=quaternion_ref_ecef, name=quaternion_ref_name)
+            # Add camera quaternion
+            quaternion_ref_name = config['HDF.processed_nav']['quaternion_ecef']
+            hyp.add_dataset(data=quaternion_ref_ecef, name=quaternion_ref_name)
 
-        # Add time stamps
-        time_stamps_name = config['HDF.processed_nav']['timestamp_hsi']
-        hyp.add_dataset(data=timestamp_hsi, name=time_stamps_name)
+            # Add time stamps
+            time_stamps_name = config['HDF.processed_nav']['timestamp']
+            hyp.add_dataset(data=timestamp_hsi, name=time_stamps_name)
 
     config.set('General', 'offsetX', str(pos0[0]))
     config.set('General', 'offsetY', str(pos0[1]))

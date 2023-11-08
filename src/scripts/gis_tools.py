@@ -84,18 +84,18 @@ class GeoSpatialAbstractionHSI():
 
         gdf = gpd.GeoDataFrame(geometry=[self.footprint_shp], crs=self.crs)
 
-        shape_path = self.config['Georeferencing']['footPrintPaths'] + self.name + '.shp'
+        shape_path = self.config['Absolute Paths']['footPrintPaths'] + self.name + '.shp'
 
         gdf.to_file(shape_path, driver='ESRI Shapefile')
-    def resample_datacube(self, hyp, rgb_composite, minInd, maxInd, extrapolate = True):
+    def resample_datacube(self, hyp, rgb_composite_only, minInd, maxInd, extrapolate = True):
         #
         self.res = float(self.config['Georeferencing']['resolutionHyperspectralMosaic'])
         wl_red = float(self.config['General']['RedWavelength'])
         wl_green = float(self.config['General']['GreenWavelength'])
         wl_blue = float(self.config['General']['BlueWavelength'])
 
-        rgb_composite_path = self.config['Georeferencing']['rgbCompositePaths']
-        datacube_path = self.config['Georeferencing']['orthoCubePaths']
+        rgb_composite_path = self.config['Absolute Paths']['rgbCompositePaths']
+        datacube_path = self.config['Absolute Paths']['orthoCubePaths']
         resamplingMethod = self.config['Georeferencing']['resamplingMethod']
         
         # The footprint-shape is a in a vectorized format and needs to be mapped into a raster-mask
@@ -114,58 +114,63 @@ class GeoSpatialAbstractionHSI():
         band_ind_G = np.argmin(np.abs(wavelength_nm[1] - hyp.band2Wavelength))
         band_ind_B = np.argmin(np.abs(wavelength_nm[2] - hyp.band2Wavelength))
         n_bands = len(hyp.band2Wavelength)
+        wavelengths=hyp.band2Wavelength
 
-        if rgb_composite:
-            if extrapolate == False:
-                datacube = hyp.dataCubeRadiance[minInd:maxInd, :, :].reshape((-1, n_bands))
-                rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+        
+        if extrapolate == False:
+            datacube = hyp.dataCubeRadiance[minInd:maxInd, :, :].reshape((-1, n_bands))
+            rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
 
-            elif extrapolate == True:
-                datacube = hyp.dataCubeRadiance[:, :, :].reshape((-1, n_bands))
-                rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
-            transform = rasterio.transform.from_bounds(xmin, ymin, xmax, ymax, width, height)
+        elif extrapolate == True:
+            datacube = hyp.dataCubeRadiance[:, :, :].reshape((-1, n_bands))
+            rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+        transform = rasterio.transform.from_bounds(xmin, ymin, xmax, ymax, width, height)
 
-            # Horizontal coordinates of intersections
-            coords = self.points_proj[:, :, 0:2].reshape((-1, 2))
-            if resamplingMethod == 'Nearest':
-                tree = NearestNeighbors(radius=0.01).fit(coords)
-                xi, yi = np.meshgrid(np.linspace(xmin, xmax, width), np.linspace(ymin, ymax, height))
-                xy = np.vstack((xi.flatten(), yi.flatten())).T
-                dist, indexes = tree.kneighbors(xy, 1)
+        del hyp
 
-                # Build the RGB cube from the indices
-                ortho_rgb = rgb_cube[indexes, :].flatten()
-                # Build datacube
-                ortho_datacube = datacube[indexes, :].flatten()
+        # Horizontal coordinates of intersections
+        coords = self.points_proj[:, :, 0:2].reshape((-1, 2))
+        if resamplingMethod == 'Nearest':
+            tree = NearestNeighbors(radius=0.01).fit(coords)
+            xi, yi = np.meshgrid(np.linspace(xmin, xmax, width), np.linspace(ymin, ymax, height))
+            xy = np.vstack((xi.flatten(), yi.flatten())).T
+            dist, indexes = tree.kneighbors(xy, 1)
 
-                ortho_rgb = np.flip(ortho_rgb.reshape((height, width, 3)).astype(np.float64), axis = 0)
-                ortho_datacube = np.flip(ortho_datacube.reshape((height, width, n_bands)).astype(np.float64), axis=0)
+            # Build the RGB cube from the indices
+            ortho_rgb = rgb_cube[indexes, :].flatten()
+            # Build datacube
+            ortho_datacube = datacube[indexes, :]
 
-                self.width_rectified = width
-                self.height_rectified = height
-                self.indexes = indexes
+            ortho_rgb = np.flip(ortho_rgb.reshape((height, width, 3)).astype(np.float64), axis = 0)
+            ortho_datacube = np.flip(ortho_datacube.reshape((height, width, n_bands)).astype(np.float64), axis=0)
+
+            self.width_rectified = width
+            self.height_rectified = height
+            self.indexes = indexes
 
 
 
 
-            # Set nodata value
-            nodata = -9999
-            ortho_rgb[mask == 1, :] = nodata
-            ortho_datacube[mask == 1, :] = nodata
+        # Set nodata value
+        nodata = -9999
+        ortho_rgb[mask == 1, :] = nodata
+        ortho_datacube[mask == 1, :] = nodata
 
-            # Arange datacube or composite in rasterio-friendly structure
-            ortho_rgb = np.transpose(ortho_rgb, axes = [2, 0, 1])
+        # Arange datacube or composite in rasterio-friendly structure
+        ortho_rgb = np.transpose(ortho_rgb, axes = [2, 0, 1])
+        
+
+
+        # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
+        with rasterio.open(rgb_composite_path + self.name + '.tif', 'w', driver='GTiff',
+                                height=height, width=width, count=3, dtype=np.float64,
+                                crs=self.crs, transform=transform, nodata=nodata) as dst:
+
+            dst.write(ortho_rgb)
+        # Write ENVI-style hyperspectral datacube
+        if rgb_composite_only == False:
             ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])
-
-
-            # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
-            with rasterio.open(rgb_composite_path + self.name + '.tif', 'w', driver='GTiff',
-                                   height=height, width=width, count=3, dtype=np.float64,
-                                   crs=self.crs, transform=transform, nodata=nodata) as dst:
-
-                dst.write(ortho_rgb)
-            # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
-            self.write_datacube_ENVI(ortho_datacube, nodata, transform, datacube_path = datacube_path + self.name, wavelengths=hyp.band2Wavelength)
+            self.write_datacube_ENVI(ortho_datacube, nodata, transform, datacube_path = datacube_path + self.name, wavelengths=wavelengths)
 
 
 
@@ -206,11 +211,11 @@ class GeoSpatialAbstractionHSI():
 
 
     def compare_hsi_composite_with_rgb_mosaic(self):
-        self.rgb_ortho_path = self.config['Georeferencing']['rgbOrthoPath']
-        self.hsi_composite = self.config['Georeferencing']['rgbCompositePaths'] + self.name + '.tif'
-        self.rgb_ortho_reshaped = self.config['Georeferencing']['rgbOrthoReshaped'] + self.name + '.tif'
-        self.dem_path = self.config['Georeferencing']['demPath']
-        self.dem_reshaped = self.config['Georeferencing']['demReshaped'] + self.name + '_dem.tif'
+        self.rgb_ortho_path = self.config['Absolute Paths']['rgbOrthoPath']
+        self.hsi_composite = self.config['Absolute Paths']['rgbCompositePaths'] + self.name + '.tif'
+        self.rgb_ortho_reshaped = self.config['Absolute Paths']['rgbOrthoReshaped'] + self.name + '.tif'
+        self.dem_path = self.config['Absolute Paths']['demPath']
+        self.dem_reshaped = self.config['Absolute Paths']['demReshaped'] + self.name + '_dem.tif'
 
 
         self.resample_rgb_ortho_to_hsi_ortho()
