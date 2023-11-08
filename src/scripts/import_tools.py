@@ -15,14 +15,6 @@ import osr
 from pyproj import CRS, Transformer
 import pandas as pd
 
-def rotMatNED2ECEF(lat, lon):
-    l = np.deg2rad(lon)
-    mu = np.deg2rad(lat)
-
-    R_ned_ecef = np.array([[-np.cos(l) * np.sin(mu), -np.sin(l), -np.cos(l) * np.cos(mu)],
-                          [-np.sin(l) * np.sin(mu), np.cos(l), -np.sin(l) * np.cos(mu)],
-                          [np.cos(mu), 0, -np.sin(mu)]])
-    return R_ned_ecef
 
 class DataLogger:
     def __init__(self, filename, header):
@@ -42,104 +34,6 @@ class DataLogger:
                 fh.write(line + '\n')
 
 
-def extract_pose_ardupilot(config, iniPath):
-    att_path = config['General']['ardupath'] + 'Att.csv'
-
-    from scipy.spatial.transform import Rotation as RotLib
-    import pandas as pd
-    import pymap3d as pm
-    from scipy.spatial.transform import Slerp
-    from scipy.interpolate import interp1d
-
-    df_att = pd.read_csv(att_path)
-
-    # Convert the DataFrame to a matrix (list of lists)
-    matrix_att = np.array(df_att.values.tolist())
-
-    Rotation = RotLib.from_euler("ZYX", np.flip(matrix_att[:,1:4], axis = 1), degrees=True)
-
-    time_rot = matrix_att[:,0]
-
-    pos_path = config['General']['ardupath'] + 'pos.csv'
-    # Define the data logger:
-
-    df_pos = pd.read_csv(pos_path)
-
-    matrix_pos = np.array(df_pos.values.tolist())
-
-    time_pos = matrix_pos[:, 0]
-    Position = matrix_pos[:,1:4]
-
-    linearPositionInterpolator = interp1d(time_pos, np.transpose(Position), fill_value='extrapolate')
-    PositionInterpolated = np.transpose(linearPositionInterpolator(time_rot))
-
-    pose_path = config['General']['ardupath'] + 'pose.csv'
-
-    config.set('General', 'posepath', pose_path)
-
-    epsg_proj = 4326
-    epsg_geocsc = config['General']['modelepsg']
-    # Transform the mesh points to ECEF.
-
-    geocsc = CRS.from_epsg(epsg_geocsc)
-    proj = CRS.from_epsg(epsg_proj)
-    transformer = Transformer.from_crs(proj, geocsc)
-
-    points_proj = PositionInterpolated
-
-    lat = points_proj[:, 0].reshape((-1, 1))
-    lon = points_proj[:, 1].reshape((-1, 1))
-    hei = points_proj[:, 2].reshape((-1, 1))
-
-    (xECEF, yECEF, zECEF) = transformer.transform(xx=lat, yy=lon, zz=hei)
-
-    pos_geocsc = np.concatenate((xECEF.reshape((-1,1)), yECEF.reshape((-1,1)), zECEF.reshape((-1,1))), axis = 1)
-
-    #dlogr = DataLogger(pose_path, 'CameraLabel, X, Y, Z, Roll, Pitch, Yaw, RotX, RotY, RotZ')
-
-
-
-    data_matrix = np.zeros((len(time_rot), 10))
-    for i in range(len(time_rot)):
-
-            # We append
-        pos_geod = PositionInterpolated[i, :]
-
-
-
-        R_n_e = rotMatNED2ECEF(lat=pos_geod[0], lon=pos_geod[1])
-
-        Rotation_n = RotLib.from_matrix(R_n_e)
-
-        Rotation_e = Rotation_n*Rotation[i] # Composing rotations
-
-        roll = matrix_att[i, 1]
-        pitch = matrix_att[i, 2]
-        yaw = matrix_att[i, 3]
-
-        if i%1000 == 0:
-            print(i)
-
-        rotz, roty, rotx = Rotation_e.as_euler("ZYX", degrees=True)
-
-        pos = pos_geocsc[i,:]
-
-        data_matrix[i,:] = np.array([time_rot[i], pos[0], pos[1], pos[2], roll, pitch, yaw, rotx, roty, rotz])
-
-        #dlogr.append_data([time_rot[i], pos[0], pos[1], pos[2], roll, pitch, yaw, rotx, roty, rotz])
-
-
-
-    headers = ['Timestamp', ' X', ' Y', ' Z', ' Roll', ' Pitch', ' Yaw', ' RotX', ' RotY', ' RotZ']
-
-    # Create a DataFrame from the data_matrix and headers
-    df = pd.DataFrame(data_matrix, columns=headers)
-
-    # Save the DataFrame as a CSV file
-    df.to_csv(pose_path, index=False)
-
-    with open(iniPath, 'w') as configfile:
-        config.write(configfile)
 
 
 def extract_model(config, iniPath):

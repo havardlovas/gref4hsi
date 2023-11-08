@@ -4,17 +4,16 @@ The hyperspectral toolchain is a toolbox for the post-processing of hyperspectra
 
 Installation instructions:
 
-•	Set up a virtual environment with python 3.8. It is possible to attempt this from the requirements.txt or *.yml file but then I would put gdal to the top of the dependency list.
+•	Set up a virtual environment with python 3.8. The following has been confirmed to work with anaconda virtual environment with python=3.8 on a windows 10, dell precision
 
-•	Metashape, GDAL and rasterio: These are downloaded as wheel (*.whl) files to the “/dependencies” folder. Navigate here “cd /dependencies” and run the following to install these:
+•	Metashape, GDAL and rasterio: These are downloaded as wheel (*.whl) files for python 3.8 to the “/dependencies” folder. Navigate here “cd /dependencies” and run the following to install these:
 for %x in (dir *.whl) do python -m pip install %x
 
 •	For remaining dependencies, run:
-pip install opencv-python dill geopandas h5py lmfit matplotlib numpy open3d pandas Pillow pymap3d pyproj pyvista pyvistaqt scikit-learn scipy shapely spectral xmltodict pykdtree trimesh rtree pyembree sphinx --user
+pip install -r requirements.txt
 
-•	The pyvista function multi_ray_trace depends on the Embree library for CPU acceleration and could be tested with “/test/test_multi_ray_trace.py”. If it does not work, check:
+•	A *.bat script was added for automated installation and testing.
 
-https://github.com/pyvista/pyvista/issues/1529 
-
-for how to install Embree.
+•	The pyvista function multi_ray_trace depends on the pyembree install and should be tested with “/test/test_multi_ray_trace.py”. For my machine the test takes 0.35 s. If it does not work, consider installing pyembree with anaconda (for mac and linux):
+conda install -c conda-forge pyembree
 

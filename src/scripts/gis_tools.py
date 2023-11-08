@@ -2,19 +2,24 @@ import cv2 as cv
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
+
 import pyproj
-import rasterio
-from osgeo import gdal
 from pyproj import CRS, Transformer
+
+import rasterio
 from rasterio.features import geometry_mask
 from rasterio.warp import calculate_default_transform, reproject, Resampling
-from shapely.geometry import Polygon
-from shapely.geometry import mapping
+
+from osgeo import gdal, osr
+from shapely.geometry import Polygon, mapping
 from sklearn.neighbors import NearestNeighbors
 from spectral import envi
 import os
 
-from colours import Image as Imcol
+# Local module
+from scripts.colours import Image as Imcol
+
+GRAVITY = 9.81 # m/s^2
 
 
 class GeoSpatialAbstractionHSI():
@@ -79,18 +84,18 @@ class GeoSpatialAbstractionHSI():
 
         gdf = gpd.GeoDataFrame(geometry=[self.footprint_shp], crs=self.crs)
 
-        shape_path = self.config['Georeferencing']['footPrintPaths'] + self.name + '.shp'
+        shape_path = self.config['Absolute Paths']['footPrintPaths'] + self.name + '.shp'
 
         gdf.to_file(shape_path, driver='ESRI Shapefile')
-    def resample_datacube(self, hyp, rgb_composite, minInd, maxInd, extrapolate = True):
+    def resample_datacube(self, hyp, rgb_composite_only, minInd, maxInd, extrapolate = True):
         #
         self.res = float(self.config['Georeferencing']['resolutionHyperspectralMosaic'])
         wl_red = float(self.config['General']['RedWavelength'])
         wl_green = float(self.config['General']['GreenWavelength'])
         wl_blue = float(self.config['General']['BlueWavelength'])
 
-        rgb_composite_path = self.config['Georeferencing']['rgbCompositePaths']
-        datacube_path = self.config['Georeferencing']['orthoCubePaths']
+        rgb_composite_path = self.config['Absolute Paths']['rgbCompositePaths']
+        datacube_path = self.config['Absolute Paths']['orthoCubePaths']
         resamplingMethod = self.config['Georeferencing']['resamplingMethod']
         
         # The footprint-shape is a in a vectorized format and needs to be mapped into a raster-mask
@@ -109,58 +114,63 @@ class GeoSpatialAbstractionHSI():
         band_ind_G = np.argmin(np.abs(wavelength_nm[1] - hyp.band2Wavelength))
         band_ind_B = np.argmin(np.abs(wavelength_nm[2] - hyp.band2Wavelength))
         n_bands = len(hyp.band2Wavelength)
+        wavelengths=hyp.band2Wavelength
 
-        if rgb_composite:
-            if extrapolate == False:
-                datacube = hyp.dataCubeRadiance[minInd:maxInd, :, :].reshape((-1, n_bands))
-                rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+        
+        if extrapolate == False:
+            datacube = hyp.dataCubeRadiance[minInd:maxInd, :, :].reshape((-1, n_bands))
+            rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
 
-            elif extrapolate == True:
-                datacube = hyp.dataCubeRadiance[:, :, :].reshape((-1, n_bands))
-                rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
-            transform = rasterio.transform.from_bounds(xmin, ymin, xmax, ymax, width, height)
+        elif extrapolate == True:
+            datacube = hyp.dataCubeRadiance[:, :, :].reshape((-1, n_bands))
+            rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+        transform = rasterio.transform.from_bounds(xmin, ymin, xmax, ymax, width, height)
 
-            # Horizontal coordinates of intersections
-            coords = self.points_proj[:, :, 0:2].reshape((-1, 2))
-            if resamplingMethod == 'Nearest':
-                tree = NearestNeighbors(radius=0.01).fit(coords)
-                xi, yi = np.meshgrid(np.linspace(xmin, xmax, width), np.linspace(ymin, ymax, height))
-                xy = np.vstack((xi.flatten(), yi.flatten())).T
-                dist, indexes = tree.kneighbors(xy, 1)
+        del hyp
 
-                # Build the RGB cube from the indices
-                ortho_rgb = rgb_cube[indexes, :].flatten()
-                # Build datacube
-                ortho_datacube = datacube[indexes, :].flatten()
+        # Horizontal coordinates of intersections
+        coords = self.points_proj[:, :, 0:2].reshape((-1, 2))
+        if resamplingMethod == 'Nearest':
+            tree = NearestNeighbors(radius=0.01).fit(coords)
+            xi, yi = np.meshgrid(np.linspace(xmin, xmax, width), np.linspace(ymin, ymax, height))
+            xy = np.vstack((xi.flatten(), yi.flatten())).T
+            dist, indexes = tree.kneighbors(xy, 1)
 
-                ortho_rgb = np.flip(ortho_rgb.reshape((height, width, 3)).astype(np.float64), axis = 0)
-                ortho_datacube = np.flip(ortho_datacube.reshape((height, width, n_bands)).astype(np.float64), axis=0)
+            # Build the RGB cube from the indices
+            ortho_rgb = rgb_cube[indexes, :].flatten()
+            # Build datacube
+            ortho_datacube = datacube[indexes, :]
 
-                self.width_rectified = width
-                self.height_rectified = height
-                self.indexes = indexes
+            ortho_rgb = np.flip(ortho_rgb.reshape((height, width, 3)).astype(np.float64), axis = 0)
+            ortho_datacube = np.flip(ortho_datacube.reshape((height, width, n_bands)).astype(np.float64), axis=0)
+
+            self.width_rectified = width
+            self.height_rectified = height
+            self.indexes = indexes
 
 
 
 
-            # Set nodata value
-            nodata = -9999
-            ortho_rgb[mask == 1, :] = nodata
-            ortho_datacube[mask == 1, :] = nodata
+        # Set nodata value
+        nodata = -9999
+        ortho_rgb[mask == 1, :] = nodata
+        ortho_datacube[mask == 1, :] = nodata
 
-            # Arange datacube or composite in rasterio-friendly structure
-            ortho_rgb = np.transpose(ortho_rgb, axes = [2, 0, 1])
+        # Arange datacube or composite in rasterio-friendly structure
+        ortho_rgb = np.transpose(ortho_rgb, axes = [2, 0, 1])
+        
+
+
+        # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
+        with rasterio.open(rgb_composite_path + self.name + '.tif', 'w', driver='GTiff',
+                                height=height, width=width, count=3, dtype=np.float64,
+                                crs=self.crs, transform=transform, nodata=nodata) as dst:
+
+            dst.write(ortho_rgb)
+        # Write ENVI-style hyperspectral datacube
+        if rgb_composite_only == False:
             ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])
-
-
-            # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
-            with rasterio.open(rgb_composite_path + self.name + '.tif', 'w', driver='GTiff',
-                                   height=height, width=width, count=3, dtype=np.float64,
-                                   crs=self.crs, transform=transform, nodata=nodata) as dst:
-
-                dst.write(ortho_rgb)
-            # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
-            self.write_datacube_ENVI(ortho_datacube, nodata, transform, datacube_path = datacube_path + self.name, wavelengths=hyp.band2Wavelength)
+            self.write_datacube_ENVI(ortho_datacube, nodata, transform, datacube_path = datacube_path + self.name, wavelengths=wavelengths)
 
 
 
@@ -201,11 +211,11 @@ class GeoSpatialAbstractionHSI():
 
 
     def compare_hsi_composite_with_rgb_mosaic(self):
-        self.rgb_ortho_path = self.config['Georeferencing']['rgbOrthoPath']
-        self.hsi_composite = self.config['Georeferencing']['rgbCompositePaths'] + self.name + '.tif'
-        self.rgb_ortho_reshaped = self.config['Georeferencing']['rgbOrthoReshaped'] + self.name + '.tif'
-        self.dem_path = self.config['Georeferencing']['demPath']
-        self.dem_reshaped = self.config['Georeferencing']['demReshaped'] + self.name + '_dem.tif'
+        self.rgb_ortho_path = self.config['Absolute Paths']['rgbOrthoPath']
+        self.hsi_composite = self.config['Absolute Paths']['rgbCompositePaths'] + self.name + '.tif'
+        self.rgb_ortho_reshaped = self.config['Absolute Paths']['rgbOrthoReshaped'] + self.name + '.tif'
+        self.dem_path = self.config['Absolute Paths']['demPath']
+        self.dem_reshaped = self.config['Absolute Paths']['demReshaped'] + self.name + '_dem.tif'
 
 
         self.resample_rgb_ortho_to_hsi_ortho()
@@ -542,7 +552,134 @@ class GeoSpatialAbstractionHSI():
         #self.x1_x_rgb = v_rgb - np.floor(v_rgb)
         #self.y1_y_rgb = u_rgb - np.floor(u_rgb)
 
+def dem_2_mesh(path_dem, model_path, config):
+    """
+    A function for converting a specified DEM to a 3D mesh model (*.vtk, *.ply or *.stl). Consequently, mesh should be thought of as 2.5D representation.
+    :param path_dem: string
+    path to dem for reading
+    :param model_path: string
+    path to where 3D mesh model is to be written.
+    :return: Nothing
+    """
+    # Input and output file paths
 
+    output_xyz = config['General']['modelpathXYZ']
+    model_no_suffix = config['General']['modelpath']
+    # No-data value
+    no_data_value = int(config['General']['nodataDEM'])  # Replace with your actual no-data value
+    # Open the input raster dataset
+    ds = gdal.Open(path_dem)
+    if ds is None:
+        print(f"Failed to open {path_dem}")
+    else:
+        # Read the first band (band index is 1)
+        band = ds.GetRasterBand(1)
+        if band is None:
+            print(f"Failed to open band 1 of {path_dem}")
+        else:
+            # Get the geotransform information to calculate coordinates
+            geotransform = ds.GetGeoTransform()
+            x_origin = geotransform[0]
+            y_origin = geotransform[3]
+            x_resolution = geotransform[1]
+            y_resolution = geotransform[5]
+            # Get the CRS information
+            spatial_reference = osr.SpatialReference(ds.GetProjection())
+
+            # Get the EPSG code
+            epsg_code = None
+            if spatial_reference.IsProjected():
+                epsg_code = spatial_reference.GetAttrValue("AUTHORITY", 1)
+            elif spatial_reference.IsGeographic():
+                epsg_code = spatial_reference.GetAttrValue("AUTHORITY", 0)
+
+            print(f"EPSG Code: {epsg_code}")
+
+            config.set('General', 'demepsg', str(epsg_code))
+            epsg_proj = epsg_code
+            # Get the band's data as a NumPy array
+            band_data = band.ReadAsArray()
+            # Create a mask to identify no-data values
+            mask = band_data != no_data_value
+            # Create and open the output XYZ file for writing
+            with open(output_xyz, 'w') as xyz_file:
+                # Write data to the XYZ file using the mask and calculated coordinates
+                for y in range(ds.RasterYSize):
+                    for x in range(ds.RasterXSize):
+                        if mask[y, x]:
+                            x_coord = x_origin + x * x_resolution
+                            y_coord = y_origin + y * y_resolution
+                            xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
+            # Clean up
+            ds = None
+            band = None
+    print("Conversion completed.")
+    points = np.loadtxt(output_xyz)
+    # Create a pyvista point cloud object
+    cloud = pv.PolyData(points)
+    # Generate a mesh from
+    mesh = cloud.delaunay_2d()
+
+    epsg_geocsc = config['General']['modelepsg']
+    # Transform the mesh points to from projected to geocentric ECEF.
+    geocsc = CRS.from_epsg(epsg_geocsc)
+    proj = CRS.from_epsg(epsg_proj)
+    transformer = Transformer.from_crs(proj, geocsc)
+
+    points_proj = mesh.points
+
+    eastUTM = points_proj[:, 0].reshape((-1, 1))
+    northUTM = points_proj[:, 1].reshape((-1, 1))
+    heiUTM = points_proj[:, 2].reshape((-1, 1))
+
+    (xECEF, yECEF, zECEF) = transformer.transform(xx=eastUTM, yy=northUTM, zz=heiUTM)
+
+    mesh.points[:, 0] = xECEF.reshape(-1)
+    mesh.points[:, 1] = yECEF.reshape(-1)
+    mesh.points[:, 2] = zECEF.reshape(-1)
+
+    mean_vec = np.mean(mesh.points, axis = 0)
+
+    mesh.points -= mean_vec
+
+    config.set('General', 'offsetX', str(mean_vec[0]))
+    config.set('General', 'offsetY', str(mean_vec[1]))
+    config.set('General', 'offsetZ', str(mean_vec[2]))
+
+    # Save mesh
+    mesh.save(model_path)
+
+    with open(iniPath, 'w') as configfile:
+        config.write(configfile)
+
+
+def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):
+    """
+    Function for transforming ECEF positions to latitude longitude height
+    :param position_ecef: numpy array floats (n,3)
+    :param epsg_from: int
+    EPSG code of the original geocentric coordinate system (ECEF)
+    :param epsg_to: int
+    EPSG code of the transformed geodetic coordinate system
+    :return lat_lon_hei: numpy array floats (n,3)
+    latitude, longitude ellipsoid height.
+    """
+    geocsc = CRS.from_epsg(epsg_from)
+    geod = CRS.from_epsg(epsg_to)
+    transformer = Transformer.from_crs(geocsc, geod)
+
+    xECEF = position_ecef[:, 0].reshape((-1, 1))
+    yECEF = position_ecef[:, 1].reshape((-1, 1))
+    zECEF = position_ecef[:, 2].reshape((-1, 1))
+
+    (lat, lon, hei) = transformer.transform(xx=xECEF, yy=yECEF, zz=zECEF)
+
+    lat_lon_hei = np.zeros(position_ecef.shape)
+    lat_lon_hei[:, 0] = lat.reshape((position_ecef.shape[0], 1))
+    lat_lon_hei[:, 1] = lon.reshape((position_ecef.shape[0], 1))
+    lat_lon_hei[:, 2] = hei.reshape((position_ecef.shape[0], 1))
+
+    return lat_lon_hei
 
 
 

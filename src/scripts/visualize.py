@@ -7,9 +7,21 @@ import open3d as o3d
 # A simple visualization of various types of data
 
 def show_mesh_camera(config):
-    mesh_path = config['General']['modelPath']
-    texture_path = config['General']['texPath']
-    pose_path = config['General']['posePath']
+    """
+    # Reads the mesh file and pose info, and plots the trajectory next to the mesh.
+
+    :param config: Dictionary-like (configuration) object
+    :return: Nothing
+
+    """
+
+
+    # Todo: encode show mesh camera to use h5-embedded data? Or is this a loss of performance?
+    mesh_path = config['Absolute Paths']['modelPath']
+    texture_path = config['Absolute Paths']['texPath']
+    pose_path = config['Absolute Paths']['posePath']
+
+    # Offsets used for plotting
     offsetX = float(config['General']['offsetX'])
     offsetY = float(config['General']['offsetY'])
     offsetZ = float(config['General']['offsetZ'])
@@ -95,13 +107,9 @@ def show_camera_geometry(CameraGeometry, config):
     p.app.exec_()
 
 def show_projected_hsi_points(HSICameraGeometry, config, transect_string):
-    mesh_path = config['General']['modelPath']
-    texture_path = config['General']['texPath']
-
-    point_cloud_path = config['Georeferencing']['rgbPointCloudPath'] + transect_string + '.ply'
-
-
-
+    mesh_path = config['Absolute Paths']['modelPath']
+    texture_path = config['Absolute Paths']['texPath']
+    point_cloud_path = config['Absolute Paths']['rgbPointCloudPath'] + transect_string + '.ply'
 
     rotMats = HSICameraGeometry.RotationHSI.as_matrix()
     points_cam = HSICameraGeometry.PositionHSI

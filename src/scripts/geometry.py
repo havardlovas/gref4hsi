@@ -1,19 +1,32 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as RotLib
-import pandas as pd
-import pymap3d as pm
 from scipy.spatial.transform import Slerp
 from scipy.interpolate import interp1d
 import open3d as o3d
 import xmltodict
+from pyproj import CRS, Transformer
 # A file were we define geometry and geometric transforms.
+
+# Perhaps a class with one "__init__.py
 class CalibHSI:
-    def __init__(self, file_name_cal, config, mode = 'r', param = None):
+    def __init__(self, file_name_cal_xml, config, mode = 'r', param = None):
+        """
+        :param file_name_cal_xml: str
+        File name of calibration file for line camera model
+        :param config: config
+        global configuration object.
+        :param mode: str
+        open file for reading (for general use) or writing (post calibration)
+        :param param: ndarray:
+        1D array with data type float. Is the line camera parameter vector (currently numpy array) with order
+        "rotation_x, rotation_y, rotation_z, translation_x, translation_y, translation_z, c_x, focal_length,
+        distortion_coeff_1, distortion_coeff_2, distortion_coeff_3"
+        """
         if mode == 'r':
-            with open(file_name_cal, 'r', encoding='utf-8') as file:
+            with open(file_name_cal_xml, 'r', encoding='utf-8') as file:
                 my_xml = file.read()
-            my_dict = xmltodict.parse(my_xml)
-            self.calibrationHSI = my_dict['calibration']
+            xml_dict = xmltodict.parse(my_xml)
+            self.calibrationHSI = xml_dict['calibration']
 
             self.w = float(self.calibrationHSI['width'])
             self.f = float(self.calibrationHSI['f'])
@@ -29,6 +42,8 @@ class CalibHSI:
             self.ty = float(self.calibrationHSI['ty'])
             self.tz = float(self.calibrationHSI['tz'])
 
+
+            # If encoding this into
             if eval(config['General']['isFlippedRGB']):
                 self.tx *= -1
                 self.ty *= -1
@@ -40,51 +55,54 @@ class CalibHSI:
             self.k2 = float(self.calibrationHSI['k2'])
             self.k3 = float(self.calibrationHSI['k3'])
         elif mode == 'w':
-            with open(file_name_cal, 'r', encoding='utf-8') as file:
+            with open(file_name_cal_xml, 'r', encoding='utf-8') as file:
                 my_xml = file.read()
-            my_dict = xmltodict.parse(my_xml)
+            xml_dict = xmltodict.parse(my_xml)
 
-            my_dict['calibration']['rx'] = param[0]
-            my_dict['calibration']['ry'] = param[1]
-            my_dict['calibration']['rz'] = param[2]
+            xml_dict['calibration']['rx'] = param[0]
+            xml_dict['calibration']['ry'] = param[1]
+            xml_dict['calibration']['rz'] = param[2]
 
-            #my_dict['calibration']['tx'] = param[3]
-            #my_dict['calibration']['ty'] = param[4]
-            #my_dict['calibration']['tz'] = param[5]
+            #xml_dict['calibration']['tx'] = param[3]
+            #xml_dict['calibration']['ty'] = param[4]
+            #xml_dict['calibration']['tz'] = param[5]
 
-            my_dict['calibration']['cx'] = param[3]
-            my_dict['calibration']['f'] = param[4]
-            my_dict['calibration']['k1'] = param[5]
-            my_dict['calibration']['k2'] = param[6]
-            my_dict['calibration']['k3'] = param[7]
-            with open(file_name_cal, 'w') as fd:
-                fd.write(xmltodict.unparse(my_dict))
-
-
-
-
+            xml_dict['calibration']['cx'] = param[3]
+            xml_dict['calibration']['f'] = param[4]
+            xml_dict['calibration']['k1'] = param[5]
+            xml_dict['calibration']['k2'] = param[6]
+            xml_dict['calibration']['k3'] = param[7]
+            with open(file_name_cal_xml, 'w') as fd:
+                fd.write(xmltodict.unparse(xml_dict))
 
 class CameraGeometry():
-    def __init__(self, pos0, pos, rot, time):
+    def __init__(self, pos0, pos, rot, time, is_interpolated = False, use_absolute_position = False):
         self.pos0 = pos0
-        self.Position = pos - np.transpose(pos0) # Camera pos
-        self.Rotation = RotLib.from_euler("ZYX", rot, degrees=True)
+
+        if use_absolute_position:
+            self.Position = pos
+        else:
+            self.Position = pos - np.transpose(pos0) # Camera pos
+
+
+
+        self.Rotation = rot
+
         self.time = time
         self.IsLocal = False
         self.decoupled = True
 
-        # Define a transformation from geocentric to a local euclidian space which we will work in
-        # Rotation matrix
-        #if pos0[2] != 0:
-        #    lat0, lon0, h0 = pm.ecef2geodetic(pos0[0], pos0[1], pos0[2])
-        #    # Local rotations that can be composed with Rotation to get orientations in NED/ENU
-        #    self.Rotation_ecef_enu = RotLib.from_matrix(rotation_matrix_ecef2enu(lon = lon0, lat = lat0))
-        #    self.Rotation_ecef_ned = RotLib.from_matrix(rotation_matrix_ecef2enu(lon= lon0, lat= lat0))
+        if is_interpolated:
+            self.PositionInterpolated = self.Position
+            self.RotationInterpolated = self.Rotation
+
+
 
     def interpolate(self, time_hsi, minIndRGB, maxIndRGB, extrapolate):
         """"""
         # A simple interpolation of transforms where all images should be aligned.
         # Should also implement a more sensor fusion-like Kalman filter implementation
+        self.time_hsi = time_hsi
         if self.decoupled == True:
 
             if extrapolate == False:
@@ -94,9 +112,12 @@ class CameraGeometry():
                 linearSphericalInterpolator = Slerp(self.time, self.Rotation)
                 self.RotationInterpolated = linearSphericalInterpolator(time_interpolation)
             else:
+                # Extrapolation of position:
                 time_interpolation = time_hsi
                 linearPositionInterpolator = interp1d(self.time, np.transpose(self.Position), fill_value='extrapolate')
                 self.PositionInterpolated = np.transpose(linearPositionInterpolator(time_interpolation))
+
+                # Extrapolation of orientation/rotation:
 
                 # Synthetizize additional frames
                 delta_rot_b1_b2 = (self.Rotation[-1].inv()) * (self.Rotation[-2])
@@ -112,7 +133,8 @@ class CameraGeometry():
                 rot_first = self.Rotation[0] * (delta_rot_b1_b2.inv())  # Assuming a continuation of the rotation
                 time_concatenated = np.concatenate((np.array(time_first).reshape((1,-1)),
                                                     self.time.reshape((1,-1)),
-                                                    np.array(time_last).reshape((1,-1))), axis = 1).reshape(-1).astype(np.float64)
+                                                    np.array(time_last).reshape((1,-1))), axis = 1)\
+                    .reshape(-1).astype(np.float64)
                 rotation_list = [self.Rotation]
                 rotation_list.append(rot_last)
                 rotation_list.insert(0, rot_first)
@@ -192,7 +214,7 @@ class CameraGeometry():
             else:
                 print('Frame must be ENU or NED')
         else:
-            print('Poses are defined Globally already')
+            print('Poses are defined globally already')
     def defineRayDirections(self, dir_local):
         self.rayDirectionsLocal = dir_local
 
@@ -260,14 +282,15 @@ class CameraGeometry():
 
 
         print('Finished ray tracing')
-    def writeRGBPointCloud(self, config, hyp, minInd, maxInd, transect_string, extrapolate = True):
+    def writeRGBPointCloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
         wl_red = float(config['General']['RedWavelength'])
         wl_green = float(config['General']['GreenWavelength'])
         wl_blue = float(config['General']['BlueWavelength'])
-        dir_point_cloud = config['Georeferencing']['rgbPointCloudPath']
+        dir_point_cloud = config['Absolute Paths']['rgbPointCloudPath']
 
         wavelength_nm = np.array([wl_red, wl_green, wl_blue])
 
+        # Localize the appropriate band indices used for analysis
         band_ind_R = np.argmin(np.abs(wavelength_nm[0] - hyp.band2Wavelength))
         band_ind_G = np.argmin(np.abs(wavelength_nm[1] - hyp.band2Wavelength))
         band_ind_B = np.argmin(np.abs(wavelength_nm[2] - hyp.band2Wavelength))
@@ -298,8 +321,8 @@ class FeatureCalibrationObject():
         self.HSIRotationFeature = [] #
         self.isfirst = True
 
-    def loadCamCalibration(self, filenameCal, config):
-        calHSI = CalibHSI(file_name_cal=filenameCal, config = config)  # Generates a calibration object
+    def load_cam_calibration(self, filename_cal, config):
+        calHSI = CalibHSI(file_name_cal_xml=filename_cal, config = config)  # Generates a calibration object
         self.f = calHSI.f
         self.v_c = calHSI.cx
         self.k1 = calHSI.k1
@@ -475,6 +498,61 @@ class FeatureCalibrationObject():
 
 
 
+def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, extrapolate = True, use_absolute_position = True):
+    """
+
+    :param timestamp_from:
+    Original timestamps
+    :param pos_from: numpy array (n,3)
+    Original positions
+    :param rot_from: Rotation-object (n rotations)
+    Original orientations
+    :param timestamps_to:
+    Timestamps desired for position and orientations
+    :return:
+    """
+
+    minHSI = np.min(timestamps_to)
+    maxHSI = np.max(timestamps_to)
+
+    minRGB = np.min(timestamp_from)
+    maxRGB = np.max(timestamp_from)
+
+    minInd = np.argmin(np.abs(minRGB - timestamps_to))
+    maxInd = np.argmin(np.abs(maxRGB - timestamps_to))
+
+    if timestamps_to[minInd] < minRGB:
+        minInd += 1
+    if timestamps_to[maxInd] > maxRGB:
+        maxInd -= 1
+
+
+
+    # Setting use_absolute_position to True means that position calculations are done with absolute
+    referenceGeometry = CameraGeometry(pos0=pos0,
+                               pos=pos_from,
+                               rot=rot_from,
+                               time=timestamp_from,
+                               use_absolute_position=use_absolute_position)
+
+    # We exploit a method from the camera object
+    referenceGeometry.interpolate(time_hsi=timestamps_to,
+                          minIndRGB=minInd,
+                          maxIndRGB=maxInd,
+                          extrapolate=extrapolate)
+
+
+
+    position_to = referenceGeometry.PositionInterpolated
+
+    quaternion_to = referenceGeometry.RotationInterpolated.as_quat()
+
+    return position_to, quaternion_to
+
+
+
+
+
 
 
 
@@ -496,14 +574,16 @@ class MeshGeometry():
 
 
 def rotation_matrix_ecef2ned(lon, lat):
-    l = np.deg2rad(lon)
-    mu = np.deg2rad(lat)
-
-    R_ned_ecef = np.array([[-np.cos(l) * np.sin(mu), -np.sin(l), -np.cos(l) * np.cos(mu)],
-                           [-np.sin(l) * np.sin(mu), np.cos(l), -np.sin(l) * np.cos(mu)],
-                           [np.cos(mu), 0, -np.sin(mu)]])
-    R_ecef_ned = np.transpose(R_ned_ecef)
-    return R_ecef_ned
+    """
+    Computes the rotation matrix R from earth-fixed-earth centered (ECEF) to north-east-down (NED).
+    :param lat: float in range [-90, 90]
+    The latitude in degrees
+    :param lon: float in range [-180, 180]
+    :return R_ned_ecef: numpy array of shape (3,3)
+    rotation matrix ECEF to NED
+    """
+    R_ned_ecef = rot_mat_ned_2_ecef(lon=lon, lat=lat)
+    return np.transpose(R_ned_ecef)
 
 def rotation_matrix_ecef2enu(lon, lat):
     l = np.deg2rad(lon)
@@ -519,3 +599,156 @@ def rotation_matrix_ecef2enu(lon, lat):
 
     R_ecef_enu = np.transpose(R_enu_ecef)
     return R_ecef_enu
+
+
+def convert_rotation_ned_2_ecef(rot_obj_ned, position, is_geodetic = True, epsg_pos = 4326):
+    """
+
+    :param rot_obj_:
+    :param position:
+    The position
+    :param is_geodetic: bool
+    Whether position is geodetic
+    :return:
+    """
+
+
+class GeoPose:
+    """
+    An object that allows to input positions with arbitrary CRS, and orientations either wrt ECEF or NED. As in other
+    places in the project, the orientations are abstracted with rotation objects. The main use case is formatting poses
+    to the correct CRS.
+    """
+    def __init__(self, timestamps, rot_obj, rot_ref, pos, pos_epsg):
+        self.timestamps = timestamps
+        if rot_ref == 'NED':
+            self.rot_obj_ned = rot_obj
+            self.rot_obj_ecef = None
+        elif rot_ref == 'ECEF':
+            self.rot_obj_ned = None
+            self.rot_obj_ecef = rot_obj
+        else:
+            print('This rotation reference is not supported')
+            TypeError
+
+        # Define position
+        self.position = pos
+        self.epsg = pos_epsg
+
+
+        self.lat = None
+        self.lon = None
+        self.hei = None
+
+    def compute_geodetic_position(self, epsg_geod):
+        """
+            Function for transforming positions to latitude longitude height
+            :param epsg_geod: int
+            EPSG code of the transformed geodetic coordinate system
+        """
+        # If geocentric position has not been defined.
+        from_CRS = CRS.from_epsg(self.epsg)
+        geod_CRS = CRS.from_epsg(epsg_geod)
+        transformer = Transformer.from_crs(from_CRS, geod_CRS)
+
+        x = self.position[:, 0].reshape((-1, 1))
+        y = self.position[:, 1].reshape((-1, 1))
+        z = self.position[:, 2].reshape((-1, 1))
+
+        (lat, lon, hei) = transformer.transform(xx=x, yy=y, zz=z)
+
+        self.epsg_geod = epsg_geod
+        self.lat = lat.reshape((self.position.shape[0], 1))
+        self.lon = lon.reshape((self.position.shape[0], 1))
+        self.hei = hei.reshape((self.position.shape[0], 1))
+
+    def compute_geocentric_position(self, epsg_geocsc):
+        """
+            Function for transforming positions to geocentric
+            :param epsg_geod: int
+            EPSG code of the transformed geodetic coordinate system
+        """
+
+        from_CRS = CRS.from_epsg(self.epsg)
+        geod_CRS = CRS.from_epsg(epsg_geocsc)
+        transformer = Transformer.from_crs(from_CRS, geod_CRS)
+
+        x = self.position[:, 0].reshape((-1, 1))
+        y = self.position[:, 1].reshape((-1, 1))
+        z = self.position[:, 2].reshape((-1, 1))
+
+        (x, y, z) = transformer.transform(xx=x, yy=y, zz=z)
+
+        self.pos_geocsc = np.concatenate((x, y, z), axis = 1)
+
+    def compute_geocentric_orientation(self):
+        if self.rot_obj_ecef == None:
+            # Define rotations from ned to ecef
+            if self.lat == None:
+                # Needed to encode rotation between NED and ECEF
+                self.compute_geodetic_position()
+
+            R_body_2_ned = self.rot_obj_ned
+            R_ned_2_ecef = self.compute_rot_obj_ned_2_ecef()
+            R_body_2_ecef = R_ned_2_ecef*R_body_2_ned
+
+            self.rot_obj_ecef = R_body_2_ecef
+
+        else:
+            pass
+
+    def compute_ned_orientation(self):
+        if self.rot_obj_ned == None:
+            # Define rotations from body to ecef
+            R_body_2_ecef = self.rot_obj_ecef
+
+            # Define rotation from ecef 2 ned
+            R_ecef_2_ned = self.compute_rot_obj_ned_2_ecef().inv()
+
+            # Compose
+            R_body_2_ned = R_ecef_2_ned*R_body_2_ecef
+
+            self.rot_obj_ned = R_body_2_ned
+
+
+        else:
+            pass
+
+    def compute_rot_obj_ned_2_ecef(self):
+
+        N = self.lat.shape[0]
+        rot_mats_ned_to_ecef = np.zeros((N, 3, 3), dtype=np.float64)
+
+
+
+        for i in range(N):
+            rot_mats_ned_to_ecef[i,:,:] = rot_mat_ned_2_ecef(lat=self.lat[i], lon = self.lon[i])
+
+
+        self.rots_obj_ned_2_ecef = RotLib.from_matrix(rot_mats_ned_to_ecef)
+
+        return self.rots_obj_ned_2_ecef
+
+
+
+
+def rot_mat_ned_2_ecef(lat, lon):
+    """
+    Computes the rotation matrix R from north-east-down (NED) to earth-fixed-earth centered (ECEF)
+    :param lat: float in range [-90, 90]
+    The latitude in degrees
+    :param lon: float in range [-180, 180]
+    :return R_ned_ecef: numpy array of shape (3,3)
+    rotation matrix from NED to ECEF
+    """
+
+    # Convert to radians
+    l = np.deg2rad(lon)
+    mu = np.deg2rad(lat)
+
+    # Compute rotation matrix
+    # TODO: add source
+    R_ned_ecef = np.array([[-np.cos(l) * np.sin(mu), -np.sin(l), -np.cos(l) * np.cos(mu)],
+                           [-np.sin(l) * np.sin(mu), np.cos(l), -np.sin(l) * np.cos(mu)],
+                           [np.cos(mu), 0, -np.sin(mu)]])
+    return R_ned_ecef
