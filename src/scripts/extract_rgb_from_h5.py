@@ -14,7 +14,7 @@ def get_args():
     return parser.parse_args()
 
 
-def main(folder_path, save_path, save_name):
+def main(folder_path, save_path, save_name=""):
     # Check for the existence of the Extracted_RGB folder or create it
     if not os.path.exists(save_path):
         os.makedirs(save_path)
@@ -57,7 +57,7 @@ def main(folder_path, save_path, save_name):
             # Now handle RGB data
             rgb_dataset = rawdata_rgb['rgbFrames']
             for i, img_data in enumerate(rgb_dataset):
-                img_array = np.array(img_data)
+                img_array = np.flip(np.array(img_data), axis = 2)
                 if img_array.ndim == 3:  # Confirm it's an RGB image
                     # Save the image
                     img = Image.fromarray(img_array.astype('uint8'))
