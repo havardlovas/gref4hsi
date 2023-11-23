@@ -130,7 +130,7 @@ def main(folder_path, save_path, save_name):
     print("All .h5 files have been processed.")
     print("Now the three datasets are interpolated according to the RGB dataset.")
 
-    interpolate_csv(df_rgb, df_imu, df_alti)
+    interpolate_csv(df_rgb, df_imu, df_alti, save_path)
 
 
 def interpolate_csv(df_rgb, df_imu, df_alti, save_path):
@@ -166,7 +166,7 @@ def interpolate_csv(df_rgb, df_imu, df_alti, save_path):
     """
 
     # Linear Interpolate Altimeter to rgb_timestamps
-    print(f"Reducing timestamps from IMU data from {len(df_alti.index)} to {len(df_rgb.index)}")
+    print(f"Reducing timestamps from Alti data from {len(df_alti.index)} to {len(df_rgb.index)}")
     interp_alti_np = np.interp(df_rgb['timestamp'].tolist(), df_alti['TimestampMeasured'].tolist(), df_alti['Altitude'].tolist())
     interp_alti_df = pd.DataFrame(interp_alti_np, columns=['Altimeter'])
     # Combine all interpolations
