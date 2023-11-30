@@ -31,7 +31,7 @@ class Hyperspectral:
     """
     Class for storing/accessing acquired hyperspectral data. One instance corresponds to a transect chunk (*.h5).
     """
-    def __init__(self, filename, config):
+    def __init__(self, filename, config, load_datacube = True):
         """
         Instantiate transect chunk object from chunk file name and config file.
         :param filename: string
@@ -94,7 +94,8 @@ class Hyperspectral:
                 RGBFramesPath = config['HDF.rgb']['rgbFrames']
                 timestampRGBPath = config['HDF.rgb']['timestamp']
 
-                self.dataCube = self.f[dataCubePath][()]
+                if load_datacube:
+                    self.dataCube = self.f[dataCubePath][()]
 
                 try:
                     self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
@@ -107,23 +108,26 @@ class Hyperspectral:
                     self.radiometricFrame = self.f[radiometricFramePath][()]
                 except KeyError:
                     pass
-
-
+                
                 try:
                     self.RGBTimeStamps = self.f[timestampRGBPath][()]
+                except KeyError:
+                    pass
+
+                try:
                     self.RGBImgs = self.f[RGBFramesPath][()]
                 except (KeyError, TypeError):
                     pass
 
                 georeferenced_nav_folder = config['Georeferencing']['folder']
-                """if georeferenced_nav_folder in self.f:
+                if georeferenced_nav_folder in self.f:
                     georef_config = config['Georeferencing']
                     self.normals_local = self.f[georef_config['normals_hsi_crs']][()]
                     self.points_global = self.f[georef_config['points_ecef_crs']][()]
                     self.points_local = self.f[georef_config['points_hsi_crs']][()]
 
                     self.position_hsi = self.f[georef_config['position_ecef']][()]
-                    self.quaternion_hsi = self.f[georef_config['quaternion_ecef']][()]"""
+                    self.quaternion_hsi = self.f[georef_config['quaternion_ecef']][()]
                 # Check if the dataset exists
                 processed_nav_folder = config['HDF.processed_nav']['folder']
                 if processed_nav_folder in self.f:
@@ -136,27 +140,30 @@ class Hyperspectral:
 
 
 
+        if load_datacube:
+            self.n_scanlines = self.dataCube.shape[0]
+            self.n_pix = self.dataCube.shape[1]
+            self.n_bands = self.dataCube.shape[1]
+            try:
+                self.n_imgs = self.RGBTimeStamps.shape[0]
+            except AttributeError:
+                pass
 
-        self.n_scanlines = self.dataCube.shape[0]
-        self.n_pix = self.dataCube.shape[1]
-        self.n_bands = self.dataCube.shape[1]
-        self.n_imgs = self.RGBTimeStamps.shape[0]
+            # The maximal image size is typically 1920 by 1200. It is however cropped during recording
+            # And there can be similar issues. The binning below is somewhat heuristic but general
+            if self.n_pix > 1000:
+                self.spatial_binning = 0
+            elif self.n_pix > 500:
+                self.spatial_binning = 1
+            elif self.n_pix > 250:
+                self.spatial_binning = 2
 
-        # The maximal image size is typically 1920 by 1200. It is however cropped during recording
-        # And there can be similar issues. The binning below is somewhat heuristic but general
-        if self.n_pix > 1000:
-            self.spatial_binning = 0
-        elif self.n_pix > 500:
-            self.spatial_binning = 1
-        elif self.n_pix > 250:
-            self.spatial_binning = 2
-
-        if self.n_bands  > 600:
-            self.spectral_binning = 0
-        elif self.n_bands  > 250:
-            self.spectral_binning = 1
-        elif self.n_bands  > 125:
-            self.spectral_binning = 2
+            if self.n_bands  > 600:
+                self.spectral_binning = 0
+            elif self.n_bands  > 250:
+                self.spectral_binning = 1
+            elif self.n_bands  > 125:
+                self.spectral_binning = 2
 
 
 
@@ -176,11 +183,20 @@ class Hyperspectral:
 
 
 
+        is_calibrated = config['HDF.hyperspectral']['is_calibrated']
 
-        self.dataCubeRadiance = np.zeros(self.dataCube.shape, dtype = np.float64)
-        for i in range(self.dataCube.shape[0]):
-            self.dataCubeRadiance[i, :, :] = (self.dataCube[i, :, :] - self.darkFrame) / (
-                    self.radiometricFrame * self.t_exp)
+        if is_calibrated == 'True':
+            self.dataCubeRadiance = self.dataCube
+        else:
+            self.dataCubeRadiance = np.zeros(self.dataCube.shape, dtype = np.float64)
+            for i in range(self.dataCube.shape[0]):
+                self.dataCubeRadiance[i, :, :] = (self.dataCube[i, :, :] - self.darkFrame) / (
+                        self.radiometricFrame * self.t_exp)
+        
+        # For memory efficiency
+        del self.dataCube
+            
+            
 
     def add_dataset(self, data, name):
         """
@@ -499,7 +515,7 @@ def agisoft_export_model(config_file):
     # When exporting, it is relevant to export data in a suitable format
     # CRSExport
 
-    proj_string = config['Coordinate Reference Systems']['ExportEPSG']
+    proj_string = 'EPSG::' + config['Coordinate Reference Systems']['ExportEPSG']
     if proj_string != 'Local':
         crs_export = MS.CoordinateSystem(str(proj_string))
         local = False
@@ -529,9 +545,10 @@ def agisoft_export_model(config_file):
         print('Model File Already exists. Overwriting')
     chunk = find_desired_chunk(chunkName=chunkName, chunks=chunks, model_name=model_name)
     if local:
-        chunk.exportModel(path=model_name, crs=chunk.crs, shift=vec((offsetX, offsetY, offsetZ)))
+        chunk.exportModel(path=model_name, crs=chunk.crs, shift=vec((offsetX, offsetY, offsetZ)), save_texture = True, texture_format = MS.ImageFormat.ImageFormatPNG)
+        
     else:
-        chunk.exportModel(path=model_name, crs=crs_export, shift=vec((offsetX, offsetY, offsetZ)))
+        chunk.exportModel(path=model_name, crs=crs_export, shift=vec((offsetX, offsetY, offsetZ)), save_texture = True, texture_format = MS.ImageFormat.ImageFormatPNG)
 
 def append_agisoft_data_h5(config):
     """
@@ -676,17 +693,54 @@ def reformat_h5_embedded_data_h5(config, config_file):
             path_hdf = h5dir + filename
 
             # Read out the data of a file
-            hyp = Hyperspectral(path_hdf, config)
+            hyp = Hyperspectral(path_hdf, config, load_datacube = False)
 
-            quaternion_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['quaternion'])
-            if quaternion_ref.shape[0] == 4:
-                quaternion_ref = np.transpose(quaternion_ref)
-            is_global_rot = config['HDF.raw_nav']['is_global_rot']
+
+            # If rotation reference is quaternion:
+            # Alternatives quat, eul_ZYX
+            rotation_reference_type = config['HDF.raw_nav']['rotation_reference_type']
+            if rotation_reference_type == 'quat':
+                quaternion_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['quaternion'])
+                if quaternion_ref.shape[0] == 4:
+                    quaternion_ref = np.transpose(quaternion_ref)
+                
+                quaternion_convention  = config['General']['quaternion_convention']
+                if quaternion_convention == 'wxyz':
+                    quat_temp = quaternion_ref
+                    quaternion_ref = np.roll(quaternion_ref, shift=-1, axis=1)
+                elif quaternion_convention == 'xyzw':
+                    # We use the xyzw convention for scipy, see:
+                    # https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.transform.Rotation.from_quat.html
+                    pass
+                else:
+                    raise ValueError("The quaternion convention must be defined")
+            elif rotation_reference_type == 'eul_ZYX':
+                eul_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['eul_ZYX'])
+                if eul_ref.shape[0] == 3:
+                    eul_ref = np.transpose(eul_ref)
+                eul_is_degrees = eval(config['HDF.raw_nav']['eul_is_degrees'])
+                ## Assuming It is given as roll, pitch, yaw
+                eul_ZYX_ref = np.flip(eul_ref, axis = 1)
+                quaternion_ref = RotLib.from_euler(angles = eul_ZYX_ref, seq = 'ZYX', degrees = eul_is_degrees).as_quat()
+                
+            else:
+                raise ValueError("The rotation reference type must be defined as quat or eul_ZYX")
+
+
+                
+
+                
+
+
+
+
+
+            is_global_rot = eval(config['HDF.raw_nav']['is_global_rot'])
 
             # Parse position
             position_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['position'])
 
-            print('Something in the month of may')
+            
             if position_ref.shape[0] == 3:
                 position_ref = np.transpose(position_ref)
 
@@ -724,6 +778,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
             pos_epsg_export = config['Coordinate Reference Systems']['exportepsg']
 
             rot_interpolated = RotLib.from_quat(quaternion_interpolated)
+
             geo_pose_ref = GeoPose(timestamps=timestamp_hsi,
                                    rot_obj= rot_interpolated, rot_ref=rot_ref,
                                    pos = position_interpolated, pos_epsg=pos_epsg_orig)
@@ -744,19 +799,35 @@ def reformat_h5_embedded_data_h5(config, config_file):
 
             quaternion_ref_ecef = geo_pose_ref.rot_obj_ecef.as_quat()
 
+            # Just set it using the first file
             condition_for_setting_offsets = (offX == -1 and is_first)
 
+            
+
+
+
             if condition_for_setting_offsets:
-                # Ensure that flag is not raised again. Offsets should only be set once.
-                is_first = False
+                
                 # Calculate some appropriate offsets in ECEF
                 pos0 = np.mean(position_ref_ecef, axis=0)
+
+            if is_first:
+                rot_vec_ecef = geo_pose_ref.rot_obj_ecef.as_euler('ZYX', degrees=True)
+                total_pose = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
+                # Ensure that flag is not raised again. Offsets should only be set once.
+                is_first = False
+            else:
+                # Ensure that flag is not raised again. Offsets should only be set once.
+                is_first = False
+                rot_vec_ecef = geo_pose_ref.rot_obj_ecef.as_euler('ZYX', degrees=True)
+                partial_pose = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
+                total_pose = np.concatenate((total_pose, partial_pose), axis=0)
 
 
 
             # Add camera position
             position_ref_name = config['HDF.processed_nav']['position_ecef']
-            hyp.add_dataset(data=position_ref_ecef, name=position_ref_name)
+            hyp.add_dataset(data=position_ref_ecef - pos0, name=position_ref_name)
 
             # Add camera quaternion
             quaternion_ref_name = config['HDF.processed_nav']['quaternion_ecef']
@@ -765,6 +836,19 @@ def reformat_h5_embedded_data_h5(config, config_file):
             # Add time stamps
             time_stamps_name = config['HDF.processed_nav']['timestamp']
             hyp.add_dataset(data=timestamp_hsi, name=time_stamps_name)
+
+
+            
+
+
+    headers = ['Timestamp', ' X', ' Y', ' Z', ' RotZ', ' RotY', ' RotX']
+
+    # Create a DataFrame from the data_matrix and headers
+    df = pd.DataFrame(total_pose, columns=headers)
+
+    pose_path = config['Absolute Paths']['posepath']
+    # Save the DataFrame as a CSV file
+    df.to_csv(pose_path, index=False)
 
     config.set('General', 'offsetX', str(pos0[0]))
     config.set('General', 'offsetY', str(pos0[1]))
@@ -814,7 +898,26 @@ def export_pose(config_file):
     return config
     
     
-    
+def export_model(config_file):
+    config = configparser.ConfigParser()
+    config.read(config_file)
+
+    # This file handles model exports of various types
+    # As of now there are three types:
+    # 1) Agisoft, *.ply file/DEM and None
+    modelExportType = config['General']['modelExportType']
+
+    if modelExportType == 'agisoft':
+        agisoft_export_model(config_file=config_file)
+    elif modelExportType == 'ply_file':
+        # Nothing needs to be done then?
+        pass
+    elif modelExportType == 'dem_file':
+        file_path_dem = config['Absolute Paths']['dempath']
+        file_path_3d_model = config['Absolute Paths']['modelpath']
+        dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
+    elif modelExportType == 'none':
+        pass
     
 if __name__ == "__main__":
     # Here we could set up necessary steps on a high level. 

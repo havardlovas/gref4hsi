@@ -171,8 +171,8 @@ class RayCasting:
         self.HSICamera.writeRGBPointCloud(config = self.config, hyp = self.hyp, transect_string=self.transect_string)
 
         print('Point cloud written')
-        from scripts import visualize
-        visualize.show_projected_hsi_points(HSICameraGeometry=self.HSICamera, config=self.config, transect_string=self.transect_string)
+        #from scripts import visualize
+        #visualize.show_projected_hsi_points(HSICameraGeometry=self.HSICamera, config=self.config, transect_string=self.transect_string)
 
 
         # Geospatial processing steps
@@ -182,16 +182,18 @@ class RayCasting:
 
         gisHSI.footprint_to_shape_file()
 
-        gisHSI.resample_datacube(self.hyp, rgb_composite_only=False, minInd=self.minInd, maxInd=self.maxInd, extrapolate = True)
+        gisHSI.resample_datacube(self.hyp, rgb_composite_only=True, minInd=self.minInd, maxInd=self.maxInd, extrapolate = True)
 
-        gisHSI.compare_hsi_composite_with_rgb_mosaic()
-
+        compare_to_orthomosaic = self.config['General']['compare_to_rgb_mosaic']
         self.gisHSI = gisHSI
+        if compare_to_orthomosaic == 'True':
+            self.gisHSI.compare_hsi_composite_with_rgb_mosaic()
+            w_datacube = self.hyp.n_pix
+            self.gisHSI.map_pixels_back_to_datacube(w_datacube=w_datacube)
 
-    def map_back(self):
-        # Seems unnecessary
-        w_datacube = self.hyp.n_pix
-        self.gisHSI.map_pixels_back_to_datacube(w_datacube=w_datacube)
+        
+
+    
 
 
 
@@ -259,13 +261,14 @@ def main(iniPath, mode, is_calibrated):
         for filename in sorted(os.listdir(dir_r)):
             if filename.endswith('h5') or filename.endswith('hdf'):
                 # TODO: What is the point of count?
-                if count > -1:
+                if count >= 0:
+                    
                     is_uhi = config['HDF']['is_uhi']
 
                     if is_uhi == 'True':
                         filename_splitted = filename.split('_')
 
-                        transect_string = filename_splitted[2] + '_' + filename_splitted[3].split('.')[0]
+                        transect_string = filename_splitted
                         rc.transect_string = transect_string
                         print(transect_string)
                         path_hdf = dir_r + filename
@@ -274,8 +277,16 @@ def main(iniPath, mode, is_calibrated):
                         rc.hyp.digital_counts_2_radiance(config)
                         print(transect_string + ' With binning ' + str(rc.hyp.spatial_binning))
                     else:
+                        filename_splitted = filename.split('.')[0]
+
+                        transect_string = filename_splitted
+                        rc.transect_string = transect_string
+                        print(transect_string)
                         path_hdf = dir_r + filename
-                        rc.hyp = HyperspectralHI(path_hdf, config)
+                        # Read h5 file and assign to raycaster
+                        rc.hyp = Hyperspectral(path_hdf, config)
+                        rc.hyp.digital_counts_2_radiance(config)
+                        print(transect_string + ' With binning ' + str(rc.hyp.spatial_binning))
 
 
                     # Load the appropriate calibration file. This is old legacy code when data is recorded with different.
@@ -292,8 +303,8 @@ def main(iniPath, mode, is_calibrated):
                     # The interpolation of poses can be done prior to calibration. We want a position and orientation
                     rc.interpolate_poses()
 
+                    # This bit is a lot more involved
                     rc.ray_trace()
-                    rc.map_back()
 
                     if is_calibrated == True:
                         # Append key info to data
@@ -323,20 +334,22 @@ def main(iniPath, mode, is_calibrated):
                         normals_local_name = config['Georeferencing']['normals_hsi_crs']
                         rc.hyp.add_dataset(data=normals_local, name=normals_local_name)
 
-                    if rc.hyp.spatial_binning == 1:
-                        calObj1.appendGeometry(hsiGis=rc.gisHSI, cameraGeometry=rc.HSICamera, binning = rc.hyp.spatial_binning)
-                        calObjPath1 = config['Absolute Paths']['hsicalibObjPathB1']
-                        file_cal1 = open(calObjPath1, 'wb')
-                        pickle.dump(calObj1, file_cal1)
-                    if rc.hyp.spatial_binning == 2:
-                        calObj2.appendGeometry(hsiGis=rc.gisHSI, cameraGeometry=rc.HSICamera, binning = rc.hyp.spatial_binning)
-                        calObjPath2 = config['Absolute Paths']['hsicalibObjPathB2']
-                        file_cal2 = open(calObjPath2, 'wb')
-                        pickle.dump(calObj2, file_cal2)
+
+                    compare_to_orthomosaic = rc.config['General']['compare_to_rgb_mosaic']
+                    # Only if it is desired to calibrate in this manner
+                    if compare_to_orthomosaic == 'True':
+                        if rc.hyp.spatial_binning == 1:
+                            calObj1.appendGeometry(hsiGis=rc.gisHSI, cameraGeometry=rc.HSICamera, binning = rc.hyp.spatial_binning)
+                            calObjPath1 = config['Absolute Paths']['hsicalibObjPathB1']
+                            file_cal1 = open(calObjPath1, 'wb')
+                            pickle.dump(calObj1, file_cal1)
+                        if rc.hyp.spatial_binning == 2:
+                            calObj2.appendGeometry(hsiGis=rc.gisHSI, cameraGeometry=rc.HSICamera, binning = rc.hyp.spatial_binning)
+                            calObjPath2 = config['Absolute Paths']['hsicalibObjPathB2']
+                            file_cal2 = open(calObjPath2, 'wb')
+                            pickle.dump(calObj2, file_cal2)
 
                 count += 1
-                if count == 1:
-                    break
 
 
 

@@ -18,7 +18,11 @@ def show_mesh_camera(config):
 
     # Todo: encode show mesh camera to use h5-embedded data? Or is this a loss of performance?
     mesh_path = config['Absolute Paths']['modelPath']
-    texture_path = config['Absolute Paths']['texPath']
+    try:
+        texture_path = config['Absolute Paths']['texPath']
+    except KeyError:
+        texture_path = None
+        
     pose_path = config['Absolute Paths']['posePath']
 
     # Offsets used for plotting
@@ -50,7 +54,7 @@ def show_mesh_camera(config):
     #rotMats = rotMats*cam_rot
     p = BackgroundPlotter(window_size=(600, 400))
     mesh = pv.read(mesh_path)
-    if texture_path != 'NONE':
+    if texture_path != None:
         tex = pv.read_texture(texture_path)
         p.add_mesh(mesh, texture=tex)
     else:
@@ -61,9 +65,10 @@ def show_mesh_camera(config):
     directionY = rotMats[:, :, 1]
     directionZ = rotMats[:, :, 2]
     step = 10
-    p.add_arrows(points_cam[::step], directionX[::step], mag = 0.25, color= 'red')
-    p.add_arrows(points_cam[::step], directionY[::step], mag=0.25, color= 'green')
-    p.add_arrows(points_cam[::step], directionZ[::step], mag=0.25, color= 'blue')
+    scale = np.linalg.norm(np.max(points_cam, axis = 0)-np.min(points_cam, axis = 0), axis=0)
+    p.add_arrows(points_cam[::step], directionX[::step], mag = 0.1*scale, color = 'red')
+    p.add_arrows(points_cam[::step], directionY[::step], mag=0.1*scale, color= 'green')
+    p.add_arrows(points_cam[::step], directionZ[::step], mag=0.1*scale, color= 'blue')
     p.show()
     p.app.exec_()
 
@@ -108,15 +113,19 @@ def show_camera_geometry(CameraGeometry, config):
 
 def show_projected_hsi_points(HSICameraGeometry, config, transect_string):
     mesh_path = config['Absolute Paths']['modelPath']
-    texture_path = config['Absolute Paths']['texPath']
+    
     point_cloud_path = config['Absolute Paths']['rgbPointCloudPath'] + transect_string + '.ply'
 
     rotMats = HSICameraGeometry.RotationHSI.as_matrix()
     points_cam = HSICameraGeometry.PositionHSI
 
     mesh = pv.read(mesh_path)
-    tex = pv.read_texture(texture_path)
 
+    try:
+        texture_path = config['Absolute Paths']['texPath']
+        tex = pv.read_texture(texture_path)
+    except:
+        pass
     p = BackgroundPlotter(window_size=(600, 400))
 
     p.add_mesh(mesh)
