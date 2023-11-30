@@ -37,6 +37,7 @@ class CalibHSI:
             self.ry = float(self.calibrationHSI['ry'])
             self.rz = float(self.calibrationHSI['rz'])
 
+
             # Translations
             self.tx = float(self.calibrationHSI['tx'])
             self.ty = float(self.calibrationHSI['ty'])
@@ -296,9 +297,9 @@ class CameraGeometry():
         band_ind_B = np.argmin(np.abs(wavelength_nm[2] - hyp.band2Wavelength))
 
         if extrapolate == False:
-            rgb = hyp.dataCube[minInd:maxInd, :, [band_ind_R, band_ind_G, band_ind_B]]
+            rgb = hyp.dataCubeRadiance[minInd:maxInd, :, [band_ind_R, band_ind_G, band_ind_B]]
         else:
-            rgb = hyp.dataCube[:, :, [band_ind_R, band_ind_G, band_ind_B]]
+            rgb = hyp.dataCubeRadiance[:, :, [band_ind_R, band_ind_G, band_ind_B]]
 
 
         points = self.projection[self.projection != 0].reshape((-1,3))
@@ -336,6 +337,8 @@ class FeatureCalibrationObject():
         self.rot_x = calHSI.rx
         self.rot_y = calHSI.ry
         self.rot_z = calHSI.rz
+
+        
 
         #if eval(config['General']['isFlippedRGB']):
         #    self.trans_x *= -1
@@ -684,7 +687,7 @@ class GeoPose:
     def compute_geocentric_orientation(self):
         if self.rot_obj_ecef == None:
             # Define rotations from ned to ecef
-            if self.lat == None:
+            if self.lat.any == None:
                 # Needed to encode rotation between NED and ECEF
                 self.compute_geodetic_position()
 
@@ -717,15 +720,13 @@ class GeoPose:
     def compute_rot_obj_ned_2_ecef(self):
 
         N = self.lat.shape[0]
-        rot_mats_ned_to_ecef = np.zeros((N, 3, 3), dtype=np.float64)
-
-
-
+        rot_mats_ned_2_ecef = np.zeros((N, 3, 3), dtype=np.float64)
+        
         for i in range(N):
-            rot_mats_ned_to_ecef[i,:,:] = rot_mat_ned_2_ecef(lat=self.lat[i], lon = self.lon[i])
+            rot_mats_ned_2_ecef[i,:,:] = rot_mat_ned_2_ecef(lat=self.lat[i], lon = self.lon[i])
 
 
-        self.rots_obj_ned_2_ecef = RotLib.from_matrix(rot_mats_ned_to_ecef)
+        self.rots_obj_ned_2_ecef = RotLib.from_matrix(rot_mats_ned_2_ecef)
 
         return self.rots_obj_ned_2_ecef
 
@@ -742,9 +743,13 @@ def rot_mat_ned_2_ecef(lat, lon):
     rotation matrix from NED to ECEF
     """
 
+    # Ensure lat and lon are scalar values
+    lat_scalar = lat[0] if isinstance(lat, np.ndarray) else lat
+    lon_scalar = lon[0] if isinstance(lon, np.ndarray) else lon
+
     # Convert to radians
-    l = np.deg2rad(lon)
-    mu = np.deg2rad(lat)
+    l = np.deg2rad(lon_scalar)
+    mu = np.deg2rad(lat_scalar)
 
     # Compute rotation matrix
     # TODO: add source

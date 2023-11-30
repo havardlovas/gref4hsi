@@ -5,6 +5,7 @@ import numpy as np
 
 import pyproj
 from pyproj import CRS, Transformer
+import pyvista as pv
 
 import rasterio
 from rasterio.features import geometry_mask
@@ -30,9 +31,9 @@ class GeoSpatialAbstractionHSI():
         #self.cube_indices = datacube_indices
         self.is_global = self.config['Coordinate Reference Systems']['ExportEPSG'] != 'Local'
         if self.is_global:
-            self.epsg_geocsc = int(config['Coordinate Reference Systems']['ExportEPSG'].split(sep = '::')[1])
+            self.epsg_geocsc = int(config['Coordinate Reference Systems']['ExportEPSG'])
 
-            self.epsg_proj = int(config['Coordinate Reference Systems']['gisEPSG'].split(sep = '::')[1])
+            self.epsg_proj = int(config['Coordinate Reference Systems']['gisEPSG'])
     def transform_geocentric_to_projected(self):
         self.points_proj  = self.points_geocsc # Remains same if it is local
         if self.is_global:
@@ -53,6 +54,8 @@ class GeoSpatialAbstractionHSI():
             self.points_proj[:,:,0] = east.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
             self.points_proj[:, :, 1] = north.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
             self.points_proj[:, :, 2] = hei.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
+
+
     def footprint_to_shape_file(self):
         self.edge_start = self.points_proj[0, :, 0:2].reshape((-1,2))
         self.edge_end = self.points_proj[-1, :, 0:2].reshape((-1,2))
@@ -131,18 +134,26 @@ class GeoSpatialAbstractionHSI():
         # Horizontal coordinates of intersections
         coords = self.points_proj[:, :, 0:2].reshape((-1, 2))
         if resamplingMethod == 'Nearest':
-            tree = NearestNeighbors(radius=0.01).fit(coords)
+            
+            tree = NearestNeighbors(radius=self.res).fit(coords)
+            print('Finalized NN interpolation')
             xi, yi = np.meshgrid(np.linspace(xmin, xmax, width), np.linspace(ymin, ymax, height))
             xy = np.vstack((xi.flatten(), yi.flatten())).T
             dist, indexes = tree.kneighbors(xy, 1)
 
             # Build the RGB cube from the indices
-            ortho_rgb = rgb_cube[indexes, :].flatten()
-            # Build datacube
-            ortho_datacube = datacube[indexes, :]
 
+            print('Reforming RGB data')
+            ortho_rgb = rgb_cube[indexes, :].flatten()
             ortho_rgb = np.flip(ortho_rgb.reshape((height, width, 3)).astype(np.float64), axis = 0)
-            ortho_datacube = np.flip(ortho_datacube.reshape((height, width, n_bands)).astype(np.float64), axis=0)
+            print(' RGB Reformed data')
+            # Build datacube
+            if not rgb_composite_only:
+                ortho_datacube = datacube[indexes, :]
+                ortho_datacube = np.flip(ortho_datacube.reshape((height, width, n_bands)).astype(np.float64), axis=0)
+
+            
+            
 
             self.width_rectified = width
             self.height_rectified = height
@@ -154,10 +165,13 @@ class GeoSpatialAbstractionHSI():
         # Set nodata value
         nodata = -9999
         ortho_rgb[mask == 1, :] = nodata
-        ortho_datacube[mask == 1, :] = nodata
-
         # Arange datacube or composite in rasterio-friendly structure
         ortho_rgb = np.transpose(ortho_rgb, axes = [2, 0, 1])
+
+        if not rgb_composite_only:
+            ortho_datacube[mask == 1, :] = nodata
+
+        
         
 
 
@@ -176,7 +190,7 @@ class GeoSpatialAbstractionHSI():
 
 
         else:
-            print('The software does not support writing a full datacube yet')
+            print('You are only writing parts of a datacube')
 
     def write_datacube_ENVI(self, ortho_datacube, nodata, transform, datacube_path, wavelengths):
         nx = ortho_datacube.shape[1]
@@ -242,7 +256,6 @@ class GeoSpatialAbstractionHSI():
         B = raster_hsi_array[2, :, :].reshape((raster_hsi_array.shape[1], raster_hsi_array.shape[2], 1))
 
         ortho_hsi = np.concatenate((R, G, B), axis=2)
-        #ortho_hsi = (ortho_hsi - ortho_hsi.min()) / (ortho_hsi.max() - ortho_hsi.min())
 
         max_val = np.percentile(ortho_hsi.reshape(-1), 99)
         ortho_hsi /= max_val
@@ -256,11 +269,9 @@ class GeoSpatialAbstractionHSI():
         self.raster_dem = rasterio.open(self.dem_reshaped)
 
 
-        # Adjust clahe
+        # Adjust Clahe
         hsi_image.clahe_adjustment()
         rgb_image.clahe_adjustment()
-        #ortho1_clahe[ortho1
-        # [..., 0] == 0] = 0
 
         hsi_image.to_luma(gamma=False, image_array = hsi_image.clahe_adjusted)
         rgb_image.to_luma(gamma=False, image_array= rgb_image.clahe_adjusted)
@@ -563,8 +574,7 @@ def dem_2_mesh(path_dem, model_path, config):
     """
     # Input and output file paths
 
-    output_xyz = config['General']['modelpathXYZ']
-    model_no_suffix = config['General']['modelpath']
+    output_xyz = model_path.split(sep = '.')[0] + '.xyx'
     # No-data value
     no_data_value = int(config['General']['nodataDEM'])  # Replace with your actual no-data value
     # Open the input raster dataset
@@ -638,19 +648,17 @@ def dem_2_mesh(path_dem, model_path, config):
     mesh.points[:, 1] = yECEF.reshape(-1)
     mesh.points[:, 2] = zECEF.reshape(-1)
 
-    mean_vec = np.mean(mesh.points, axis = 0)
+    #mean_vec = np.mean(mesh.points, axis = 0)
 
-    mesh.points -= mean_vec
+    offX = float(config['General']['offsetX'])
+    offY = float(config['General']['offsetY'])
+    offZ = float(config['General']['offsetZ'])
 
-    config.set('General', 'offsetX', str(mean_vec[0]))
-    config.set('General', 'offsetY', str(mean_vec[1]))
-    config.set('General', 'offsetZ', str(mean_vec[2]))
+    pos0 = np.array([offX, offY, offZ]).reshape((1, -1))
 
+    mesh.points -= pos0 # Add appropriate offset
     # Save mesh
     mesh.save(model_path)
-
-    with open(iniPath, 'w') as configfile:
-        config.write(configfile)
 
 
 def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):
