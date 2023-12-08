@@ -6,7 +6,7 @@ from scipy.spatial.transform import Rotation
 import open3d as o3d
 # A simple visualization of various types of data
 
-def show_mesh_camera(config):
+def show_mesh_camera(config, show_mesh = True, show_pose = True):
     """
     # Reads the mesh file and pose info, and plots the trajectory next to the mesh.
 
@@ -54,21 +54,24 @@ def show_mesh_camera(config):
     #rotMats = rotMats*cam_rot
     p = BackgroundPlotter(window_size=(600, 400))
     mesh = pv.read(mesh_path)
-    if texture_path != None:
-        tex = pv.read_texture(texture_path)
-        p.add_mesh(mesh, texture=tex)
-    else:
-        p.add_mesh(mesh)
-    p.add_points(points_cam, render_points_as_spheres=True,
-                      point_size=1)
-    directionX = rotMats[:, :, 0]
-    directionY = rotMats[:, :, 1]
-    directionZ = rotMats[:, :, 2]
-    step = 10
-    scale = np.linalg.norm(np.max(points_cam, axis = 0)-np.min(points_cam, axis = 0), axis=0)
-    p.add_arrows(points_cam[::step], directionX[::step], mag = 0.1*scale, color = 'red')
-    p.add_arrows(points_cam[::step], directionY[::step], mag=0.1*scale, color= 'green')
-    p.add_arrows(points_cam[::step], directionZ[::step], mag=0.1*scale, color= 'blue')
+    if show_mesh:
+        if texture_path != None:
+            tex = pv.read_texture(texture_path)
+            p.add_mesh(mesh, texture=tex)
+        else:
+            p.add_mesh(mesh)
+
+    if show_pose:
+        p.add_points(points_cam, render_points_as_spheres=True,
+                        point_size=1)
+        directionX = rotMats[:, :, 0]
+        directionY = rotMats[:, :, 1]
+        directionZ = rotMats[:, :, 2]
+        step = 10
+        scale = np.linalg.norm(np.max(points_cam, axis = 0)-np.min(points_cam, axis = 0), axis=0)
+        p.add_arrows(points_cam[::step], directionX[::step], mag = 0.1*scale, color = 'red')
+        p.add_arrows(points_cam[::step], directionY[::step], mag=0.1*scale, color= 'green')
+        p.add_arrows(points_cam[::step], directionZ[::step], mag=0.1*scale, color= 'blue')
     p.show()
     p.app.exec_()
 
