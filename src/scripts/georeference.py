@@ -94,9 +94,12 @@ class RayCasting:
         self.HSICamera = self.RGBCamera
 
         rot_hsi_rgb = np.array([self.rot_z, self.rot_y, self.rot_x]) * 180/np.pi
-        translation_hsi_rgb = np.array([self.trans_x, self.trans_y, self.trans_z]) / 1000 # These are millimetres
-
-        self.HSICamera.intrinsicTransformHSI(translation_rgb_hsi=-translation_hsi_rgb, rot_hsi_rgb= rot_hsi_rgb)
+        if self.config['General']['lever_arm_unit'] == 'mm':
+            translation_hsi_rgb = np.array([self.trans_x, self.trans_y, self.trans_z]) / 1000 # These are millimetres
+        elif self.config['General']['lever_arm_unit'] == 'm':
+            translation_hsi_rgb = np.array([self.trans_x, self.trans_y, self.trans_z])
+        
+        self.HSICamera.intrinsicTransformHSI(translation_rgb_hsi=-translation_hsi_rgb, rot_hsi_rgb = rot_hsi_rgb)
 
         self.HSICamera.defineRayDirections(dir_local=self.p_dir)
 
