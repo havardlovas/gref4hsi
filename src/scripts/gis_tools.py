@@ -29,11 +29,11 @@ class GeoSpatialAbstractionHSI():
         self.name = transect_string
         self.points_geocsc = point_cloud
         #self.cube_indices = datacube_indices
-        self.is_global = self.config['Coordinate Reference Systems']['ExportEPSG'] != 'Local'
+        self.is_global = self.config['Coordinate Reference Systems']['geocsc_epsg_export'] != 'Local'
         if self.is_global:
-            self.epsg_geocsc = int(config['Coordinate Reference Systems']['ExportEPSG'])
+            self.epsg_geocsc = int(config['Coordinate Reference Systems']['geocsc_epsg_export'])
 
-            self.epsg_proj = int(config['Coordinate Reference Systems']['gisEPSG'])
+            self.epsg_proj = int(config['Coordinate Reference Systems']['proj_epsg'])
     def transform_geocentric_to_projected(self):
         self.points_proj  = self.points_geocsc # Remains same if it is local
         if self.is_global:
@@ -574,16 +574,20 @@ def dem_2_mesh(path_dem, model_path, config):
     """
     # Input and output file paths
 
-    output_xyz = model_path.split(sep = '.')[0] + '.xyx'
+    output_xyz = model_path.split(sep = '.')[0] + '.xyz'
     # No-data value
-    no_data_value = int(config['General']['nodataDEM'])  # Replace with your actual no-data value
+    #no_data_value = int(config['General']['nodataDEM'])  # Replace with your actual no-data value
     # Open the input raster dataset
     ds = gdal.Open(path_dem)
+
+    # 
+
     if ds is None:
         print(f"Failed to open {path_dem}")
     else:
         # Read the first band (band index is 1)
         band = ds.GetRasterBand(1)
+        no_data_value = band.GetNoDataValue()
         if band is None:
             print(f"Failed to open band 1 of {path_dem}")
         else:
@@ -605,13 +609,14 @@ def dem_2_mesh(path_dem, model_path, config):
 
             print(f"EPSG Code: {epsg_code}")
 
-            config.set('General', 'demepsg', str(epsg_code))
+            config.set('Coordinate Reference Systems', 'dem_epsg', str(epsg_code))
             epsg_proj = epsg_code
             # Get the band's data as a NumPy array
             band_data = band.ReadAsArray()
             # Create a mask to identify no-data values
             mask = band_data != no_data_value
-            # Create and open the output XYZ file for writing
+            # Create and open the output XYZ file for writing if it does not exist:
+            #if not os.path.exists(output_xyz):
             with open(output_xyz, 'w') as xyz_file:
                 # Write data to the XYZ file using the mask and calculated coordinates
                 for y in range(ds.RasterYSize):
@@ -630,7 +635,7 @@ def dem_2_mesh(path_dem, model_path, config):
     # Generate a mesh from
     mesh = cloud.delaunay_2d()
 
-    epsg_geocsc = config['General']['modelepsg']
+    epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
     # Transform the mesh points to from projected to geocentric ECEF.
     geocsc = CRS.from_epsg(epsg_geocsc)
     proj = CRS.from_epsg(epsg_proj)
