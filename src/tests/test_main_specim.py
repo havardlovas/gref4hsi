@@ -13,8 +13,9 @@ from scripts.modulate_config import prepend_data_dir_to_relative_paths
 This script is meant to be used for testing the processing pipeline of airborne HI data.
 """ 
 
-config_file = 'D:/HyperspectralDataAll/HI/2022-05-27-053505-NyAlesund-Flight8/configuration.ini'
+config_file = 'D:/HyperspectralDataAll/HI/2022-08-31-060000-Remoy-Specim/configuration.ini'
 # Set the data directory for the mission (locally where the data is stored)
+
 prepend_data_dir_to_relative_paths(config_path=config_file)
 
 config = configparser.ConfigParser()
@@ -28,12 +29,12 @@ def main():
 
     config = configparser.ConfigParser()
     config.read(config_file)
-    # TODO: replace "agisoft_export_model" with generic "export_model"
+    # Exports model
     parsing_utils.export_model(config_file)
 
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
     
-    #visualize.show_mesh_camera(config)
+    #visualize.show_mesh_camera(config, show_mesh = True, show_pose = True)
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
     georeference.main(config_file, mode='georeference', is_calibrated=True)

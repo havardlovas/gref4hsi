@@ -91,14 +91,23 @@ class Hyperspectral:
                 band2WavelengthPath = config['HDF.calibration']['band2Wavelength']
                 radiometricFramePath = config['HDF.calibration']['radiometricFrame']
                 darkFramePath = config['HDF.calibration']['darkFrame']
-                RGBFramesPath = config['HDF.rgb']['rgbFrames']
-                timestampRGBPath = config['HDF.rgb']['timestamp']
+
+                try:
+                    RGBFramesPath = config['HDF.rgb']['rgbFrames']
+                    timestampRGBPath = config['HDF.rgb']['timestamp']
+                except KeyError:
+                    pass
+                
+                
 
                 if load_datacube:
                     self.dataCube = self.f[dataCubePath][()]
 
                 try:
-                    self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
+                    if eval(config['HDF']['is_uhi']):
+                        self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
+                    else:
+                        self.t_exp = self.f[exposureTimePath][()] / 1000
                 except KeyError:
                     pass
                 self.dataCubeTimeStamps = self.f[timestampHyperspectralPath][()]
@@ -111,13 +120,10 @@ class Hyperspectral:
                 
                 try:
                     self.RGBTimeStamps = self.f[timestampRGBPath][()]
-                except KeyError:
+                    self.RGBImgs = self.f[RGBFramesPath][()]
+                except (UnboundLocalError, KeyError):
                     pass
 
-                try:
-                    self.RGBImgs = self.f[RGBFramesPath][()]
-                except (KeyError, TypeError):
-                    pass
 
                 georeferenced_nav_folder = config['Georeferencing']['folder']
                 if georeferenced_nav_folder in self.f:
@@ -772,10 +778,10 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 rot_ref = 'ECEF'
 
             # The positions supplied for the reference
-            pos_epsg_orig = config['General']['pos_epsg_orig']
+            pos_epsg_orig = config['Coordinate Reference Systems']['pos_epsg_orig']
 
             # The positions supplied for exporting the model
-            pos_epsg_export = config['Coordinate Reference Systems']['exportepsg']
+            pos_epsg_export = config['Coordinate Reference Systems']['geocsc_epsg_export']
 
             rot_interpolated = RotLib.from_quat(quaternion_interpolated)
 
@@ -899,6 +905,7 @@ def export_pose(config_file):
     
     
 def export_model(config_file):
+    """"""
     config = configparser.ConfigParser()
     config.read(config_file)
 
@@ -915,10 +922,11 @@ def export_model(config_file):
     elif modelExportType == 'dem_file':
         file_path_dem = config['Absolute Paths']['dempath']
         file_path_3d_model = config['Absolute Paths']['modelpath']
+        # Make new only once.
+        
         dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
     elif modelExportType == 'none':
         pass
-    
 if __name__ == "__main__":
     # Here we could set up necessary steps on a high level. 
     args = sys.argv[1:]
