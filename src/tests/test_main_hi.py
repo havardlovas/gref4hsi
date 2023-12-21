@@ -13,7 +13,8 @@ from scripts.modulate_config import prepend_data_dir_to_relative_paths
 This script is meant to be used for testing the processing pipeline of airborne HI data.
 """ 
 
-config_file = 'D:/HyperspectralDataAll/HI/Flight8/configuration.ini'
+#config_file = 'D:/HyperspectralDataAll/HI/Flight8/configuration.ini'
+config_file = 'D:/Ocean Color Colab/Processing Step4/Flight_8/configuration.ini'
 # Set the data directory for the mission (locally where the data is stored)
 prepend_data_dir_to_relative_paths(config_path=config_file)
 
