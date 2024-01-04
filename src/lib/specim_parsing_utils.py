@@ -13,17 +13,23 @@ from scripts.geometry import CalibHSI
 class Specim():
     def __init__(self, mission_path, config):
         self.mission_path = mission_path # With slash end
-        self.config = config # 
-
-    def read_fov_file(self, fov_file_path):
+        self.config = config #
+    
+    @staticmethod
+    def fov_2_param(fov):
+        """
+        param fov: view angle of each pixel in degrees
+        returns: A dictionary of camera parameters
+        """
         # Script for reading the FOV file and converting it to a camera model
         def optimize_func(param, x_true, n_pix):
+
             f = param[0]  # The focal length of the lens
             k1 = param[1]  # The 1st Radial distortion
             k2 = param[2]  # The 2nd Radial distortion
             k3 = param[3]
             c_x = param[4]
-            n_pix = 512
+            n_pix = x_true.size
             #v_c = n_pix / 2 + 1
             u = np.arange(1, n_pix + 1).reshape((-1,1))
 
@@ -33,16 +39,13 @@ class Specim():
                             k2 * ((u - c_x) / 1000) ** 3 + \
                             k3 * ((u - c_x) / 1000) ** 2) / f
 
-            distortion = 1  # 0 means dont use distortion
-            x_norm = x_norm_lin + x_norm_nonlin * distortion  # distortion is boolean
+            
+            x_norm = x_norm_lin + x_norm_nonlin
             diff_x = x_norm-x_true
             return diff_x.reshape(-1)
-
         
-
-        df_fov = pd.read_csv(fov_file_path, sep = ',', header = None)
-
-        theta_true = df_fov.values[:, 1]*np.pi/180
+        
+        theta_true = fov*np.pi/180
 
         x_true = np.array(np.tan(theta_true)).reshape((-1, 1))
 
@@ -60,6 +63,8 @@ class Specim():
 
         param = res.x
 
+        
+
         f = param[0]  # The focal length of the lens
         k1 = param[1]  # The 1st Radial distortion
         k2 = param[2]  # The 2nd Radial distortion
@@ -67,6 +72,8 @@ class Specim():
         c_x = param[4] # The
         """rotation_x, rotation_y, rotation_z, translation_x, translation_y, translation_z, c_x, focal_length,
         distortion_coeff_1, distortion_coeff_2, distortion_coeff_3"""
+
+        # initialized to 0
         rotation_x = 0
         rotation_y = 0
         rotation_z = 0
@@ -86,8 +93,20 @@ class Specim():
                       'k2': k2,
                       'k3': k3,
                       'width': n_pix}
+        return param_dict
+
+    def read_fov_file(self, fov_file_path):
         
-        file_name_calib = self.config['Absolute Paths']['hsicalibfileb1']
+
+        
+
+        df_fov = pd.read_csv(fov_file_path, sep = ',', header = None)
+
+        fov_arr = df_fov.values[:, 1]
+
+        param_dict = Specim.fov_2_param(fov = fov_arr)
+        
+        file_name_calib = self.config['Absolute Paths']['hsicalibfile']
 
         CalibHSI(file_name_cal_xml=file_name_calib, 
                  config = self.config, 

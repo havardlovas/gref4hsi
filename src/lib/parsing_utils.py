@@ -43,104 +43,68 @@ class Hyperspectral:
         self.name = filename
         # If errors arise due to improper dataset paths below, open the *.h5 file in hdfviewer and edit the path.
         with h5py.File(filename, 'r', libver='latest') as self.f:
-            # Special case of an old UHI format from 2017.
             # TODO: Embed the paths from this special format into confic file
-            if eval(config['HDF']['isMarmineUHISpring2017']):
-                # The raw data cube
-                self.dataCube = self.f['uhi/pixels'][()]
+            
+            dataCubePath = config['HDF.hyperspectral']['dataCube']
+            exposureTimePath = config['HDF.hyperspectral']['exposureTime']
+            timestampHyperspectralPath = config['HDF.hyperspectral']['timestamp']
+            band2WavelengthPath = config['HDF.calibration']['band2Wavelength']
+            radiometricFramePath = config['HDF.calibration']['radiometricFrame']
+            darkFramePath = config['HDF.calibration']['darkFrame']
 
-                # Exposure time of HSI
-                self.t_exp = self.f['uhi/parameters'][()][0, 0] / 1000
+            try:
+                RGBFramesPath = config['HDF.rgb']['rgbFrames']
+                timestampRGBPath = config['HDF.rgb']['timestamp']
+            except KeyError:
+                pass
+            
+            
 
-                # Time stamps of line scans
-                self.dataCubeTimeStamps = self.f['uhi/parameters'][()][:, 2]
+            if load_datacube:
+                self.dataCube = self.f[dataCubePath][()]
 
-                # Correspondence describing the wavelength corresponding to each band
-                self.band2Wavelength = self.f['uhi/calib'][()]
-
-                # The time stamps corresponding to each RGB image
-                self.RGBTimeStamps = self.f['rgb/parameters'][()][:, 2]
-
-                # The actual RGB images
-                # TODO: Make a class method for writing these to *.png files with apropriate name conventions. Including Exif tagging
-                # TODO: Make a class method for performing grey-world correction of images
-                self.RGBImgs = self.f['rgb/pixels'][()]
-
-                # Check if the dataset exists
-                georeferenced_nav_folder = config['Georeferencing']['folder']
-                processed_nav_folder = config['HDF.processed_nav']['folder']
-                if georeferenced_nav_folder in self.f:
-                    georef_config = config['Georeferencing']
-                    self.normals_local = self.f[georef_config['normals_hsi_crs']][()]
-                    self.points_global = self.f[georef_config['points_ecef_crs']][()]
-                    self.points_local = self.f[georef_config['points_hsi_crs']][()]
-
-                    self.position_hsi = self.f[georef_config['position_ecef']][()]
-                    self.quaternion_hsi = self.f[georef_config['quaternion_ecef']][()]
-                # Check if the dataset exists
-                if processed_nav_folder in self.f:
-                    processed_nav_config = config['HDF.processed_nav']
-                    self.pos_rgb = self.f[processed_nav_config['position_ecef']][()]
-                    self.quat_rgb = self.f[processed_nav_config['quaternion_ecef']][()]
-                    self.pose_time = self.f[processed_nav_config['timestamp']][()]
-
-            else:
-                dataCubePath = config['HDF.hyperspectral']['dataCube']
-                exposureTimePath = config['HDF.hyperspectral']['exposureTime']
-                timestampHyperspectralPath = config['HDF.hyperspectral']['timestamp']
-                band2WavelengthPath = config['HDF.calibration']['band2Wavelength']
-                radiometricFramePath = config['HDF.calibration']['radiometricFrame']
-                darkFramePath = config['HDF.calibration']['darkFrame']
-
-                try:
-                    RGBFramesPath = config['HDF.rgb']['rgbFrames']
-                    timestampRGBPath = config['HDF.rgb']['timestamp']
-                except KeyError:
-                    pass
-                
-                
-
-                if load_datacube:
-                    self.dataCube = self.f[dataCubePath][()]
-
-                try:
-                    if eval(config['HDF']['is_uhi']):
-                        self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
-                    else:
-                        self.t_exp = self.f[exposureTimePath][()] / 1000
-                except KeyError:
-                    pass
-                self.dataCubeTimeStamps = self.f[timestampHyperspectralPath][()]
-                self.band2Wavelength = self.f[band2WavelengthPath][()]
-                try:
-                    self.darkFrame = self.f[darkFramePath][()]
-                    self.radiometricFrame = self.f[radiometricFramePath][()]
-                except KeyError:
-                    pass
-                
-                try:
-                    self.RGBTimeStamps = self.f[timestampRGBPath][()]
-                    self.RGBImgs = self.f[RGBFramesPath][()]
-                except (UnboundLocalError, KeyError):
-                    pass
+            try:
+                if eval(config['HDF']['is_uhi']):
+                    self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
+                else:
+                    self.t_exp = self.f[exposureTimePath][()] / 1000
+            except KeyError:
+                pass
+            self.dataCubeTimeStamps = self.f[timestampHyperspectralPath][()]
+            self.band2Wavelength = self.f[band2WavelengthPath][()]
+            try:
+                self.darkFrame = self.f[darkFramePath][()]
+                self.radiometricFrame = self.f[radiometricFramePath][()]
+            except KeyError:
+                pass
+            
+            try:
+                self.RGBTimeStamps = self.f[timestampRGBPath][()]
+                self.RGBImgs = self.f[RGBFramesPath][()]
+            except (UnboundLocalError, KeyError):
+                pass
 
 
-                georeferenced_nav_folder = config['Georeferencing']['folder']
-                if georeferenced_nav_folder in self.f:
-                    georef_config = config['Georeferencing']
-                    self.normals_local = self.f[georef_config['normals_hsi_crs']][()]
-                    self.points_global = self.f[georef_config['points_ecef_crs']][()]
-                    self.points_local = self.f[georef_config['points_hsi_crs']][()]
+            georeferenced_nav_folder = config['Georeferencing']['folder']
+            if georeferenced_nav_folder in self.f:
+                georef_config = config['Georeferencing']
+                self.normals_local = self.f[georef_config['normals_hsi_crs']][()]
+                self.points_global = self.f[georef_config['points_ecef_crs']][()]
+                self.points_local = self.f[georef_config['points_hsi_crs']][()]
 
-                    self.position_hsi = self.f[georef_config['position_ecef']][()]
-                    self.quaternion_hsi = self.f[georef_config['quaternion_ecef']][()]
-                # Check if the dataset exists
-                processed_nav_folder = config['HDF.processed_nav']['folder']
-                if processed_nav_folder in self.f:
-                    processed_nav_config = config['HDF.processed_nav']
-                    self.pos_rgb = self.f[processed_nav_config['position_ecef']][()]
-                    self.quat_rgb = self.f[processed_nav_config['quaternion_ecef']][()]
-                    self.pose_time = self.f[processed_nav_config['timestamp']][()]
+                self.position_hsi = self.f[georef_config['position_ecef']][()]
+                self.quaternion_hsi = self.f[georef_config['quaternion_ecef']][()]
+            # Check if the dataset exists
+            processed_nav_folder = config['HDF.processed_nav']['folder']
+            
+            if processed_nav_folder in self.f:
+                processed_nav_config = config['HDF.processed_nav']
+                self.pos_ref = self.f[processed_nav_config['position_ecef']][()]
+                self.pos0 = self.f[processed_nav_config['pos0']][()]
+                self.quat_ref = self.f[processed_nav_config['quaternion_ecef']][()]
+                self.pose_time = self.f[processed_nav_config['timestamp']][()]
+            
+            
                     
 
 
@@ -150,69 +114,50 @@ class Hyperspectral:
             self.n_scanlines = self.dataCube.shape[0]
             self.n_pix = self.dataCube.shape[1]
             self.n_bands = self.dataCube.shape[1]
+            # Calculate radiance cube if this is not done already
+            self.digital_counts_2_radiance(config=config)
             try:
                 self.n_imgs = self.RGBTimeStamps.shape[0]
             except AttributeError:
                 pass
 
-            # The maximal image size is typically 1920 by 1200. It is however cropped during recording
-            # And there can be similar issues. The binning below is somewhat heuristic but general
-            if self.n_pix > 1000:
-                self.spatial_binning = 0
-            elif self.n_pix > 500:
-                self.spatial_binning = 1
-            elif self.n_pix > 250:
-                self.spatial_binning = 2
-
-            if self.n_bands  > 600:
-                self.spectral_binning = 0
-            elif self.n_bands  > 250:
-                self.spectral_binning = 1
-            elif self.n_bands  > 125:
-                self.spectral_binning = 2
+            
 
 
 
     def digital_counts_2_radiance(self, config):
 
-        # Special case
-        if eval(config['HDF']['isMarmineUHISpring2017']):
-            calibFolder = config['HDF']['calibFolder']
-            if self.dataCube.shape[1] == 480:
-                self.radiometricFrame = np.load(calibFolder + '/radiometricFrame480.npy')
-                self.darkFrame = np.load(calibFolder + '/darkFrame480.npy')
-                self.spatial_binning = 2
-            elif self.dataCube.shape[1] == 960:
-                self.radiometricFrame = np.load(calibFolder + '/radiometricFrame.npy')
-                self.darkFrame = np.load(calibFolder + '/darkFrame.npy')
-                self.spatial_binning = 1
+        # Only calibrate if data it is not already done
+        is_calibrated = eval(config['HDF.hyperspectral']['is_calibrated'])
 
+        if is_calibrated == is_calibrated:
+            self.dataCubeRadiance = self.dataCube.astype(np.float32)
 
-
-        is_calibrated = config['HDF.hyperspectral']['is_calibrated']
-
-        if is_calibrated == 'True':
-            self.dataCubeRadiance = self.dataCube
+            # Add the radiance dataset
+            radiance_cube_path = config['HDF.hyperspectral']['dataCube']
         else:
-            self.dataCubeRadiance = np.zeros(self.dataCube.shape, dtype = np.float64)
+            self.dataCubeRadiance = np.zeros(self.dataCube.shape, dtype = np.float32)
             for i in range(self.dataCube.shape[0]):
                 self.dataCubeRadiance[i, :, :] = (self.dataCube[i, :, :] - self.darkFrame) / (
                         self.radiometricFrame * self.t_exp)
+            
+            # Add the radiance dataset
+            radiance_cube_path = config['HDF.hyperspectral']['dataCube'] + '_radiance'
+            
+            # TODO: Write the radiance data to the h5 file
+            Hyperspectral.add_dataset(data = self.dataCubeRadiance, name=radiance_cube_path, h5_filename=self.name)
         
+        config.set('HDF.hyperspectral', 'radiance_cube', radiance_cube_path)
+
         # For memory efficiency
         del self.dataCube
-            
-            
 
-    def add_dataset(self, data, name):
-        """
-        Method to write a dataset to the h5 file
-        :param data: type any permitted (see h5py doc)
-        The data to be written
-        :param name: string
-        The path/name of the dataset
-        :return: None
-        """
+        
+            
+            
+    
+    """def add_dataset(self, data, name):
+        
         # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
         with h5py.File(self.name, 'a', libver='latest') as self.f:
             # Check if the dataset exists
@@ -220,6 +165,27 @@ class Hyperspectral:
                 del self.f[name]
 
             dset = self.f.create_dataset(name=name, data = data)
+    """
+    
+    @staticmethod
+    def add_dataset(data, name, h5_filename):
+        """
+        Method to write a dataset to the h5 file
+        :param data: type any permitted (see h5py doc)
+        The data to be written
+        :param name: string
+        The path/name of the dataset
+        :param h5_filename: string
+        The path to the h5_file
+        :return: None
+        """
+        # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
+        with h5py.File(h5_filename, 'a', libver='latest') as f:
+            # Check if the dataset exists
+            if name in f:
+                del f[name]
+
+            dset = f.create_dataset(name=name, data = data)
 
     def get_dataset(self, dataset_name):
         """
@@ -531,7 +497,7 @@ def agisoft_export_model(config_file):
     # Define *.psx file
     path_psx = config['General']['pathPsx']
     doc.open(path_psx, read_only=False)
-
+    
     chunk_str = config['General']['chunkName']
     chunkName = [chunk_str]
 
@@ -679,20 +645,12 @@ def reformat_h5_embedded_data_h5(config, config_file):
                     None: The function returns nothing.
         """
 
-    # Offsets should correspond with polygon model offset
-    offX = float(config['General']['offsetX'])
-    offY = float(config['General']['offsetY'])
-    offZ = float(config['General']['offsetZ'])
-    if offX == -1:
-        # Set pos0 to None to ensure that error is raised if it is used for anything
-        pos0 = None
-    else:
-        pos0 = np.array([offX, offY, offZ])
 
     # Traverse through h5 dir to append the data to file
     h5dir = config['Absolute Paths']['h5dir']
     is_first = True
     for filename in sorted(os.listdir(h5dir)):
+        
         # Find the interesting prefixes
         if filename.endswith('h5') or filename.endswith('hdf'):
             # Identify the total path
@@ -706,6 +664,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
             # Alternatives quat, eul_ZYX
             rotation_reference_type = config['HDF.raw_nav']['rotation_reference_type']
             if rotation_reference_type == 'quat':
+                print('Hello1')
                 quaternion_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['quaternion'])
                 if quaternion_ref.shape[0] == 4:
                     quaternion_ref = np.transpose(quaternion_ref)
@@ -725,6 +684,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 if eul_ref.shape[0] == 3:
                     eul_ref = np.transpose(eul_ref)
                 eul_is_degrees = eval(config['HDF.raw_nav']['eul_is_degrees'])
+                print(eul_is_degrees)
                 ## Assuming It is given as roll, pitch, yaw
                 eul_ZYX_ref = np.flip(eul_ref, axis = 1)
                 quaternion_ref = RotLib.from_euler(angles = eul_ZYX_ref, seq = 'ZYX', degrees = eul_is_degrees).as_quat()
@@ -736,7 +696,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 
 
                 
-
+            print('Hello3')
 
 
 
@@ -762,10 +722,10 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 .reshape(-1)
 
 
-            # Compute absolute positions positions and orientation:
+            # Compute interpolated absolute positions positions and orientation:
             position_interpolated, quaternion_interpolated = interpolate_poses(timestamp_from=timestamps_imu,
                                                              pos_from=position_ref,
-                                                             pos0=pos0,
+                                                             pos0=None,
                                                              rot_from=rot_obj,
                                                              timestamps_to=timestamp_hsi,
                                                              use_absolute_position = True)
@@ -805,19 +765,18 @@ def reformat_h5_embedded_data_h5(config, config_file):
 
             quaternion_ref_ecef = geo_pose_ref.rot_obj_ecef.as_quat()
 
-            # Just set it using the first file
-            condition_for_setting_offsets = (offX == -1 and is_first)
 
             
 
 
 
-            if condition_for_setting_offsets:
-                
-                # Calculate some appropriate offsets in ECEF
-                pos0 = np.mean(position_ref_ecef, axis=0)
+            
 
             if is_first:
+                # Calculate some appropriate offsets in ECEF
+                pos0 = np.mean(position_ref_ecef, axis=0)
+                
+
                 rot_vec_ecef = geo_pose_ref.rot_obj_ecef.as_euler('ZYX', degrees=True)
                 total_pose = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
                 # Ensure that flag is not raised again. Offsets should only be set once.
@@ -828,20 +787,23 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 rot_vec_ecef = geo_pose_ref.rot_obj_ecef.as_euler('ZYX', degrees=True)
                 partial_pose = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
                 total_pose = np.concatenate((total_pose, partial_pose), axis=0)
+            
+            position_offset_name = config['HDF.processed_nav']['pos0']
+            Hyperspectral.add_dataset(data=pos0, name=position_offset_name, h5_filename=path_hdf)
 
 
 
             # Add camera position
             position_ref_name = config['HDF.processed_nav']['position_ecef']
-            hyp.add_dataset(data=position_ref_ecef - pos0, name=position_ref_name)
+            Hyperspectral.add_dataset(data=position_ref_ecef - pos0, name=position_ref_name, h5_filename=path_hdf)
 
             # Add camera quaternion
             quaternion_ref_name = config['HDF.processed_nav']['quaternion_ecef']
-            hyp.add_dataset(data=quaternion_ref_ecef, name=quaternion_ref_name)
+            Hyperspectral.add_dataset(data=quaternion_ref_ecef, name=quaternion_ref_name, h5_filename=path_hdf)
 
             # Add time stamps
             time_stamps_name = config['HDF.processed_nav']['timestamp']
-            hyp.add_dataset(data=timestamp_hsi, name=time_stamps_name)
+            Hyperspectral.add_dataset(data=timestamp_hsi, name=time_stamps_name, h5_filename=path_hdf)
 
 
             
@@ -927,6 +889,13 @@ def export_model(config_file):
         dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
     elif modelExportType == 'none':
         pass
+
+
+
+
+
+
+
 if __name__ == "__main__":
     # Here we could set up necessary steps on a high level. 
     args = sys.argv[1:]
