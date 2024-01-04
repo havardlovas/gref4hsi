@@ -22,3 +22,4 @@ trimesh
 rtree
 pyembree
 sphinx
+ipykernel

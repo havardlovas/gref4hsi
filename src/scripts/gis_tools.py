@@ -24,11 +24,10 @@ GRAVITY = 9.81 # m/s^2
 
 
 class GeoSpatialAbstractionHSI():
-    def __init__(self, point_cloud, datacube_indices, transect_string, config):
+    def __init__(self, point_cloud, transect_string, config):
         self.config = config
         self.name = transect_string
         self.points_geocsc = point_cloud
-        #self.cube_indices = datacube_indices
         self.is_global = self.config['Coordinate Reference Systems']['geocsc_epsg_export'] != 'Local'
         if self.is_global:
             self.epsg_geocsc = int(config['Coordinate Reference Systems']['geocsc_epsg_export'])
@@ -90,16 +89,16 @@ class GeoSpatialAbstractionHSI():
         shape_path = self.config['Absolute Paths']['footPrintPaths'] + self.name + '.shp'
 
         gdf.to_file(shape_path, driver='ESRI Shapefile')
-    def resample_datacube(self, hyp, rgb_composite_only, minInd, maxInd, extrapolate = True):
+    def resample_datacube(self, hyp, rgb_composite_only):
         #
-        self.res = float(self.config['Georeferencing']['resolutionHyperspectralMosaic'])
+        self.res = float(self.config['Orthorectification']['resolutionHyperspectralMosaic'])
         wl_red = float(self.config['General']['RedWavelength'])
         wl_green = float(self.config['General']['GreenWavelength'])
         wl_blue = float(self.config['General']['BlueWavelength'])
 
         rgb_composite_path = self.config['Absolute Paths']['rgbCompositePaths']
         datacube_path = self.config['Absolute Paths']['orthoCubePaths']
-        resamplingMethod = self.config['Georeferencing']['resamplingMethod']
+        resamplingMethod = self.config['Orthorectification']['resamplingMethod']
         
         # The footprint-shape is a in a vectorized format and needs to be mapped into a raster-mask
         xmin, ymin, xmax, ymax = self.footprint_shp.bounds
@@ -120,13 +119,10 @@ class GeoSpatialAbstractionHSI():
         wavelengths=hyp.band2Wavelength
 
         
-        if extrapolate == False:
-            datacube = hyp.dataCubeRadiance[minInd:maxInd, :, :].reshape((-1, n_bands))
-            rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+        
+        datacube = hyp.dataCubeRadiance[:, :, :].reshape((-1, n_bands))
+        rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
 
-        elif extrapolate == True:
-            datacube = hyp.dataCubeRadiance[:, :, :].reshape((-1, n_bands))
-            rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
         transform = rasterio.transform.from_bounds(xmin, ymin, xmax, ymax, width, height)
 
         del hyp
@@ -601,16 +597,16 @@ def dem_2_mesh(path_dem, model_path, config):
             spatial_reference = osr.SpatialReference(ds.GetProjection())
 
             # Get the EPSG code
-            epsg_code = None
+            epsg_proj = None
             if spatial_reference.IsProjected():
-                epsg_code = spatial_reference.GetAttrValue("AUTHORITY", 1)
+                epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 1)
             elif spatial_reference.IsGeographic():
-                epsg_code = spatial_reference.GetAttrValue("AUTHORITY", 0)
+                epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 0)
 
-            print(f"EPSG Code: {epsg_code}")
+            print(f"DEM projected EPSG Code: {epsg_proj}")
 
-            config.set('Coordinate Reference Systems', 'dem_epsg', str(epsg_code))
-            epsg_proj = epsg_code
+            config.set('Coordinate Reference Systems', 'dem_epsg', str(epsg_proj))
+            
             # Get the band's data as a NumPy array
             band_data = band.ReadAsArray()
             # Create a mask to identify no-data values
@@ -640,6 +636,8 @@ def dem_2_mesh(path_dem, model_path, config):
     geocsc = CRS.from_epsg(epsg_geocsc)
     proj = CRS.from_epsg(epsg_proj)
     transformer = Transformer.from_crs(proj, geocsc)
+
+    print(f"Mesh geocentric EPSG Code: {epsg_geocsc}")
 
     points_proj = mesh.points
 
