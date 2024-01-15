@@ -1,5 +1,6 @@
 import numpy as np
 import numpy.matlib
+import rasterio
 from scipy.spatial.transform import Rotation as RotLib
 from scipy.spatial.transform import Slerp
 from scipy.interpolate import interp1d
@@ -449,41 +450,62 @@ class CameraGeometry():
 
         
 
-    def compute_elevation_mean_sealevel(self, geoid_path):
+    def compute_elevation_mean_sealevel(self, source_epsg, geoid_path = 'data/world/geoids/egm08_25.gtx'):
         n = self.rayDirectionsGlobal.shape[0]
         m = self.rayDirectionsGlobal.shape[1]
 
-        x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1)) + self.pos0[0]
-        y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1)) + self.pos0[1]
-        z_ecef = self.points_ecef_crs[:, :, 2].reshape((-1,1)) + self.pos0[2]
+        x_ecef = self.position_ecef[:, 0].reshape((-1,1)) + self.pos0[0]
+        y_ecef = self.position_ecef[:, 1].reshape((-1,1)) + self.pos0[1]
+        z_ecef = self.position_ecef[:, 2].reshape((-1,1)) + self.pos0[2]
 
-        lats, lons, alts = pm.ecef2geodetic(x = x_ecef, y = y_ecef, z = z_ecef)
+        #lats, lons, alts = pm.ecef2geodetic(x = x_ecef, y = y_ecef, z = z_ecef)
 
-        alts_msl = CameraGeometry.elevation_msl(lons, lats, alts, geoid_path)
+        
+
+        alts_msl = CameraGeometry.elevation_msl(x_ecef, y_ecef, z_ecef, source_epsg=source_epsg, geoid_path = geoid_path)
         
 
         self.hsi_alts_msl = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float32), alts_msl.reshape((-1,1)))
+
+        
     
     @staticmethod
-    def elevation_msl(lons, lats, alts, geoid_path):
+    def elevation_msl(x_ecef, y_ecef, z_ecef, source_epsg, geoid_path):
         """_summary_
 
-        :param lons: Longitudes
-        :type lons: 
-        :param lats: Latitudes
-        :type lats: _type_
-        :param alts: Altitudes above reference ellipsoid
-        :type alts: _type_
+        :param x_ecef: _description_
+        :type x_ecef: _type_
+        :param y_ecef: _description_
+        :type y_ecef: _type_
+        :param z_ecef: _description_
+        :type z_ecef: _type_
+        :param source_epsg: _description_
+        :type source_epsg: _type_
         :param geoid_path: _description_
         :type geoid_path: _type_
-        :return: Orthometric altitude above mean sealevel
+        :return: _description_
         :rtype: _type_
         """
-        src = rasterio.open(geoid_path)
+        
+        with rasterio.open(geoid_path) as src:
 
-        # Compute undulation and orthometric height for each point (height above MSL)
-        undulations = np.array(list(src.sample(zip(lons, lats))))
-        alt_msl = alts - undulations
+            source_crs = CRS.from_epsg(source_epsg)
+                
+            target_crs = src.crs
+
+            transformer = Transformer.from_crs(source_crs, target_crs)
+
+            (lat, lon, alt_ell) = transformer.transform(xx=x_ecef, yy=y_ecef, zz=z_ecef)
+
+            undulation = np.zeros(lat.shape)
+            # Compute undulation and orthometric height for each point (height above MSL)
+            
+            for i, x, y in zip(range(lat.size), lon, lat):
+                undulation[i] = next(src.sample([(float(x), float(y))]))[0]
+            
+
+        
+        alt_msl = alt_ell - undulation
 
         return alt_msl
 

@@ -333,11 +333,11 @@ class GeoSpatialAbstractionHSI():
                                 crs=self.crs, transform=transform, nodata=nodata) as dst:
 
             dst.write(ortho_rgb)
+        memmap_array.flush()
         
-        os.path.remove('memmap_array.dat')
         
 
-    def resample_ancillary(self, h5_filename, anc_dir, anc_dict, interleave = 'bil'):
+    def resample_ancillary(self, h5_filename, anc_dir, anc_dict, interleave = 'bsq'):
 
         band_counter = 0
         band_names = []

@@ -176,6 +176,8 @@ def main(iniPath):
             hsi_geometry.compute_sun_angles_local_tangent_plane()
 
             hsi_geometry.compute_tide_level(path_tide, tide_format = 'NMA')
+
+            hsi_geometry.compute_elevation_mean_sealevel(source_epsg=config['Coordinate Reference Systems']['geocsc_epsg_export'])
             
             write_intersection_geometry_2_h5_file(hsi_geometry=hsi_geometry, config = config, h5_filename=path_hdf)
 

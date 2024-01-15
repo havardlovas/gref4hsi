@@ -42,7 +42,7 @@ def main():
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
     
-    #georeference_mod.main(config_file)
+    georeference_mod.main(config_file)
 
     orthorectification.main(config_file)
     print('')

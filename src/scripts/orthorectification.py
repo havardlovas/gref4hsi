@@ -166,6 +166,8 @@ def main(iniPath):
                                      rgb_composite_dir=rgb_composite_dir,
                                      config_ortho=config_ortho)
 
+            os.remove('memmap_array.dat')
+
             # The ancilliary data is read from h5 files and converted into a datacube
             if eval(config['Orthorectification']['resample_ancillary']): 
                 gisHSI.resample_ancillary(h5_filename=h5_filename, 
