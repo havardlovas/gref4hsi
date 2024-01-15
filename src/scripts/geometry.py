@@ -449,7 +449,46 @@ class CameraGeometry():
 
         
 
+    def compute_elevation_mean_sealevel(self, geoid_path):
+        n = self.rayDirectionsGlobal.shape[0]
+        m = self.rayDirectionsGlobal.shape[1]
+
+        x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1)) + self.pos0[0]
+        y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1)) + self.pos0[1]
+        z_ecef = self.points_ecef_crs[:, :, 2].reshape((-1,1)) + self.pos0[2]
+
+        lats, lons, alts = pm.ecef2geodetic(x = x_ecef, y = y_ecef, z = z_ecef)
+
+        alts_msl = CameraGeometry.elevation_msl(lons, lats, alts, geoid_path)
         
+
+        self.hsi_alts_msl = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float32), alts_msl.reshape((-1,1)))
+    
+    @staticmethod
+    def elevation_msl(lons, lats, alts, geoid_path):
+        """_summary_
+
+        :param lons: Longitudes
+        :type lons: 
+        :param lats: Latitudes
+        :type lats: _type_
+        :param alts: Altitudes above reference ellipsoid
+        :type alts: _type_
+        :param geoid_path: _description_
+        :type geoid_path: _type_
+        :return: Orthometric altitude above mean sealevel
+        :rtype: _type_
+        """
+        src = rasterio.open(geoid_path)
+
+        # Compute undulation and orthometric height for each point (height above MSL)
+        undulations = np.array(list(src.sample(zip(lons, lats))))
+        alt_msl = alts - undulations
+
+        return alt_msl
+
+
+
     
 
     def compute_tide_level(self, path_tide, tide_format, constant_height = 0):
@@ -483,29 +522,6 @@ class CameraGeometry():
 
             else: # A Good place to write parsers for other formats
                 TypeError
-
-
-        n = self.rayDirectionsGlobal.shape[0]
-        m = self.rayDirectionsGlobal.shape[1]
-
-        x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1)) + self.pos0[0]
-        y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1)) + self.pos0[1]
-        z_ecef = self.points_ecef_crs[:, :, 2].reshape((-1,1)) + self.pos0[2]
-
-        lats, lons, alts = pm.ecef2geodetic(x = x_ecef, y = y_ecef, z = z_ecef)
-
-        self.lats = lats
-        self.lons = lons
-        self.alts = alts
-
-        unix_time = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), self.time.reshape((-1,1))).reshape((-1, 1))
-
-        phi_s, theta_s = CameraGeometry.calculate_sun_directions(longitude = lons, latitude = lats, altitude = alts, unix_time = unix_time, degrees = True)
-
-        self.phi_s = phi_s.reshape((n, m, 1))
-
-        self.theta_s = theta_s.reshape((n, m, 1))
-
         
     def writeRGBPointCloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
         wl_red = float(config['General']['RedWavelength'])

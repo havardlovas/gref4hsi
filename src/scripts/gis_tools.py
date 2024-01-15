@@ -334,6 +334,8 @@ class GeoSpatialAbstractionHSI():
 
             dst.write(ortho_rgb)
         
+        os.path.remove('memmap_array.dat')
+        
 
     def resample_ancillary(self, h5_filename, anc_dir, anc_dict, interleave = 'bil'):
 
@@ -626,7 +628,7 @@ class GeoSpatialAbstractionHSI():
             
         
         header = sp.io.envi.read_envi_header(anc_path + '.hdr') # Open for modif
-        
+
         header.pop('band names') # Remove defaults
 
         for meta_key, value in metadata.items():
