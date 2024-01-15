@@ -626,7 +626,7 @@ class GeoSpatialAbstractionHSI():
             
         
         header = sp.io.envi.read_envi_header(anc_path + '.hdr') # Open for modif
-        #header['interleave'] = interleave
+        
         header.pop('band names') # Remove defaults
 
         for meta_key, value in metadata.items():
