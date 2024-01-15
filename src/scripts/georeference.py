@@ -27,8 +27,6 @@ class RayCasting:
 
 
         self.hyp = []
-        self.upsample_factor = int(config['Georeferencing']['upsamplingFactor'])
-        self.step_imgs = int(config['Calibration']['stepImages'])
 
         self.max_ray_length = float(config['General']['maxRayLength'])
 
@@ -94,9 +92,12 @@ class RayCasting:
         self.HSICamera = self.RGBCamera
 
         rot_hsi_rgb = np.array([self.rot_z, self.rot_y, self.rot_x]) * 180/np.pi
-        translation_hsi_rgb = np.array([self.trans_x, self.trans_y, self.trans_z]) / 1000 # These are millimetres
-
-        self.HSICamera.intrinsicTransformHSI(translation_rgb_hsi=-translation_hsi_rgb, rot_hsi_rgb= rot_hsi_rgb)
+        if self.config['General']['lever_arm_unit'] == 'mm':
+            translation_hsi_rgb = np.array([self.trans_x, self.trans_y, self.trans_z]) / 1000 # These are millimetres
+        elif self.config['General']['lever_arm_unit'] == 'm':
+            translation_hsi_rgb = np.array([self.trans_x, self.trans_y, self.trans_z])
+        
+        self.HSICamera.intrinsicTransformHSI(translation_rgb_hsi=-translation_hsi_rgb, rot_hsi_rgb = rot_hsi_rgb)
 
         self.HSICamera.defineRayDirections(dir_local=self.p_dir)
 
@@ -262,31 +263,15 @@ def main(iniPath, mode, is_calibrated):
             if filename.endswith('h5') or filename.endswith('hdf'):
                 # TODO: What is the point of count?
                 if count >= 0:
-                    
-                    is_uhi = config['HDF']['is_uhi']
+                    filename_splitted = filename.split('.')[0]
 
-                    if is_uhi == 'True':
-                        filename_splitted = filename.split('_')
-
-                        transect_string = filename_splitted
-                        rc.transect_string = transect_string
-                        print(transect_string)
-                        path_hdf = dir_r + filename
-                        # Read h5 file and assign to raycaster
-                        rc.hyp = Hyperspectral(path_hdf, config)
-                        rc.hyp.digital_counts_2_radiance(config)
-                        print(transect_string + ' With binning ' + str(rc.hyp.spatial_binning))
-                    else:
-                        filename_splitted = filename.split('.')[0]
-
-                        transect_string = filename_splitted
-                        rc.transect_string = transect_string
-                        print(transect_string)
-                        path_hdf = dir_r + filename
-                        # Read h5 file and assign to raycaster
-                        rc.hyp = Hyperspectral(path_hdf, config)
-                        rc.hyp.digital_counts_2_radiance(config)
-                        print(transect_string + ' With binning ' + str(rc.hyp.spatial_binning))
+                    transect_string = filename_splitted
+                    rc.transect_string = transect_string
+                    print(transect_string)
+                    path_hdf = dir_r + filename
+                    # Read h5 file and assign to raycaster
+                    rc.hyp = Hyperspectral(path_hdf, config)
+                    rc.hyp.digital_counts_2_radiance(config)
 
 
                     # Load the appropriate calibration file. This is old legacy code when data is recorded with different.
@@ -304,7 +289,37 @@ def main(iniPath, mode, is_calibrated):
                     rc.interpolate_poses()
 
                     # This bit is a lot more involved
-                    rc.ray_trace()
+                    #rc.ray_trace()
+
+                    minInd = 0
+                    maxInd = rc.hyp.n_scanlines
+
+                    rc.init_hsi_rays()
+
+                    rc.HSICamera.intersectWithMesh(mesh = rc.mesh, max_ray_length=rc.max_ray_length)
+
+                    print('Writing Point Cloud')
+                    rc.HSICamera.writeRGBPointCloud(config = rc.config, hyp = rc.hyp, transect_string=transect_string)
+                    print('Point cloud written')
+                    #from scripts import visualize
+                    #visualize.show_projected_hsi_points(HSICameraGeometry=self.HSICamera, config=self.config, transect_string=self.transect_string)
+
+
+                    # Orthorectification steps
+                    gisHSI = GeoSpatialAbstractionHSI(point_cloud=HSICamera.projection, transect_string=transect_string, datacube_indices=np.arange(minInd, maxInd), config=config)
+
+                    gisHSI.transform_geocentric_to_projected()
+
+                    gisHSI.footprint_to_shape_file()
+
+                    gisHSI.resample_datacube(self.hyp, rgb_composite_only=True, minInd=self.minInd, maxInd=self.maxInd, extrapolate = True)
+
+                    compare_to_orthomosaic = self.config['General']['compare_to_rgb_mosaic']
+                    rc.gisHSI = gisHSI
+                    if compare_to_orthomosaic == 'True':
+                        rc.gisHSI.compare_hsi_composite_with_rgb_mosaic()
+                        w_datacube = rc.hyp.n_pix
+                        gisHSI.map_pixels_back_to_datacube(w_datacube=w_datacube)
 
                     if is_calibrated == True:
                         # Append key info to data
@@ -333,6 +348,9 @@ def main(iniPath, mode, is_calibrated):
                         normals_local = rc.HSICamera.normalsLocal # Use projected system for global description
                         normals_local_name = config['Georeferencing']['normals_hsi_crs']
                         rc.hyp.add_dataset(data=normals_local, name=normals_local_name)
+
+                        # TODO: Makes sense to also write the view angles in a tangent plane (NED).
+                        # Same as local points rotated to ECEF and then to NED
 
 
                     compare_to_orthomosaic = rc.config['General']['compare_to_rgb_mosaic']

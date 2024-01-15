@@ -1,15 +1,27 @@
 import numpy as np
+import numpy.matlib
 from scipy.spatial.transform import Rotation as RotLib
 from scipy.spatial.transform import Slerp
 from scipy.interpolate import interp1d
 import open3d as o3d
 import xmltodict
 from pyproj import CRS, Transformer
+import pymap3d as pm
+import ephem
+import pandas as pd
+from scipy.interpolate import interp1d
+from osgeo import gdal, osr
+import pyvista as pv
+
+import os
+import time
+from datetime import datetime
+from dateutil import parser
 # A file were we define geometry and geometric transforms.
 
 # Perhaps a class with one "__init__.py
 class CalibHSI:
-    def __init__(self, file_name_cal_xml, config, mode = 'r', param = None):
+    def __init__(self, file_name_cal_xml, config, mode = 'r', param_dict = None):
         """
         :param file_name_cal_xml: str
         File name of calibration file for line camera model
@@ -17,10 +29,9 @@ class CalibHSI:
         global configuration object.
         :param mode: str
         open file for reading (for general use) or writing (post calibration)
-        :param param: ndarray:
-        1D array with data type float. Is the line camera parameter vector (currently numpy array) with order
-        "rotation_x, rotation_y, rotation_z, translation_x, translation_y, translation_z, c_x, focal_length,
-        distortion_coeff_1, distortion_coeff_2, distortion_coeff_3"
+        :param param_dict: dictionary:
+        dictionary with keys
+        "'rx', 'ry', 'rz', 'tx', 'ty', 'tz', 'cx', 'f', 'k1', 'k2', 'k3', 'width'"
         """
         if mode == 'r':
             with open(file_name_cal_xml, 'r', encoding='utf-8') as file:
@@ -56,23 +67,18 @@ class CalibHSI:
             self.k2 = float(self.calibrationHSI['k2'])
             self.k3 = float(self.calibrationHSI['k3'])
         elif mode == 'w':
-            with open(file_name_cal_xml, 'r', encoding='utf-8') as file:
-                my_xml = file.read()
-            xml_dict = xmltodict.parse(my_xml)
+            # Check if the file exists
+            if os.path.exists(file_name_cal_xml):
+                with open(file_name_cal_xml, 'r', encoding='utf-8') as file:
+                    my_xml = file.read()
+                xml_dict = xmltodict.parse(my_xml)
+            else:
+                # Create a new xml_dict with default structure
+                xml_dict = {'calibration': {}}
 
-            xml_dict['calibration']['rx'] = param[0]
-            xml_dict['calibration']['ry'] = param[1]
-            xml_dict['calibration']['rz'] = param[2]
-
-            #xml_dict['calibration']['tx'] = param[3]
-            #xml_dict['calibration']['ty'] = param[4]
-            #xml_dict['calibration']['tz'] = param[5]
-
-            xml_dict['calibration']['cx'] = param[3]
-            xml_dict['calibration']['f'] = param[4]
-            xml_dict['calibration']['k1'] = param[5]
-            xml_dict['calibration']['k2'] = param[6]
-            xml_dict['calibration']['k3'] = param[7]
+            # Update xml_dict['calibration'] with values from param_dict
+            for key, value in param_dict.items():
+                xml_dict['calibration'][key] = value
             with open(file_name_cal_xml, 'w') as fd:
                 fd.write(xmltodict.unparse(xml_dict))
 
@@ -81,21 +87,21 @@ class CameraGeometry():
         self.pos0 = pos0
 
         if use_absolute_position:
-            self.Position = pos
+            self.position_nav = pos
         else:
-            self.Position = pos - np.transpose(pos0) # Camera pos
+            self.position_nav = pos - np.transpose(pos0) # Camera pos
 
 
 
-        self.Rotation = rot
+        self.rotation_nav = rot
 
         self.time = time
         self.IsLocal = False
         self.decoupled = True
 
         if is_interpolated:
-            self.PositionInterpolated = self.Position
-            self.RotationInterpolated = self.Rotation
+            self.position_nav_interpolated = self.position_nav
+            self.rotation_nav_interpolated = self.rotation_nav
 
 
 
@@ -108,41 +114,41 @@ class CameraGeometry():
 
             if extrapolate == False:
                 time_interpolation = time_hsi[minIndRGB:maxIndRGB]
-                linearPositionInterpolator = interp1d(self.time, np.transpose(self.Position))
-                self.PositionInterpolated = np.transpose(linearPositionInterpolator(time_interpolation))
-                linearSphericalInterpolator = Slerp(self.time, self.Rotation)
-                self.RotationInterpolated = linearSphericalInterpolator(time_interpolation)
+                linearPositionInterpolator = interp1d(self.time, np.transpose(self.position_nav))
+                self.position_nav_interpolated = np.transpose(linearPositionInterpolator(time_interpolation))
+                linearSphericalInterpolator = Slerp(self.time, self.rotation_nav)
+                self.rotation_nav_interpolated = linearSphericalInterpolator(time_interpolation)
             else:
                 # Extrapolation of position:
                 time_interpolation = time_hsi
-                linearPositionInterpolator = interp1d(self.time, np.transpose(self.Position), fill_value='extrapolate')
-                self.PositionInterpolated = np.transpose(linearPositionInterpolator(time_interpolation))
+                linearPositionInterpolator = interp1d(self.time, np.transpose(self.position_nav), fill_value='extrapolate')
+                self.position_nav_interpolated = np.transpose(linearPositionInterpolator(time_interpolation))
 
                 # Extrapolation of orientation/rotation:
 
                 # Synthetizize additional frames
-                delta_rot_b1_b2 = (self.Rotation[-1].inv()) * (self.Rotation[-2])
+                delta_rot_b1_b2 = (self.rotation_nav[-1].inv()) * (self.rotation_nav[-2])
                 delta_time_last = self.time[-1] - self.time[-2]
                 time_last = self.time[-1] + delta_time_last
-                rot_last = self.Rotation[-1] * (delta_rot_b1_b2.inv()) # Assuming a continuation of the rotation
+                rot_last = self.rotation_nav[-1] * (delta_rot_b1_b2.inv()) # Assuming a continuation of the rotation
 
                 # Rotation from second to first attitude
-                delta_rot_b1_b2 = (self.Rotation[0].inv()) * (self.Rotation[1])
+                delta_rot_b1_b2 = (self.rotation_nav[0].inv()) * (self.rotation_nav[1])
                 delta_time_last = self.time[0] - self.time[1]
                 time_first = self.time[0] + delta_time_last # Subtraction
                 # Add the rotation from second to first attitude to the first attitude "continue" rotation
-                rot_first = self.Rotation[0] * (delta_rot_b1_b2.inv())  # Assuming a continuation of the rotation
+                rot_first = self.rotation_nav[0] * (delta_rot_b1_b2.inv())  # Assuming a continuation of the rotation
                 time_concatenated = np.concatenate((np.array(time_first).reshape((1,-1)),
                                                     self.time.reshape((1,-1)),
                                                     np.array(time_last).reshape((1,-1))), axis = 1)\
                     .reshape(-1).astype(np.float64)
-                rotation_list = [self.Rotation]
+                rotation_list = [self.rotation_nav]
                 rotation_list.append(rot_last)
                 rotation_list.insert(0, rot_first)
 
 
                 rot_vec_first = rot_first.as_rotvec().reshape((1,-1))
-                rot_vec_mid = self.Rotation.as_rotvec()
+                rot_vec_mid = self.rotation_nav.as_rotvec()
                 rot_vec_last = rot_last.as_rotvec().reshape((1,-1))
 
                 rotation_vec_tot = np.concatenate((rot_vec_first, rot_vec_mid, rot_vec_last), axis = 0)
@@ -155,7 +161,7 @@ class CameraGeometry():
 
                 linearSphericalInterpolator = Slerp(time_concatenated, Rotation_tot)
 
-                self.RotationInterpolated = linearSphericalInterpolator(time_interpolation)
+                self.rotation_nav_interpolated = linearSphericalInterpolator(time_interpolation)
 
 
 
@@ -165,33 +171,38 @@ class CameraGeometry():
         else:
             print('Proper interpolation of transformation with constant velocity and rotation has not yet been implemented')
             print('See https://www.geometrictools.com/Documentation/InterpolationRigidMotions.pdf')
-            #self.RotationInterpolated, self.PositionInterpolated = self.interpolateTransforms()
-    def intrinsicTransformHSI(self, translation_rgb_hsi, rot_hsi_rgb, euler = True):
-        # An intrinsic transform is a transformation to another reference frame on the moving body, i.e. the IMU or UHI
-        self.PositionHSI = self.PositionInterpolated + self.RotationInterpolated.apply(translation_rgb_hsi)
-        if euler == True:
-            self.Rotation_hsi_rgb = RotLib.from_euler('ZYX', rot_hsi_rgb, degrees=True)
+            #self.rotation_nav_interpolated, self.PositionInterpolated = self.interpolateTransforms()
+    def intrinsicTransformHSI(self, translation_ref_hsi, rot_hsi_ref_obj):
 
-        self.RotationHSI = self.RotationInterpolated * self.Rotation_hsi_rgb # Composing rotations. See
+        # An intrinsic transform is a transformation to another reference frame on the moving body, i.e. the IMU or an RGB cam
+        self.position_ecef = self.position_nav_interpolated + self.rotation_nav_interpolated.apply(translation_ref_hsi)
+        
+        self.rotation_hsi_rgb = rot_hsi_ref_obj
+
+        # Composing rotations. See:
         # https: // docs.scipy.org / doc / scipy / reference / generated / scipy.spatial.transform.Rotation.__mul__.html
+        self.rotation_hsi = self.rotation_nav_interpolated * self.rotation_hsi_rgb 
+
+        self.quaternion_ecef = self.rotation_hsi.as_quat()
+        
     def localTransform(self, frame):
         self.IsLocal = True
         self.LocalTransformFrame = frame
 
         if frame == 'ENU':
-            self.PositionInterpolated = self.Rotation_ecef_enu*self.PositionInterpolated
-            self.RotationInterpolated = self.Rotation_ecef_enu*self.RotationInterpolated
-            self.Position = self.Rotation_ecef_enu * self.Position
-            self.Rotation = self.Rotation_ecef_enu * self.Rotation
-            self.RotationHSI = self.Rotation_ecef_enu * self.RotationHSI
-            self.Position = self.Rotation_ecef_enu * self.PositionHSI
+            self.position_nav_interpolated = self.Rotation_ecef_enu*self.position_nav_interpolated
+            self.rotation_nav_interpolated = self.Rotation_ecef_enu*self.rotation_nav_interpolated
+            self.position_nav = self.Rotation_ecef_enu * self.position_nav
+            self.rotation_nav = self.Rotation_ecef_enu * self.rotation_nav
+            self.rotation_hsi = self.Rotation_ecef_enu * self.rotation_hsi
+            self.position_nav = self.Rotation_ecef_enu * self.position_ecef
         elif frame == 'NED':
-            self.localPositionInterpolated = self.Rotation_ecef_ned*self.PositionInterpolated
-            self.localRotationInterpolated = self.Rotation_ecef_ned*self.RotationInterpolated
-            self.localPosition = self.Rotation_ecef_ned * self.Position
-            self.localRotation = self.Rotation_ecef_ned * self.Rotation
-            self.RotationHSI = self.Rotation_ecef_ned * self.RotationHSI
-            self.Position = self.Rotation_ecef_ned * self.PositionHSI
+            self.localPositionInterpolated = self.Rotation_ecef_ned*self.position_nav_interpolated
+            self.localRotationInterpolated = self.Rotation_ecef_ned*self.rotation_nav_interpolated
+            self.localPosition = self.Rotation_ecef_ned * self.position_nav
+            self.localRotation = self.Rotation_ecef_ned * self.rotation_nav
+            self.rotation_hsi = self.Rotation_ecef_ned * self.rotation_hsi
+            self.position_nav = self.Rotation_ecef_ned * self.position_ecef
         else:
             print('Frame must be ENU or NED')
     def localTransformInverse(self):
@@ -199,19 +210,19 @@ class CameraGeometry():
         if self.IsLocal:
             self.IsLocal = False
             if self.LocalTransformFrame == 'ENU':
-                self.PositionInterpolated = self.Rotation_ecef_enu.inv()*self.PositionInterpolated
-                self.RotationInterpolated = self.Rotation_ecef_enu.inv()*self.RotationInterpolated
-                self.Position = self.Rotation_ecef_enu.inv() * self.Position
-                self.Rotation = self.Rotation_ecef_enu.inv() * self.Rotation
-                self.RotationHSI = self.Rotation_ecef_enu.inv() * self.RotationHSI
-                self.Position = self.Rotation_ecef_enu.inv() * self.PositionHSI
+                self.position_nav_interpolated = self.Rotation_ecef_enu.inv()*self.position_nav_interpolated
+                self.rotation_nav_interpolated = self.Rotation_ecef_enu.inv()*self.rotation_nav_interpolated
+                self.position_nav = self.Rotation_ecef_enu.inv() * self.position_nav
+                self.rotation_nav = self.Rotation_ecef_enu.inv() * self.rotation_nav
+                self.rotation_hsi = self.Rotation_ecef_enu.inv() * self.rotation_hsi
+                self.position_nav = self.Rotation_ecef_enu.inv() * self.position_ecef
             elif self.LocalTransformFrame == 'NED':
-                self.localPositionInterpolated = self.Rotation_ecef_ned.inv()* self.PositionInterpolated
-                self.localRotationInterpolated = self.Rotation_ecef_ned.inv()*self.RotationInterpolated
-                self.localPosition = self.Rotation_ecef_ned.inv() * self.Position
-                self.localRotation = self.Rotation_ecef_ned.inv() * self.Rotation
-                self.RotationHSI = self.Rotation_ecef_ned.inv() * self.RotationHSI
-                self.Position = self.Rotation_ecef_ned.inv() * self.PositionHSI
+                self.localPositionInterpolated = self.Rotation_ecef_ned.inv()* self.position_nav_interpolated
+                self.localRotationInterpolated = self.Rotation_ecef_ned.inv()*self.rotation_nav_interpolated
+                self.localPosition = self.Rotation_ecef_ned.inv() * self.position_nav
+                self.localRotation = self.Rotation_ecef_ned.inv() * self.rotation_nav
+                self.rotation_hsi = self.Rotation_ecef_ned.inv() * self.rotation_hsi
+                self.position_nav = self.Rotation_ecef_ned.inv() * self.position_ecef
             else:
                 print('Frame must be ENU or NED')
         else:
@@ -219,70 +230,283 @@ class CameraGeometry():
     def defineRayDirections(self, dir_local):
         self.rayDirectionsLocal = dir_local
 
-        n = self.PositionHSI.shape[0]
+        n = self.position_ecef.shape[0]
         m = dir_local.shape[0]
 
         self.rayDirectionsGlobal = np.zeros((n, m, 3))
-        #
-        #self.rayDirectionsGlobal = self.RotationHSI.apply(np.transpose(dir_local))
+
         for i in range(n):
-            self.rayDirectionsGlobal[i, :, :] = self.RotationHSI[i].apply(dir_local)
+            self.rayDirectionsGlobal[i, :, :] = self.rotation_hsi[i].apply(dir_local)
     def intersectWithMesh(self, mesh, max_ray_length):
+        """Intersects the rays of the camera with the 3D triangular mesh
+
+        :param mesh: A mesh object read via the pyvista library
+        :type mesh: Pyvista mesh
+        :param max_ray_length: The upper bound length of the camera rays (it is determined )
+        :type max_ray_length: _type_
+        """
 
         n = self.rayDirectionsGlobal.shape[0]
         m = self.rayDirectionsGlobal.shape[1]
 
-        self.projection = np.zeros((n, m, 3), dtype=np.float64)
-        self.normalsGlobal = np.zeros((n, m, 3), dtype=np.float64)
+        self.points_ecef_crs = np.zeros((n, m, 3), dtype=np.float64)
+        self.normals_ecef_crs = np.zeros((n, m, 3), dtype=np.float64)
 
-        # Duplicate multiple centra
-        start = np.einsum('ijk, ik -> ijk', np.ones((n, m, 3), dtype=np.float64), self.PositionHSI).reshape((-1,3))
+        # Duplicate multiple camera centres
+        start = np.einsum('ijk, ik -> ijk', np.ones((n, m, 3), dtype=np.float64), self.position_ecef).reshape((-1,3))
 
         dir = (self.rayDirectionsGlobal * max_ray_length).reshape((-1,3))
 
         print('Starting Ray Tracing')
-        print(start.shape)
-        import time
+        
         start_time = time.time()
+
         points, rays, cells = mesh.multi_ray_trace(origins=start, directions=dir, first_point=True)
+
         stop_time = time.time()
-        print(start_time - stop_time)
-        print(cells.max())
+
+        print('Ray traced {0} rays on a mesh with {1} cells in {2} seconds'.format(dir.shape[0], mesh.cell_normals.shape[0], stop_time - start_time))
 
         normals = mesh.cell_normals[cells,:]
 
         slit_image_number = np.floor(rays / m).astype(np.int32)
+
         pixel_number = rays % m
 
         # Assign normals
-        self.projection[slit_image_number, pixel_number] = points
-        self.normalsGlobal[slit_image_number, pixel_number] = normals
+        self.points_ecef_crs[slit_image_number, pixel_number] = points
 
-        self.camera_to_seabed_world = self.projection - start.reshape((n, m, 3))
-        self.camera_to_seabed_local = np.zeros(self.camera_to_seabed_world.shape)
+        self.normals_ecef_crs[slit_image_number, pixel_number] = normals
 
-        self.normalsLocal = np.zeros(self.normalsGlobal.shape)
+        self.camera_to_seabed_ECEF = self.points_ecef_crs - start.reshape((n, m, 3))
+
+        self.points_hsi_crs = np.zeros(self.camera_to_seabed_ECEF.shape)
+
+        self.normals_hsi_crs = np.zeros(self.normals_ecef_crs.shape)
 
         self.depth_map = np.zeros((n, m))
+
+        # For local geometry (when vehicle fixed artificial light is used):
         for i in range(n):
-            self.camera_to_seabed_local[i, :, :] = (self.RotationHSI[i].inv()).apply(self.camera_to_seabed_world[i, :, :])
-            self.normalsLocal[i,:,:] = (self.RotationHSI[i].inv()).apply(self.normalsGlobal[i, :, :])
-            self.depth_map[i, :] = self.camera_to_seabed_local[i, :, 2]/self.rayDirectionsLocal[:, 2]
+            # Calculate vector from HSI to seabed in local coordinates (for artificial illumination)
+            self.points_hsi_crs[i, :, :] = (self.rotation_hsi[i].inv()).apply(self.camera_to_seabed_ECEF[i, :, :])
 
-        #dir = 'C:/Users/haavasl/PycharmProjects/newGit/TautraReflectanceTools/Missions/BarentsSea06052021/'
-        #np.save(dir + 'local', self.camera_to_seabed_local)
-        #np.save(dir + 'global', self.camera_to_seabed_world)
-        #np.save(dir + 'hsi_pos', self.PositionHSI)
+            # Calculate surface normals of intersected triangles (for artificial illumination)
+            self.normals_hsi_crs[i,:,:] = (self.rotation_hsi[i].inv()).apply(self.normals_ecef_crs[i, :, :])
 
-
-        #import matplotlib.pyplot as plt
-        #self.depth_map[self.depth_map > 1] = 0
-        #plt.imshow(self.depth_map)
-        #plt.show()
-
-
+            # Calculate a depth map (the z-component, 1D scanline)
+            self.depth_map[i, :] = self.points_hsi_crs[i, :, 2]/self.rayDirectionsLocal[:, 2]
 
         print('Finished ray tracing')
+
+        self.unix_time_grid = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), self.time.reshape((-1,1)))
+        self.unix_time = self.unix_time_grid.reshape((-1, 1)) # Vector-form
+        self.pixel_nr_grid = np.matlib.repmat(np.arange(m), n, 1)
+        self.frame_nr_grid = np.matlib.repmat(np.arange(n).reshape(-1,1), 1, m)
+
+        
+    @staticmethod
+    def intersect_ray_with_earth_ellipsoid(p0, dir_hat, B):
+        """_summary_
+
+        :param p0: Ray origin
+        :type p0: (3,1) array of floats 
+        :param dir_hat: describing ray direction in some ECEF
+        :type dir_hat: (3,1) array of floats 
+        :param B: Ellipsoid matrix of earth so that (p0 + lam*dir_hat)' * B * (p0 + lam*dir_hat) = 1
+        :type B: (3, 3) matrix describing earth ellipsoid in some ECEF
+        """
+
+        # Solves equation lam^2 *(d_hat'B*d_hat) + lam * 2*(p0' * B* dir_hat) + (p0' *B* p0)= 1
+        a = np.transpose(dir_hat).dot(B.dot(dir_hat))
+        b = 2*np.transpose(p0).dot(B.dot(dir_hat))
+        c = np.transpose(p0).dot(B.dot(p0)) - 1
+
+        print(a)
+        print(b)
+        print(c)
+
+        p = np.zeros(3)
+        p[0] = a
+        p[1] = b
+        p[2] = c
+
+        lam = np.roots(p)
+
+        hits = p0 + dir_hat*lam
+
+
+        return hits 
+
+    @staticmethod
+    def calculate_sun_directions(longitude, latitude, altitude, unix_time, degrees=True):
+        # Ensure all inputs are NumPy arrays
+        longitude = np.asarray(longitude).flatten()
+        latitude = np.asarray(latitude).flatten()
+        altitude = np.asarray(altitude).flatten()
+        unix_time = np.asarray(unix_time).flatten()
+
+        n = max(longitude.size, latitude.size, altitude.size, unix_time.size)
+
+        # If a single value is provided for any parameter, broadcast it to match the size of the other parameters
+        longitude = np.broadcast_to(longitude, (n,))
+        latitude = np.broadcast_to(latitude, (n,))
+        altitude = np.broadcast_to(altitude, (n,))
+        unix_time = np.broadcast_to(unix_time, (n,))
+
+        phi_s = np.zeros(n)
+        theta_s = np.zeros(n)
+
+        observer = ephem.Observer()
+
+        for i in range(n):
+            # Extract a single value from the arrays
+            observer.lon = str(longitude[i])
+            observer.lat = str(latitude[i])
+            observer.elev = altitude[i]
+            
+            sun = ephem.Sun()
+            observer.date = datetime.utcfromtimestamp(unix_time[i])
+            sun.compute(observer)
+
+            phi_s[i] = np.rad2deg(sun.az)
+            theta_s[i] = 90 - np.rad2deg(sun.alt)
+
+        if not degrees:
+            phi_s = np.deg2rad(phi_s)
+            theta_s = np.deg2rad(theta_s)
+
+        return phi_s, theta_s
+
+    def compute_view_directions_local_tangent_plane(self):
+        """Takes the intersection points and HSI camera positions and computes the angles from seabed to HSI with respect to the local tangent plane to the ellipsoid. 
+        """
+        n = self.rayDirectionsGlobal.shape[0]
+        m = self.rayDirectionsGlobal.shape[1]
+
+        self.seabed_to_camera_NED = np.zeros(self.camera_to_seabed_ECEF.shape)
+        self.normals_ned_crs = np.zeros(self.normals_ecef_crs.shape)
+        self.theta_v = np.zeros((n, m))
+        self.phi_v = np.zeros((n, m))
+
+        x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1)) + self.pos0[0]
+        y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1)) + self.pos0[1]
+        z_ecef = self.points_ecef_crs[:, :, 2].reshape((-1,1)) + self.pos0[2]
+        
+        lats, lons, alts = pm.ecef2geodetic(x = x_ecef, y = y_ecef, z = z_ecef)
+
+        start = np.einsum('ijk, ik -> ijk', np.ones((n, m, 3), dtype=np.float64), self.position_ecef).reshape((-1,3))
+
+        x_hsi = start[:, 0].reshape((-1,1)) + self.pos0[0]
+        y_hsi = start[:, 1].reshape((-1,1)) + self.pos0[1]
+        z_hsi = start[:, 2].reshape((-1,1)) + self.pos0[2]
+
+        # Compute vectors from seabed intersections to HSI in NED
+        NED = pm.ecef2ned(x= x_hsi, y= y_hsi, z=z_hsi, lat0 = lats, lon0=lons, h0 = alts)
+
+        self.seabed_to_camera_NED = np.hstack((NED[0], NED[1], NED[2])).reshape((n, m, 3))
+
+        # For remote sensing with a sun-lit seafloor:
+        for i in range(n):
+            
+            R_ecef_2_ned = RotLib.from_matrix(rotation_matrix_ecef2ned(lon = lons[i], lat = lats[i]))
+
+            # Calculate vector from HSI to seabed in local tangent plane NED
+            #self.camera_to_seabed_NED[i, :, :] = R_ecef_2_ned.apply(self.camera_to_seabed_ECEF[i, :, :])
+
+            # Decompose vector to angles
+            polar = cartesian_to_polar(xyz = self.seabed_to_camera_NED[i,:,:])
+
+            self.theta_v[i, :] = polar[:,1]
+
+            self.phi_v[i, :] = polar[:,2]
+
+            # Calculate surface normals of intersected triangles (for artificial illumination)
+            self.normals_ned_crs[i, :, :] = R_ecef_2_ned.apply(self.normals_ecef_crs[i, :, :])
+
+            
+
+
+    def compute_sun_angles_local_tangent_plane(self):
+        n = self.rayDirectionsGlobal.shape[0]
+        m = self.rayDirectionsGlobal.shape[1]
+
+        x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1)) + self.pos0[0]
+        y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1)) + self.pos0[1]
+        z_ecef = self.points_ecef_crs[:, :, 2].reshape((-1,1)) + self.pos0[2]
+
+        lats, lons, alts = pm.ecef2geodetic(x = x_ecef, y = y_ecef, z = z_ecef)
+
+        self.lats = lats
+        self.lons = lons
+        self.alts = alts
+
+        phi_s, theta_s = CameraGeometry.calculate_sun_directions(longitude = lons, latitude = lats, altitude = alts, unix_time = self.unix_time, degrees = True)
+
+        self.phi_s = phi_s.reshape((n, m, 1))
+
+        self.theta_s = theta_s.reshape((n, m, 1))
+
+        
+
+        
+    
+
+    def compute_tide_level(self, path_tide, tide_format, constant_height = 0):
+
+        n = self.rayDirectionsGlobal.shape[0]
+        m = self.rayDirectionsGlobal.shape[1]
+
+        if path_tide == 'Undefined':
+
+            self.hsi_tide_gridded = constant_height*np.ones((n, m, 1))
+
+        else:
+
+            if tide_format == 'NMA':
+
+                df_tide = pd.read_csv(path_tide, sep='\s+', parse_dates=[0], index_col=0, comment='#', date_parser=parser.parse)
+
+                # Convert the datetime index to Unix time and add column
+                df_tide['UnixTime'] = df_tide.index.astype('int64') // 10**9  # Convert nanoseconds to seconds
+
+                tide_height_NN2000 = 0.01*df_tide['Observations'] # Since in cm
+
+                tide_timestamp = df_tide['UnixTime']
+                
+                hsi_tide_interp = interp1d(x = tide_timestamp, y= tide_height_NN2000)(x = self.time)
+
+                # Make into gridded form:
+                self.hsi_tide_gridded = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), hsi_tide_interp.reshape((-1,1)))
+
+
+
+            else: # A Good place to write parsers for other formats
+                TypeError
+
+
+        n = self.rayDirectionsGlobal.shape[0]
+        m = self.rayDirectionsGlobal.shape[1]
+
+        x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1)) + self.pos0[0]
+        y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1)) + self.pos0[1]
+        z_ecef = self.points_ecef_crs[:, :, 2].reshape((-1,1)) + self.pos0[2]
+
+        lats, lons, alts = pm.ecef2geodetic(x = x_ecef, y = y_ecef, z = z_ecef)
+
+        self.lats = lats
+        self.lons = lons
+        self.alts = alts
+
+        unix_time = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), self.time.reshape((-1,1))).reshape((-1, 1))
+
+        phi_s, theta_s = CameraGeometry.calculate_sun_directions(longitude = lons, latitude = lats, altitude = alts, unix_time = unix_time, degrees = True)
+
+        self.phi_s = phi_s.reshape((n, m, 1))
+
+        self.theta_s = theta_s.reshape((n, m, 1))
+
+        
     def writeRGBPointCloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
         wl_red = float(config['General']['RedWavelength'])
         wl_green = float(config['General']['GreenWavelength'])
@@ -302,8 +526,8 @@ class CameraGeometry():
             rgb = hyp.dataCubeRadiance[:, :, [band_ind_R, band_ind_G, band_ind_B]]
 
 
-        points = self.projection[self.projection != 0].reshape((-1,3))
-        rgb_points = (rgb[self.projection != 0] / rgb.max()).astype(np.float64).reshape((-1,3))
+        points = self.points_ecef_crs[self.points_ecef_crs != 0].reshape((-1,3))
+        rgb_points = (rgb[self.points_ecef_crs != 0] / rgb.max()).astype(np.float64).reshape((-1,3))
         pcd = o3d.geometry.PointCloud()
 
         pcd.points = o3d.utility.Vector3dVector(points)
@@ -356,18 +580,18 @@ class FeatureCalibrationObject():
         # First define the time stamp for the four lines:
         line_nr = hsiGis.u_datacube_hsi.astype(np.int64)
 
-        trans_Q_00 = cameraGeometry.PositionHSI[line_nr[:, 0]]
-        trans_Q_01 = cameraGeometry.PositionHSI[line_nr[:, 1]]
-        trans_Q_10 = cameraGeometry.PositionHSI[line_nr[:, 2]]
-        trans_Q_11 = cameraGeometry.PositionHSI[line_nr[:, 3]]
+        trans_Q_00 = cameraGeometry.position_ecef[line_nr[:, 0]]
+        trans_Q_01 = cameraGeometry.position_ecef[line_nr[:, 1]]
+        trans_Q_10 = cameraGeometry.position_ecef[line_nr[:, 2]]
+        trans_Q_11 = cameraGeometry.position_ecef[line_nr[:, 3]]
 
         translationHSI = self.bilinearInterpolationPosition(x1_x=hsiGis.x1_x_hsi, y1_y=hsiGis.y1_y_hsi, trans_Q_00=trans_Q_00, trans_Q_01=trans_Q_01, trans_Q_10=trans_Q_10,
                                                               trans_Q_11=trans_Q_11)
 
-        rot_Q_00 = cameraGeometry.RotationInterpolated[line_nr[:, 0]]
-        rot_Q_01 = cameraGeometry.RotationInterpolated[line_nr[:, 1]]
-        rot_Q_10 = cameraGeometry.RotationInterpolated[line_nr[:, 2]]
-        rot_Q_11 = cameraGeometry.RotationInterpolated[line_nr[:, 3]]
+        rot_Q_00 = cameraGeometry.rotation_nav_interpolated[line_nr[:, 0]]
+        rot_Q_01 = cameraGeometry.rotation_nav_interpolated[line_nr[:, 1]]
+        rot_Q_10 = cameraGeometry.rotation_nav_interpolated[line_nr[:, 2]]
+        rot_Q_11 = cameraGeometry.rotation_nav_interpolated[line_nr[:, 3]]
 
         rotationRGB = self.bilinearInterpolationRotation(x1_x=hsiGis.x1_x_hsi, y1_y=hsiGis.y1_y_hsi,
                                                               rot_Q_00=rot_Q_00, rot_Q_10=rot_Q_10, rot_Q_01=rot_Q_01,
@@ -483,9 +707,9 @@ class FeatureCalibrationObject():
     def reprojectFeaturesHSI(self):
         rot_hsi_rgb = np.array([self.rot_z, self.rot_y, self.rot_x]) * 180 / np.pi
 
-        self.Rotation_hsi_rgb = RotLib.from_euler('ZYX', rot_hsi_rgb, degrees=True)
+        self.rotation_hsi_rgb = RotLib.from_euler('ZYX', rot_hsi_rgb, degrees=True)
 
-        self.RotationHSI = self.rotationRGB * self.Rotation_hsi_rgb # Composing rotations.
+        self.rotation_hsi = self.rotationRGB * self.rotation_hsi_rgb # Composing rotations.
 
         self.HSIToFeaturesGlobal = self.point_feature_gt - self.translationHSI
 
@@ -493,7 +717,7 @@ class FeatureCalibrationObject():
 
         self.HSIToFeaturesLocal = np.zeros(self.HSIToFeaturesGlobal.shape)
         for i in range(n):
-            self.HSIToFeaturesLocal[i, :] = (self.RotationHSI[i].inv()).apply(
+            self.HSIToFeaturesLocal[i, :] = (self.rotation_hsi[i].inv()).apply(
                 self.HSIToFeaturesGlobal[i, :])
 
             self.HSIToFeaturesLocal[i, :] /= self.HSIToFeaturesLocal[i, 2]
@@ -514,21 +738,26 @@ def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, e
     Timestamps desired for position and orientations
     :return:
     """
+    """
+    min_to = np.min(timestamps_to)
+    max_to = np.max(timestamps_to)
 
-    minHSI = np.min(timestamps_to)
-    maxHSI = np.max(timestamps_to)
+    min_from = np.min(timestamp_from)
+    max_from = np.max(timestamp_from)
 
-    minRGB = np.min(timestamp_from)
-    maxRGB = np.max(timestamp_from)
+    minInd = np.argmin(np.abs(min_from - timestamps_to))
+    maxInd = np.argmin(np.abs(max_from - timestamps_to))
 
-    minInd = np.argmin(np.abs(minRGB - timestamps_to))
-    maxInd = np.argmin(np.abs(maxRGB - timestamps_to))
-
-    if timestamps_to[minInd] < minRGB:
+    # If navigation data aka "from" is made properly, min_from<<min_to, and max_from >> max_to
+    
+    if timestamps_to[minInd] < min_from:
         minInd += 1
-    if timestamps_to[maxInd] > maxRGB:
+    if timestamps_to[maxInd] > min_from: # So if the max index is 
         maxInd -= 1
+    """
 
+    min_ind = 0
+    max_ind = timestamps_to.size
 
 
     # Setting use_absolute_position to True means that position calculations are done with absolute
@@ -540,22 +769,36 @@ def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, e
 
     # We exploit a method from the camera object
     referenceGeometry.interpolate(time_hsi=timestamps_to,
-                          minIndRGB=minInd,
-                          maxIndRGB=maxInd,
+                          minIndRGB=min_ind,
+                          maxIndRGB=max_ind,
                           extrapolate=extrapolate)
 
 
 
-    position_to = referenceGeometry.PositionInterpolated
+    position_to = referenceGeometry.position_nav_interpolated
 
-    quaternion_to = referenceGeometry.RotationInterpolated.as_quat()
+    quaternion_to = referenceGeometry.rotation_nav_interpolated.as_quat()
 
     return position_to, quaternion_to
 
 
 
 
+def cartesian_to_polar(xyz):
+    """Converts from 3D cartesian coordinates to polar coordinates
 
+    :param xyz: _description_
+    :type xyz: (n,3) numpy array
+    :return: Radii, Elevations, Azimuths
+    :rtype: (n,3) numpy array of radii, theta, phi
+    """
+    polar = np.zeros(xyz.shape)
+    xy = xyz[:,0]**2 + xyz[:,1]**2
+    polar[:,0] = np.sqrt(xy + xyz[:,2]**2) # Radii
+    polar[:,1] = np.arctan2(np.sqrt(xy), np.abs(xyz[:,2])) # for elevation angle defined from Z-axis down [0-90]
+    polar[:,2] = np.arctan2(xyz[:,1], xyz[:,0]) # Azimuth
+
+    return polar
 
 
 
@@ -592,15 +835,14 @@ def rotation_matrix_ecef2enu(lon, lat):
     l = np.deg2rad(lon)
     mu = np.deg2rad(lat)
 
-    R_enu_ecef = np.array([[-np.cos(l) * np.sin(mu), -np.sin(l), -np.cos(l) * np.cos(mu)],
-                           [-np.sin(l) * np.sin(mu), np.cos(l), -np.sin(l) * np.cos(mu)],
-                           [np.cos(mu), 0, -np.sin(mu)]])
+    R_ecef_ned = rotation_matrix_ecef2ned(lon=lon, lat=lat)
+    R_ecef_enu = np.zeros(R_ecef_ned.shape)
     #
-    R_enu_ecef[[0, 1]] = R_enu_ecef[[1, 0]] # Swap rows
-    R_enu_ecef[2] = -R_enu_ecef[2] # Switch signs to compensate for up and down
+    R_ecef_enu[[0, 1]] = R_ecef_ned[[1, 0]] # Swap rows
+    R_ecef_enu[2] = -R_ecef_ned[2] # Switch signs to compensate for up and down
 
 
-    R_ecef_enu = np.transpose(R_enu_ecef)
+    
     return R_ecef_enu
 
 
@@ -757,3 +999,139 @@ def rot_mat_ned_2_ecef(lat, lon):
                            [-np.sin(l) * np.sin(mu), np.cos(l), -np.sin(l) * np.cos(mu)],
                            [np.cos(mu), 0, -np.sin(mu)]])
     return R_ned_ecef
+
+
+
+
+def dem_2_mesh(path_dem, model_path, config):
+    """
+    A function for converting a specified DEM to a 3D mesh model (*.vtk, *.ply or *.stl). Consequently, mesh should be thought of as 2.5D representation.
+    :param path_dem: string
+    path to dem for reading
+    :param model_path: string
+    path to where 3D mesh model is to be written.
+    :return: Nothing
+    """
+    # Input and output file paths
+
+    output_xyz = model_path.split(sep = '.')[0] + '.xyz'
+    # No-data value
+    #no_data_value = int(config['General']['nodataDEM'])  # Replace with your actual no-data value
+    # Open the input raster dataset
+    ds = gdal.Open(path_dem)
+
+    # 
+
+    if ds is None:
+        print(f"Failed to open {path_dem}")
+    else:
+        # Read the first band (band index is 1)
+        band = ds.GetRasterBand(1)
+        no_data_value = band.GetNoDataValue()
+        if band is None:
+            print(f"Failed to open band 1 of {path_dem}")
+        else:
+            # Get the geotransform information to calculate coordinates
+            geotransform = ds.GetGeoTransform()
+            x_origin = geotransform[0]
+            y_origin = geotransform[3]
+            x_resolution = geotransform[1]
+            y_resolution = geotransform[5]
+            # Get the CRS information
+            spatial_reference = osr.SpatialReference(ds.GetProjection())
+
+            # Get the EPSG code
+            epsg_proj = None
+            if spatial_reference.IsProjected():
+                epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 1)
+            elif spatial_reference.IsGeographic():
+                epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 0)
+
+            print(f"DEM projected EPSG Code: {epsg_proj}")
+
+            config.set('Coordinate Reference Systems', 'dem_epsg', str(epsg_proj))
+            
+            # Get the band's data as a NumPy array
+            band_data = band.ReadAsArray()
+            # Create a mask to identify no-data values
+            mask = band_data != no_data_value
+            # Create and open the output XYZ file for writing if it does not exist:
+            #if not os.path.exists(output_xyz):
+            with open(output_xyz, 'w') as xyz_file:
+                # Write data to the XYZ file using the mask and calculated coordinates
+                for y in range(ds.RasterYSize):
+                    for x in range(ds.RasterXSize):
+                        if mask[y, x]:
+                            x_coord = x_origin + x * x_resolution
+                            y_coord = y_origin + y * y_resolution
+                            xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
+            # Clean up
+            ds = None
+            band = None
+    print("Conversion completed.")
+    points = np.loadtxt(output_xyz)
+    # Create a pyvista point cloud object
+    cloud = pv.PolyData(points)
+    # Generate a mesh from
+    mesh = cloud.delaunay_2d()
+
+    epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
+    # Transform the mesh points to from projected to geocentric ECEF.
+    geocsc = CRS.from_epsg(epsg_geocsc)
+    proj = CRS.from_epsg(epsg_proj)
+    transformer = Transformer.from_crs(proj, geocsc)
+
+    print(f"Mesh geocentric EPSG Code: {epsg_geocsc}")
+
+    points_proj = mesh.points
+
+    eastUTM = points_proj[:, 0].reshape((-1, 1))
+    northUTM = points_proj[:, 1].reshape((-1, 1))
+    heiUTM = points_proj[:, 2].reshape((-1, 1))
+
+    (xECEF, yECEF, zECEF) = transformer.transform(xx=eastUTM, yy=northUTM, zz=heiUTM)
+
+    mesh.points[:, 0] = xECEF.reshape(-1)
+    mesh.points[:, 1] = yECEF.reshape(-1)
+    mesh.points[:, 2] = zECEF.reshape(-1)
+
+    #mean_vec = np.mean(mesh.points, axis = 0)
+
+    offX = float(config['General']['offsetX'])
+    offY = float(config['General']['offsetY'])
+    offZ = float(config['General']['offsetZ'])
+
+    pos0 = np.array([offX, offY, offZ]).reshape((1, -1))
+
+    mesh.points -= pos0 # Add appropriate offset
+    # Save mesh
+    mesh.save(model_path)
+
+
+def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):
+    """
+    Function for transforming ECEF positions to latitude longitude height
+    :param position_ecef: numpy array floats (n,3)
+    :param epsg_from: int
+    EPSG code of the original geocentric coordinate system (ECEF)
+    :param epsg_to: int
+    EPSG code of the transformed geodetic coordinate system
+    :return lat_lon_hei: numpy array floats (n,3)
+    latitude, longitude ellipsoid height.
+    """
+    geocsc = CRS.from_epsg(epsg_from)
+    geod = CRS.from_epsg(epsg_to)
+    transformer = Transformer.from_crs(geocsc, geod)
+
+    xECEF = position_ecef[:, 0].reshape((-1, 1))
+    yECEF = position_ecef[:, 1].reshape((-1, 1))
+    zECEF = position_ecef[:, 2].reshape((-1, 1))
+
+    (lat, lon, hei) = transformer.transform(xx=xECEF, yy=yECEF, zz=zECEF)
+
+    lat_lon_hei = np.zeros(position_ecef.shape)
+    lat_lon_hei[:, 0] = lat.reshape((position_ecef.shape[0], 1))
+    lat_lon_hei[:, 1] = lon.reshape((position_ecef.shape[0], 1))
+    lat_lon_hei[:, 2] = hei.reshape((position_ecef.shape[0], 1))
+
+    return lat_lon_hei
