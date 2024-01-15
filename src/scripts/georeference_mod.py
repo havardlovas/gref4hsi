@@ -7,10 +7,12 @@ import sys
 from scipy.spatial.transform import Rotation as RotLib
 import numpy as np
 import pyvista as pv
+import h5py
 
 # Local resources:
 from scripts.geometry import CameraGeometry, CalibHSI
 from lib.parsing_utils import Hyperspectral
+
 
 def cal_file_to_rays(filename_cal, config):
         # See paper by Sun, Bo, et al. "Calibration of line-scan cameras for precision measurement." Applied optics 55.25 (2016): 6836-6843.
@@ -38,6 +40,7 @@ def cal_file_to_rays(filename_cal, config):
         rot_y = calHSI.ry
         rot_z = calHSI.rz
 
+        # Number of pixels
         n_pix = calHSI.w
 
         # Define camera model array.
@@ -62,14 +65,22 @@ def cal_file_to_rays(filename_cal, config):
 
         rot_hsi_ref_obj = RotLib.from_euler(seq = 'ZYX',angles = rot_hsi_ref_eul, degrees=False)
 
-        if config['General']['lever_arm_unit'] == 'mm':
+        try:
+            lever_arm_unit = config['General']['lever_arm_unit']
+        except:
+             # Defaults to meter if not set
+             lever_arm_unit = 'm'
+
+        if lever_arm_unit == 'mm':
             translation_hsi_ref = np.array([trans_x, trans_y, trans_z]) / 1000 # These are millimetres
-        elif config['General']['lever_arm_unit'] == 'm':
+        elif lever_arm_unit == 'm':
             translation_hsi_ref = np.array([trans_x, trans_y, trans_z])
 
         intrinsic_geometry_dict = {'translation_hsi_ref': translation_hsi_ref,
                                    'rot_hsi_ref_obj': rot_hsi_ref_obj,
                                    'ray_directions_local': p_dir}
+        
+        # Notably, one could compress the information by expressing the ray directions in the body frame
 
         return intrinsic_geometry_dict
 
@@ -95,68 +106,18 @@ def define_hsi_ray_geometry(pos_ref_ecef, quat_ref_ecef, time_pose, pos0, intrin
         return hsi_geometry
 
 def write_intersection_geometry_2_h5_file(hsi_geometry, config, h5_filename):
-    # Add global points. projection equals intersections in ECEF
+    # Write all intersection data (ancilliary) that could be relevant
     
-    points_global = hsi_geometry.projection # Use projected system for global description
-    points_global_name = config['Georeferencing']['points_ecef_crs']
-    Hyperspectral.add_dataset(data = points_global, name=points_global_name, h5_filename = h5_filename)
-
-    # Add local points
-    points_local = hsi_geometry.camera_to_seabed_local  # Use projected system for global description
-    points_local_name = config['Georeferencing']['points_hsi_crs']
-    Hyperspectral.add_dataset(data=points_local, name=points_local_name, h5_filename = h5_filename)
-
-    # Add camera position
-    position_hsi = hsi_geometry.PositionHSI  # Use projected system for global description
-    position_hsi_name = config['Georeferencing']['position_ecef']
-    Hyperspectral.add_dataset(data=position_hsi, name=position_hsi_name, h5_filename = h5_filename)
-
-    # Add camera quaternion
-    quaternion_hsi = hsi_geometry.RotationHSI.as_quat()  # Use projected system for global description
-    quaternion_hsi_name = config['Georeferencing']['quaternion_ecef']
-    Hyperspectral.add_dataset(data=quaternion_hsi, name=quaternion_hsi_name, h5_filename = h5_filename)
-
-    # Add normals
-    normals_local = hsi_geometry.normalsLocal # Use projected system for global description
-    normals_local_name = config['Georeferencing']['normals_hsi_crs']
-    Hyperspectral.add_dataset(data=normals_local, name=normals_local_name, h5_filename = h5_filename)
-
-    # TODO: Makes sense to also write the view angles in a tangent plane (NED).
-
-    # Add normals in NED
-    normals_NED = hsi_geometry.normals_NED # Use projected system for global description
-    normals_NED_name = config['Georeferencing']['normals_NED_crs']
-    Hyperspectral.add_dataset(data=normals_NED, name=normals_NED_name, h5_filename = h5_filename)
-
-    # Add theta_v the in-air view nadir angle
-    theta_v = hsi_geometry.theta_v # Use projected system for global description
-    theta_v_name = config['Georeferencing']['theta_v']
-    Hyperspectral.add_dataset(data=theta_v, name=theta_v_name, h5_filename = h5_filename)
-
-    # Add theta_s, the in-air sun nadir angle
-    theta_s = hsi_geometry.theta_s # Use projected system for global description
-    theta_s_name = config['Georeferencing']['theta_s']
-    Hyperspectral.add_dataset(data=theta_s, name=theta_s_name, h5_filename = h5_filename)
-
-    # Add phi_v the in-air view azimuth angle
-    phi_v = hsi_geometry.phi_v # Use projected system for global description
-    phi_v_name = config['Georeferencing']['phi_v']
-    Hyperspectral.add_dataset(data=phi_v, name=phi_v_name, h5_filename = h5_filename)
-
-    # Add phi_s, the in-air sun azimuth angle
-    phi_s = hsi_geometry.phi_s # Use projected system for global description
-    phi_s_name = config['Georeferencing']['phi_s']
-    Hyperspectral.add_dataset(data=phi_s, name=phi_s_name, h5_filename = h5_filename)
-
-    # Add time layer
-    unix_time_grid = hsi_geometry.unix_time_grid # Use projected system for global description
-    unix_time_grid_name = config['Georeferencing']['unix_time_grid']
-    Hyperspectral.add_dataset(data=unix_time_grid, name=unix_time_grid_name, h5_filename = h5_filename)
-
-    # Add tide layer
-    hsi_tide_gridded = hsi_geometry.hsi_tide_gridded # Use projected system for global description
-    hsi_tide_gridded_name = config['Georeferencing']['hsi_tide_gridded']
-    Hyperspectral.add_dataset(data=hsi_tide_gridded, name=hsi_tide_gridded_name, h5_filename = h5_filename)
+    dict_ancilliary = config['Georeferencing']
+    # Dictionary keys correspond to CameraGeometry attribute names (e.g. hsi_geometry.key), while values correspond to h5 data set paths.
+    
+    with h5py.File(h5_filename, 'a', libver='latest') as f:
+        for attribute_name, h5_hierarchy_item_path in dict_ancilliary.items():
+            if attribute_name != 'folder':
+                if h5_hierarchy_item_path in f:
+                    del f[h5_hierarchy_item_path]
+                dset = f.create_dataset(name=h5_hierarchy_item_path, 
+                                                data = getattr(hsi_geometry, attribute_name))
 
 
 # Function called to apply standard processing on a folder of files

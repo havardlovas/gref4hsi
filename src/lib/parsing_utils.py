@@ -24,7 +24,7 @@ from pyproj import CRS, Transformer
 # Local modules
 from scripts.geometry import CameraGeometry, GeoPose
 from scripts.geometry import rot_mat_ned_2_ecef, interpolate_poses
-from scripts.gis_tools import dem_2_mesh, position_transform_ecef_2_llh
+from scripts.geometry import dem_2_mesh, position_transform_ecef_2_llh
 
 
 class Hyperspectral:
@@ -44,65 +44,89 @@ class Hyperspectral:
         # If errors arise due to improper dataset paths below, open the *.h5 file in hdfviewer and edit the path.
         with h5py.File(filename, 'r', libver='latest') as self.f:
             # TODO: Embed the paths from this special format into confic file
+            try:
+                dataCubePath = config['HDF.hyperspectral']['dataCube']
+            except:
+                pass
             
-            dataCubePath = config['HDF.hyperspectral']['dataCube']
-            exposureTimePath = config['HDF.hyperspectral']['exposureTime']
-            timestampHyperspectralPath = config['HDF.hyperspectral']['timestamp']
-            band2WavelengthPath = config['HDF.calibration']['band2Wavelength']
-            radiometricFramePath = config['HDF.calibration']['radiometricFrame']
-            darkFramePath = config['HDF.calibration']['darkFrame']
+            try:
+                timestampHyperspectralPath = config['HDF.hyperspectral']['timestamp']
+                self.dataCubeTimeStamps = self.f[timestampHyperspectralPath][()]
+            except:
+                pass
 
+            try:
+                # The band center wavelengths
+                band2WavelengthPath = config['HDF.calibration']['band2Wavelength']
+                self.band2Wavelength = self.f[band2WavelengthPath][()]
+            except:
+                pass
+            
+            try:
+                # The band widths (if they exist)
+                fwhmPath = config['HDF.calibration']['fwhm']
+
+                self.fwhm = self.f[fwhmPath][()]
+            except:
+                pass
+
+            try:
+                # These should come together in the case that radiometric calibration should be done
+                radiometricFramePath = config['HDF.calibration']['radiometricFrame']
+                darkFramePath = config['HDF.calibration']['darkFrame']
+                exposureTimePath = config['HDF.hyperspectral']['exposureTime']
+                is_uhi = config['HDF']['is_uhi']
+
+                
+                if eval(is_uhi):
+                    self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
+                else:
+                    self.t_exp = self.f[exposureTimePath][()] / 1000
+
+                self.darkFrame = self.f[darkFramePath][()]
+                self.radiometricFrame = self.f[radiometricFramePath][()]
+            except:
+                pass
+            
             try:
                 RGBFramesPath = config['HDF.rgb']['rgbFrames']
                 timestampRGBPath = config['HDF.rgb']['timestamp']
-            except KeyError:
+                try:
+                    # Extract RGB image data if available
+                    self.RGBTimeStamps = self.f[timestampRGBPath][()]
+                    self.RGBImgs = self.f[RGBFramesPath][()]
+                    self.n_imgs = self.RGBTimeStamps.shape[0]
+                except (UnboundLocalError, KeyError):
+                    pass
+            except:
                 pass
             
             
 
             if load_datacube:
+                # To save memory, we made it an option to not load datacube
                 self.dataCube = self.f[dataCubePath][()]
 
-            try:
-                if eval(config['HDF']['is_uhi']):
-                    self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
-                else:
-                    self.t_exp = self.f[exposureTimePath][()] / 1000
-            except KeyError:
-                pass
-            self.dataCubeTimeStamps = self.f[timestampHyperspectralPath][()]
-            self.band2Wavelength = self.f[band2WavelengthPath][()]
-            try:
-                self.darkFrame = self.f[darkFramePath][()]
-                self.radiometricFrame = self.f[radiometricFramePath][()]
-            except KeyError:
-                pass
-            
-            try:
-                self.RGBTimeStamps = self.f[timestampRGBPath][()]
-                self.RGBImgs = self.f[RGBFramesPath][()]
-            except (UnboundLocalError, KeyError):
-                pass
+                self.n_scanlines = self.dataCube.shape[0]
+                self.n_pix = self.dataCube.shape[1]
+                self.n_bands = self.dataCube.shape[1]
 
+                # Calculate radiance cube if this is cube is not calibrated
+                self.digital_counts_2_radiance(config=config)
 
-            georeferenced_nav_folder = config['Georeferencing']['folder']
-            if georeferenced_nav_folder in self.f:
-                georef_config = config['Georeferencing']
-                self.normals_local = self.f[georef_config['normals_hsi_crs']][()]
-                self.points_global = self.f[georef_config['points_ecef_crs']][()]
-                self.points_local = self.f[georef_config['points_hsi_crs']][()]
-
-                self.position_hsi = self.f[georef_config['position_ecef']][()]
-                self.quaternion_hsi = self.f[georef_config['quaternion_ecef']][()]
             # Check if the dataset exists
             processed_nav_folder = config['HDF.processed_nav']['folder']
             
+            # Read the position da
             if processed_nav_folder in self.f:
-                processed_nav_config = config['HDF.processed_nav']
-                self.pos_ref = self.f[processed_nav_config['position_ecef']][()]
-                self.pos0 = self.f[processed_nav_config['pos0']][()]
-                self.quat_ref = self.f[processed_nav_config['quaternion_ecef']][()]
-                self.pose_time = self.f[processed_nav_config['timestamp']][()]
+                try:
+                    processed_nav_config = config['HDF.processed_nav']
+                    self.pos_ref = self.f[processed_nav_config['position_ecef']][()]
+                    self.pos0 = self.f[processed_nav_config['pos0']][()]
+                    self.quat_ref = self.f[processed_nav_config['quaternion_ecef']][()]
+                    self.pose_time = self.f[processed_nav_config['timestamp']][()]
+                except:
+                    pass
             
             
                     
@@ -110,16 +134,7 @@ class Hyperspectral:
 
 
 
-        if load_datacube:
-            self.n_scanlines = self.dataCube.shape[0]
-            self.n_pix = self.dataCube.shape[1]
-            self.n_bands = self.dataCube.shape[1]
-            # Calculate radiance cube if this is not done already
-            self.digital_counts_2_radiance(config=config)
-            try:
-                self.n_imgs = self.RGBTimeStamps.shape[0]
-            except AttributeError:
-                pass
+       
 
             
 
@@ -187,17 +202,32 @@ class Hyperspectral:
 
             dset = f.create_dataset(name=name, data = data)
 
-    def get_dataset(self, dataset_name):
-        """
+    """def get_dataset(self, dataset_name):
+        
         Method to return a dataset by the name
         :param dataset_name: string
         The h5 dataset path
         :return: dataset
         Returns the queried dataset. Could be many datatypes, but mainly numpy arrays in our usage.
-        """
+        
         # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
         with h5py.File(self.name, 'a', libver='latest') as self.f:
             dataset = self.f[dataset_name][()]
+        return dataset"""
+    @staticmethod
+    def get_dataset(h5_filename, dataset_name):
+        """equivalent to the method, except it does not need an instance of a Hyperspectral object
+
+        :param h5_filename: Path to h5/hdf file
+        :type h5_filename: string
+        :param dataset_name: h5 rooted path, e.g. processed/reflectance/remote_sensing_reflectance
+        :type dataset_name: string
+        :return: The dataset at the relevant location
+        :rtype: numpy array or other
+        """
+        # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
+        with h5py.File(h5_filename, 'a', libver='latest') as f:
+            dataset = f[dataset_name][()]
         return dataset
 
 class DataLogger:
@@ -246,7 +276,7 @@ def ardupilot_extract_pose(config, iniPath):
     Position = matrix_pos[:, 1:4]
 
     linearPositionInterpolator = interp1d(time_pos, np.transpose(Position), fill_value='extrapolate')
-    PositionInterpolated = np.transpose(linearPositionInterpolator(time_rot))
+    position_nav_interpolated = np.transpose(linearPositionInterpolator(time_rot))
 
     pose_path = config['General']['ardupath'] + 'pose.csv'
 
@@ -260,7 +290,7 @@ def ardupilot_extract_pose(config, iniPath):
     proj = CRS.from_epsg(epsg_proj)
     transformer = Transformer.from_crs(proj, geocsc)
 
-    points_proj = PositionInterpolated
+    points_proj = position_nav_interpolated
 
     lat = points_proj[:, 0].reshape((-1, 1))
     lon = points_proj[:, 1].reshape((-1, 1))
@@ -278,7 +308,7 @@ def ardupilot_extract_pose(config, iniPath):
     for i in range(len(time_rot)):
 
         # Ardupilot delivers geodetic positions (EPSG::
-        pos_geod = PositionInterpolated[i, :]
+        pos_geod = position_nav_interpolated[i, :]
 
         # Define rotation matrix between local tangential plane (NED, North-East-Down) and Earth-Centered-Earth-Fixed (ECEF).
         R_n_e = rot_mat_ned_2_ecef(lat=pos_geod[0], lon=pos_geod[1])
@@ -534,14 +564,14 @@ def append_agisoft_data_h5(config):
                 None: The function returns nothing.
     """
     # Retrieve the pose file (per RGB image, with RGB image name tags)
-    filenamePose = config['Absolute Paths']['posePath']
-    pose = pd.read_csv(filenamePose, sep=',', header=0)
+    filename_pose = config['Absolute Paths']['posePath']
+    pose = pd.read_csv(filename_pose, sep=',', header=0)
 
     # Offsets should correspond with polygon model offset
-    offX = float(config['General']['offsetX'])
-    offY = float(config['General']['offsetY'])
-    offZ = float(config['General']['offsetZ'])
-    pos0 = np.array([offX, offY, offZ]).reshape([-1, 1])
+    off_x = float(config['General']['offsetX'])
+    off_y = float(config['General']['offsetY'])
+    off_z = float(config['General']['offsetZ'])
+    pos0 = np.array([off_x, off_y, off_z]).reshape([-1, 1])
 
 
     # Traverse through h5 dir to append the data to file
@@ -572,6 +602,7 @@ def append_agisoft_data_h5(config):
             agisoft_ind = ind_vec[relevant_images == True]
 
             # The relevant image indices (based on which images were matched during alignment)
+            
             # 0-CameraLabel, 1-X, 2-Y, 3-Z, 4-Roll, 5-Pitch, 6-Yaw, 7-RotX, 8-RotY, 9-RotZ
             agisoft_poses = pose.values[agisoft_ind, 1:10]
 
@@ -607,7 +638,7 @@ def append_agisoft_data_h5(config):
                                   extrapolate=True)
 
             # Add camera position
-            position_hsi = RGBCamera.PositionInterpolated
+            position_hsi = RGBCamera.position_nav_interpolated
 
 
             # Add camera position
@@ -623,7 +654,7 @@ def append_agisoft_data_h5(config):
             hyp.add_dataset(data=position_hsi, name=position_ref_name)
 
             # Add camera quaternion
-            quaternion_hsi = RGBCamera.RotationInterpolated.as_quat()
+            quaternion_hsi = RGBCamera.rotation_nav_interpolated.as_quat()
             quaternion_ref_name = config['HDF.processed_nav']['quaternion_ecef']
             hyp.add_dataset(data=quaternion_hsi, name=quaternion_ref_name)
 
@@ -664,8 +695,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
             # Alternatives quat, eul_ZYX
             rotation_reference_type = config['HDF.raw_nav']['rotation_reference_type']
             if rotation_reference_type == 'quat':
-                print('Hello1')
-                quaternion_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['quaternion'])
+                quaternion_ref = hyp.get_dataset(h5_filename=path_hdf, dataset_name=config['HDF.raw_nav']['quaternion'])
                 if quaternion_ref.shape[0] == 4:
                     quaternion_ref = np.transpose(quaternion_ref)
                 
@@ -680,7 +710,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 else:
                     raise ValueError("The quaternion convention must be defined")
             elif rotation_reference_type == 'eul_ZYX':
-                eul_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['eul_ZYX'])
+                eul_ref = hyp.get_dataset(h5_filename=path_hdf,dataset_name=config['HDF.raw_nav']['eul_ZYX'])
                 if eul_ref.shape[0] == 3:
                     eul_ref = np.transpose(eul_ref)
                 eul_is_degrees = eval(config['HDF.raw_nav']['eul_is_degrees'])
@@ -693,34 +723,23 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 raise ValueError("The rotation reference type must be defined as quat or eul_ZYX")
 
 
-                
-
-                
-            print('Hello3')
-
-
-
-
             is_global_rot = eval(config['HDF.raw_nav']['is_global_rot'])
 
             # Parse position
-            position_ref = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['position'])
-
+            position_ref = hyp.get_dataset(h5_filename=path_hdf,dataset_name=config['HDF.raw_nav']['position'])
             
             if position_ref.shape[0] == 3:
                 position_ref = np.transpose(position_ref)
 
 
-            timestamps_imu = hyp.get_dataset(dataset_name=config['HDF.raw_nav']['timestamp'])\
+            timestamps_imu = hyp.get_dataset(h5_filename=path_hdf, dataset_name=config['HDF.raw_nav']['timestamp'])\
                 .reshape(-1)
 
 
             # The rotation of the reference
             rot_obj = RotLib.from_quat(quaternion_ref)
 
-            timestamp_hsi = hyp.dataCubeTimeStamps\
-                .reshape(-1)
-
+            timestamp_hsi = hyp.dataCubeTimeStamps.reshape(-1)
 
             # Compute interpolated absolute positions positions and orientation:
             position_interpolated, quaternion_interpolated = interpolate_poses(timestamp_from=timestamps_imu,
@@ -729,7 +748,6 @@ def reformat_h5_embedded_data_h5(config, config_file):
                                                              rot_from=rot_obj,
                                                              timestamps_to=timestamp_hsi,
                                                              use_absolute_position = True)
-
 
             # If the original orientations are with respect to NED
             if not is_global_rot:
@@ -790,8 +808,6 @@ def reformat_h5_embedded_data_h5(config, config_file):
             
             position_offset_name = config['HDF.processed_nav']['pos0']
             Hyperspectral.add_dataset(data=pos0, name=position_offset_name, h5_filename=path_hdf)
-
-
 
             # Add camera position
             position_ref_name = config['HDF.processed_nav']['position_ecef']
