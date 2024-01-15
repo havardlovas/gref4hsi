@@ -1,61 +1,89 @@
+import os
+from concurrent.futures import ThreadPoolExecutor
+
+# Third party
 import cv2 as cv
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
-
 import pyproj
 from pyproj import CRS, Transformer
 import pyvista as pv
-
 import rasterio
 from rasterio.features import geometry_mask
 from rasterio.warp import calculate_default_transform, reproject, Resampling
-
 from osgeo import gdal, osr
-from shapely.geometry import Polygon, mapping
+from shapely.geometry import Polygon, mapping, MultiPoint
 from sklearn.neighbors import NearestNeighbors
 from spectral import envi
-import os
+import spectral as sp
+import spectral.io.envi
+import h5py
+
 
 # Local module
 from scripts.colours import Image as Imcol
+from lib.parsing_utils import Hyperspectral
 
 GRAVITY = 9.81 # m/s^2
-
+# ENVI datatype conversion dictionary
+dtype_dict = {1:np.uint8,
+             2:np.int16,
+             3:np.int32,
+             4:np.float32,
+             5:np.float64,
+             12:np.uint16,
+             13:np.uint32,
+             14:np.int64,
+             15:np.uint64}
 
 class GeoSpatialAbstractionHSI():
-    def __init__(self, point_cloud, transect_string, config):
-        self.config = config
+    def __init__(self, point_cloud, transect_string, config_crs):
         self.name = transect_string
         self.points_geocsc = point_cloud
-        self.is_global = self.config['Coordinate Reference Systems']['geocsc_epsg_export'] != 'Local'
-        if self.is_global:
-            self.epsg_geocsc = int(config['Coordinate Reference Systems']['geocsc_epsg_export'])
 
-            self.epsg_proj = int(config['Coordinate Reference Systems']['proj_epsg'])
-    def transform_geocentric_to_projected(self):
-        self.points_proj  = self.points_geocsc # Remains same if it is local
-        if self.is_global:
-            geocsc = CRS.from_epsg(self.epsg_geocsc)
-            proj = CRS.from_epsg(self.epsg_proj)
-            transformer = Transformer.from_crs(geocsc, proj)
+        self.offX = config_crs.off_x
+        self.offY = config_crs.off_y
+        self.offZ = config_crs.off_z
 
-            xECEF = self.points_geocsc[:,:,0].reshape((-1, 1))
-            yECEF = self.points_geocsc[:, :, 1].reshape((-1, 1))
-            zECEF = self.points_geocsc[:, :, 2].reshape((-1, 1))
+        self.epsg_geocsc = config_crs.epsg_geocsc
+        
+        self.n_lines = point_cloud.shape[0]
+        self.n_pixels = point_cloud.shape[1]
+        self.n_bands = point_cloud.shape[1]
 
-            self.offX = float(self.config['General']['offsetX'])
-            self.offY = float(self.config['General']['offsetY'])
-            self.offZ = float(self.config['General']['offsetZ'])
-
-            (east, north, hei) = transformer.transform(xx=xECEF + self.offX, yy=yECEF + self.offY, zz=zECEF + self.offZ)
-
-            self.points_proj[:,:,0] = east.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
-            self.points_proj[:, :, 1] = north.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
-            self.points_proj[:, :, 2] = hei.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
+        # A clean way of doing things would be to define 
+    def transform_geocentric_to_projected(self, config_crs):
 
 
-    def footprint_to_shape_file(self):
+        
+        self.epsg_proj = config_crs.epsg_proj
+        self.crs = 'EPSG:' + str(self.epsg_proj)
+        
+        
+
+        self.points_proj  = np.zeros(self.points_geocsc.shape) # Remains same if it is local
+        
+        geocsc = CRS.from_epsg(self.epsg_geocsc)
+        proj = CRS.from_epsg(self.epsg_proj)
+        transformer = Transformer.from_crs(geocsc, proj)
+
+        xECEF = self.points_geocsc[:,:,0].reshape((-1, 1))
+        yECEF = self.points_geocsc[:, :, 1].reshape((-1, 1))
+        zECEF = self.points_geocsc[:, :, 2].reshape((-1, 1))
+
+        
+
+        (east, north, hei) = transformer.transform(xx=xECEF + self.offX, yy=yECEF + self.offY, zz=zECEF + self.offZ)
+
+        self.points_proj[:,:,0] = east.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
+        self.points_proj[:, :, 1] = north.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
+        self.points_proj[:, :, 2] = hei.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
+
+        
+
+
+    def footprint_to_shape_file(self, footprint_dir):
         self.edge_start = self.points_proj[0, :, 0:2].reshape((-1,2))
         self.edge_end = self.points_proj[-1, :, 0:2].reshape((-1,2))
         self.side_1 = self.points_proj[:, 0, 0:2].reshape((-1,2))
@@ -74,151 +102,537 @@ class GeoSpatialAbstractionHSI():
 
         self.footprint_shp = Polygon(self.hull_line)
 
-        if self.is_global:
-            self.crs = 'EPSG:' + str(self.epsg_proj)
-        else:
-            # Our frame is a local engineering frame (local tangent plane)
-            wkt = self.config['Coordinate Reference Systems']['wktLocal']
-            #ellps = self.config['Coordinate Reference Systems']['ellps']
-            #geo_dict = {'proj':'utm', 'zone': 10, 'ellps': ellps}
-            #self.crs = pyproj.CRS.from_dict(proj_dict=geo_dict)
-            self.crs = pyproj.CRS.from_wkt(wkt)
-
         gdf = gpd.GeoDataFrame(geometry=[self.footprint_shp], crs=self.crs)
 
-        shape_path = self.config['Absolute Paths']['footPrintPaths'] + self.name + '.shp'
+        shape_path = footprint_dir + self.name + '.shp'
 
         gdf.to_file(shape_path, driver='ESRI Shapefile')
-    def resample_datacube(self, hyp, rgb_composite_only):
-        #
-        self.res = float(self.config['Orthorectification']['resolutionHyperspectralMosaic'])
-        wl_red = float(self.config['General']['RedWavelength'])
-        wl_green = float(self.config['General']['GreenWavelength'])
-        wl_blue = float(self.config['General']['BlueWavelength'])
 
-        rgb_composite_path = self.config['Absolute Paths']['rgbCompositePaths']
-        datacube_path = self.config['Absolute Paths']['orthoCubePaths']
-        resamplingMethod = self.config['Orthorectification']['resamplingMethod']
+    def resample_datacube(self, radiance_cube, wavelengths, fwhm, envi_cube_dir, rgb_composite_dir, config_ortho):
+        """Resamples the radiance cube into a geographic grid based on the georeferencing
+
+        :param radiance_cube: The data cube of radiance with the corresponding radiometric_unit of the data
+        :type radiance_cube: Often an ndarray(n, m, k) where n-number of lines, m- number of pixels, and k-number of spectral bands
+        :param wavelengths: The band's centre wavelengths
+        :type wavelengths: ndarray(k, 1)
+        :param fwhm: Full Width Half Maximum, descibing the band's widths (often in nanometers)
+        :type fwhm: ndarray(k, 1)
+        :param envi_cube_dir: Directory to write data cubes
+        :type envi_cube_dir: string, path
+        :param rgb_composite_dir: Directory to write data cubes
+        :type rgb_composite_dir: string, path
+        :param config_ortho: The relevant configurations for orthorectification
+        :type config_ortho: Dictionary
+        """
+
+
         
-        # The footprint-shape is a in a vectorized format and needs to be mapped into a raster-mask
-        xmin, ymin, xmax, ymax = self.footprint_shp.bounds
-        width = int((xmax - xmin) / self.res)
-        height = int((ymax - ymin) / self.res)
-        transform = rasterio.transform.from_bounds(xmin, ymin, xmax, ymax, width, height)
+        n_bands = len(wavelengths)
+        #
+        n = radiance_cube.shape[0]
+        m = radiance_cube.shape[1]
+        k = radiance_cube.shape[2] # Number of bands
 
-        # Create mask from the polygon
+        bytes_per_entry = radiance_cube.itemsize
+        chunk_size_GB = config_ortho.chunk_size_cube_GB
+
+
+        # If chunking is to be applied, we can use square chunks. Round to the nearest thousand because of personal OCD
+        chunk_square_length = np.sqrt((chunk_size_GB*1024**3) / (k*bytes_per_entry))
+        self.chunk_square_length = int(np.round(chunk_square_length/1000)*1000)
+
+        if self.chunk_square_length == 0:
+            self.chunk_square_length = 1000
+
+        self.chunk_area = self.chunk_square_length**2
+
+        self.res = config_ortho.ground_resolution
+
+        wl_red = config_ortho.wl_red
+        wl_green = config_ortho.wl_green
+        wl_blue = config_ortho.wl_blue
+
+        raster_transform_method = config_ortho.raster_transform_method
+
+        # Set nodata value for ortho-products
+        nodata = config_ortho.nodata_value
+        self.nodata = nodata
+
+        rgb_composite_only = config_ortho.resample_rgb_only
+
+        
+
+        # Set custom RGB bands from *.ini file
+        band_ind_R = np.argmin(np.abs(wl_red - wavelengths))
+        band_ind_G = np.argmin(np.abs(wl_green - wavelengths))
+        band_ind_B = np.argmin(np.abs(wl_blue - wavelengths))
+
+        # To let ENVI pick up on which bands are used for red-green-blue vizualization
+        self.default_bands_string = '{ '+' , '.join([str(band_ind_R), str(band_ind_G), str(band_ind_B)]) + ' }'
+
+        # Some relevant metadata
+        metadata_ENVI = {
+            'description': 'Radiance converted, georeferenced data',
+            'unit': config_ortho.radiometric_unit,
+            'wavelength units': config_ortho.wavelength_unit,
+            'sensor type': config_ortho.sensor_type,
+            'default bands': self.default_bands_string,
+            'interleave': config_ortho.interleave,
+            'wavelengths': wavelengths
+        }
+        try:
+            # If vector form
+            if fwhm.any() == np.nan:
+                pass
+            else:
+                metadata_ENVI['fwhm'] = fwhm
+        except AttributeError:
+            # If scalar
+            if fwhm == np.nan:
+                pass
+            else:
+                metadata_ENVI['fwhm'] = fwhm
+
+            
+        
+        
+        # Extract relevant info from hyp object
+        datacube = radiance_cube[:, :, :].reshape((-1, n_bands))
+        rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+
+        # Horizontal coordinates of intersections in projected CRS
+        coords = self.points_proj[:, :, 0:2].reshape((-1, 2))
+
+        del radiance_cube
+        
+        # The raster can be rotated optimally (which saves loads of memory) for transects that are long compared to width. 
+        # However, north-east oriented rasters is more supported by image visualization
+        transform, height, width, indexes, suffix = GeoSpatialAbstractionHSI.cube_to_raster_grid(coords, raster_transform_method, resolution = self.res)
+
+        # Make accessible as attribute because it can be to write ancillary data
+        self.indexes = indexes.copy()
+        self.transform = transform
+        self.width = width
+        self.height = height
+        self.suffix = suffix
+
+        # Create raster mask from the polygon describing the footprint
         geoms = [mapping(self.footprint_shp)]
         mask = geometry_mask(geoms, out_shape=(height, width), transform=transform)
 
-        # Set custom RGB bands from *.ini file
-        wavelength_nm = np.array([wl_red, wl_green, wl_blue])
-        band_ind_R = np.argmin(np.abs(wavelength_nm[0] - hyp.band2Wavelength))
-        band_ind_G = np.argmin(np.abs(wavelength_nm[1] - hyp.band2Wavelength))
-        band_ind_B = np.argmin(np.abs(wavelength_nm[2] - hyp.band2Wavelength))
-        n_bands = len(hyp.band2Wavelength)
-        wavelengths=hyp.band2Wavelength
+        self.mask = mask
 
-        
-        
-        datacube = hyp.dataCubeRadiance[:, :, :].reshape((-1, n_bands))
-        rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+        # Build datacube
+        if not rgb_composite_only:
 
-        transform = rasterio.transform.from_bounds(xmin, ymin, xmax, ymax, width, height)
+            # For the later processing, storing the mapping from the rectified grid to the raw datacube makes sense:
+            indexes_grid_unmasked = indexes.reshape((height, width))
+            # Mask indexes
+            indexes_grid_unmasked[mask == 1] = nodata
 
-        del hyp
+            # Make masked indices accessible as these allow orthorectification of ancilliary data
+            self.index_grid_masked = indexes_grid_unmasked
 
-        # Horizontal coordinates of intersections
-        coords = self.points_proj[:, :, 0:2].reshape((-1, 2))
-        if resamplingMethod == 'Nearest':
+            # Step 1: Initialize a Memory Map
+            filename = 'memmap_array.dat'
+            shape = (n_bands, height, width)
+            dtype = np.float32
             
-            tree = NearestNeighbors(radius=self.res).fit(coords)
-            print('Finalized NN interpolation')
-            xi, yi = np.meshgrid(np.linspace(xmin, xmax, width), np.linspace(ymin, ymax, height))
-            xy = np.vstack((xi.flatten(), yi.flatten())).T
-            dist, indexes = tree.kneighbors(xy, 1)
+            memmap_array = np.memmap(filename, dtype=dtype, mode='w+', shape=shape)
 
-            # Build the RGB cube from the indices
+            # In grid form, identify whether partitioning is needed
+            area_idx_grid = width*height
 
-            print('Reforming RGB data')
-            ortho_rgb = rgb_cube[indexes, :].flatten()
-            ortho_rgb = np.flip(ortho_rgb.reshape((height, width, 3)).astype(np.float64), axis = 0)
-            print(' RGB Reformed data')
-            # Build datacube
-            if not rgb_composite_only:
-                ortho_datacube = datacube[indexes, :]
-                ortho_datacube = np.flip(ortho_datacube.reshape((height, width, n_bands)).astype(np.float64), axis=0)
+            if area_idx_grid > self.chunk_area:
+                
+                # Subdivide along horizontal axis:
+                delta_width = int(self.chunk_area/height)
+                # Number of slices
+                num_delta_widths = int(width/delta_width) + 1
+
+                for i in range(num_delta_widths):
+                    
+                    if i != num_delta_widths-1:
+                        sub_indices = self.index_grid_masked[:, i*delta_width:(i+1)*delta_width].reshape((-1,1))
+                        dw = delta_width
+                        
+                    else:
+                        sub_indices = self.index_grid_masked[:, i*delta_width:width].reshape((-1,1))
+                        dw = np.arange(i*delta_width, width).size
+                    
+                    # Only extraxt valid data:
+                    sub_ortho_cube = np.ones((sub_indices.shape[0]*sub_indices.shape[1], n_bands))*nodata
+                    
+                    # From the grid, the only valid pixels are
+                    valid_pixels = (sub_indices != nodata).reshape(-1)
+                    valid_pixels_raw = sub_indices[valid_pixels].reshape(-1)
+                    valid_pixels_geo = np.arange(sub_indices.size)[valid_pixels]
+
+                    sub_ortho_cube[valid_pixels_geo, :] = datacube[valid_pixels_raw, :]
+
+                    sub_ortho_cube = sub_ortho_cube.reshape((height, dw, n_bands))
+
+                    # Form to Rasterio friendly
+                    sub_ortho_cube = np.transpose(sub_ortho_cube, axes=[2, 0, 1])
+
+                    memmap_array[:, :, i*delta_width:i*delta_width + dw] = sub_ortho_cube
+                # Free memory
+                del datacube
+                del sub_ortho_cube
+            else:
+                # Resample
+                ortho_datacube = datacube[self.indexes, :]
+
+                # Free memory
+                del datacube
+
+                # Reshape to datacube form
+                ortho_datacube = ortho_datacube.reshape((height, width, n_bands))
+
+                # Mask
+                ortho_datacube[mask == 1, :] = nodata
+
+                # Form to Rasterio friendly
+                ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])
+
+                # Write to memory map
+                memmap_array[:] = ortho_datacube
+
+                # Free memory
+                del ortho_datacube
+                
+
+                
+            GeoSpatialAbstractionHSI.write_datacube_ENVI(memmap_array, 
+                                nodata, 
+                                transform, 
+                                datacube_path = envi_cube_dir + self.name + suffix, 
+                                wavelengths=wavelengths,
+                                fwhm=fwhm,
+                                metadata = metadata_ENVI,
+                                crs=self.crs,
+                                interleave = config_ortho.interleave)
 
             
-            
 
-            self.width_rectified = width
-            self.height_rectified = height
-            self.indexes = indexes
+        # Resample RGB image data 
+        ortho_rgb = rgb_cube[self.indexes, :].flatten()
 
-
-
-
-        # Set nodata value
-        nodata = -9999
+        # Reshape image
+        ortho_rgb = ortho_rgb.reshape((height, width, 3))
+    
+        # Mask
         ortho_rgb[mask == 1, :] = nodata
+
         # Arange datacube or composite in rasterio-friendly structure
         ortho_rgb = np.transpose(ortho_rgb, axes = [2, 0, 1])
-
-        if not rgb_composite_only:
-            ortho_datacube[mask == 1, :] = nodata
-
         
-        
-
-
         # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
-        with rasterio.open(rgb_composite_path + self.name + '.tif', 'w', driver='GTiff',
-                                height=height, width=width, count=3, dtype=np.float64,
+        with rasterio.open(rgb_composite_dir + self.name + suffix + '.tif', 'w', driver='GTiff',
+                                height=height, width=width, count=3, dtype=ortho_rgb.dtype,
                                 crs=self.crs, transform=transform, nodata=nodata) as dst:
 
             dst.write(ortho_rgb)
-        # Write ENVI-style hyperspectral datacube
-        if rgb_composite_only == False:
-            ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])
-            self.write_datacube_ENVI(ortho_datacube, nodata, transform, datacube_path = datacube_path + self.name, wavelengths=wavelengths)
+        
+
+    def resample_ancillary(self, h5_filename, anc_dir, anc_dict, interleave = 'bil'):
+
+        band_counter = 0
+        band_names = []
+
+        # Define one hyperspectral data to 
+        with h5py.File(h5_filename, 'r', libver='latest') as f:
+            for attribute_name, h5_hierarchy_item_path in anc_dict.items():
+                if attribute_name != 'folder':
+                    data = f[h5_hierarchy_item_path][()]
 
 
+                    if data.ndim == 2:
+                        if data.shape[1]  != self.n_pixels:
+                            # For data of shape n_lines x j, for example camera positions, reshape to n_lines x n_pixels x j
+                            j = data.shape[1]
+                            data = np.einsum('ijk, ik -> ijk', np.ones((self.n_lines, self.n_pixels, j), dtype=np.float32), data)
+                        else:
+                            # For data with dimension n_lines x n_pixels, add third dimension
+                            data = data.reshape((data.shape[0], data.shape[1], 1))
 
+                    data = data.astype(dtype = np.float32)
+                    
+                    # For first layer
+                    if band_counter == 0:
+                        anc_data_array = data
+                    # For other layers, concatenate with existing layers
+                    else:
+                        anc_data_array = np.concatenate((anc_data_array, data), axis = 2)
 
-        else:
-            print('You are only writing parts of a datacube')
+                    # Necessary to modify for data with multiple bands
+                    k = data.shape[2]
+                    # If data has more than one band:
+                    if k > 1:
+                        for i in range(k):
+                            band_name_data = attribute_name + '_' + str(i)
+                            band_names.append(band_name_data)
+                    else:
+                        band_name_data = attribute_name
+                        band_names.append(band_name_data)
+                    
+                    band_counter += k
+                    
+                    
+            
+        
+        
+        metadata_anc = {
+            'description': 'Ancillary data',
+            'band names': '{ '+' , '.join(band_names) + ' }'
+        }
+        n_bands = band_counter
 
-    def write_datacube_ENVI(self, ortho_datacube, nodata, transform, datacube_path, wavelengths):
+        # Resample
+        anc_data_array = anc_data_array.reshape((-1, n_bands))
+        ortho_anc = anc_data_array[self.indexes.flatten(), :]
+
+        # Free memory
+        del anc_data_array
+
+        # Reshape to anc_cube form
+        ortho_anc = ortho_anc.reshape((self.height, self.width, n_bands))
+
+        # Mask
+        ortho_anc[self.mask == 1, :] = self.nodata
+
+        # Form to Rasterio friendly
+        ortho_anc = np.transpose(ortho_anc, axes=[2, 0, 1])
+
+        if not os.path.isdir(anc_dir):
+            os.mkdir(anc_dir)
+
+        GeoSpatialAbstractionHSI.write_ancillary_ENVI(ortho_anc, 
+                                                      nodata = self.nodata, 
+                                                      transform = self.transform, 
+                                                      crs = self.crs,
+                                                      anc_path = anc_dir + self.name + self.suffix,
+                                                      metadata=metadata_anc,
+                                                      interleave=interleave)
+
+        
+
+    @staticmethod
+    def cube_to_raster_grid(coords, raster_transform_method, resolution):
+        if raster_transform_method == 'north_east':
+            # Creates the minimal area (and thus memory) rectangle around chunk
+            polygon = MultiPoint(coords).envelope
+
+            # extract coordinates
+            x, y = polygon.exterior.xy
+
+            idx_ul = 3
+            idx_ur = 2
+            idx_ll = 4
+
+            suffix = '_north_east'
+            
+
+            
+        elif raster_transform_method == 'minimal_rectangle':
+            
+            # Creates the minimal area (and thus memory) rectangle around chunk
+            polygon = MultiPoint(coords).minimum_rotated_rectangle
+
+            # extract coordinates
+            x, y = polygon.exterior.xy
+
+            # Increasing indices are against the clock
+            
+            # Determine basis vectors from data
+            idx_ul = 3
+            idx_ur = 2
+            idx_ll = 4
+
+            suffix = '_rotated'
+
+        x_ul = x[idx_ul]
+        y_ul = y[idx_ul]
+
+        x_ur = x[idx_ur]
+        y_ur = y[idx_ur]
+
+        x_ll = x[idx_ll]
+        y_ll = y[idx_ll]
+
+        # The vector from upper-left corner aka origin to the upper-right equals lambda*e_basis_x
+        e_basis_x = np.array([x_ur-x_ul, y_ur-y_ul]).reshape((2,1))
+        w_transect = np.linalg.norm(e_basis_x)
+        e_basis_x /= w_transect
+
+        # The y basis vector is the vector to the other edge
+        e_basis_y = np.array([x_ll-x_ul, y_ll-y_ul]).reshape((2,1))
+        h_transect = np.linalg.norm(e_basis_y)
+        e_basis_y /= h_transect
+        e_basis_y *= -1 # Ensuring Right handedness (image storage y direction is o)
+
+        R = np.hstack((e_basis_x, e_basis_y)) # 2D rotation matrix by definition
+        
+        # Define origin/translation vector
+        o = np.array([x[idx_ul], y[idx_ul]]).reshape((2))
+
+        # Transformation matrix rigid body 2D
+        Trb = np.zeros((3,3))
+        Trb[0:2,0:2] = R
+        Trb[0:2,2] = o
+        Trb[2,2] = 1
+
+        s_x = resolution
+        s_y = resolution
+
+        S = np.diag(np.array([s_x, s_y, 1]))
+
+        # Reflection to account for opposite row/up direction
+        Ref = np.diag(np.array([1, -1, 1]))
+
+        # The affine transform is then expressed:
+        Taff = Trb.dot(S).dot(Ref)
+
+        # The metric width and length of the transect can give us the number of pixels
+        width = int(np.ceil(w_transect/s_x))
+        height = int(np.ceil(h_transect/s_y))
+
+        # Rasterio operates with a conventional affine
+        a, b, c, d, e, f = Taff[0,0], Taff[0,1], Taff[0,2], Taff[1,0], Taff[1,1], Taff[1,2]
+
+        transform = rasterio.Affine(a, b, c, d, e, f)
+
+        # Pixel centers reside at half coordinates.
+        xi, yi = np.meshgrid(np.arange(width) + 0.5, 
+                                np.arange(height) + 0.5)
+        zi = np.ones(xi.shape)
+
+        # Form homogeneous vectors
+        x_r = np.vstack((xi.flatten(), yi.flatten(), zi.flatten())).T
+
+        x_p = np.matmul(Taff, x_r.T).T # Map pixels to geographic
+
+        xy = np.vstack((x_p[:,0].flatten(), x_p[:,1].flatten())).T
+        
+
+        # Locate nearest neighbors in a radius defined by the resolution
+        tree = NearestNeighbors(radius=resolution).fit(coords)
+
+        # Calculate the nearest neighbors. Here we only use one neighbor, but other approaches could be employed
+        dist, indexes = tree.kneighbors(xy, 1)
+        
+        return transform, height, width, indexes, suffix
+
+    @staticmethod
+    def write_datacube_ENVI(ortho_datacube, nodata, transform, datacube_path, wavelengths, fwhm, metadata, interleave, crs):
+        """_summary_
+
+        :param ortho_datacube: _description_
+        :type ortho_datacube: _type_
+        :param nodata: _description_
+        :type nodata: _type_
+        :param transform: _description_
+        :type transform: _type_
+        :param datacube_path: _description_
+        :type datacube_path: _type_
+        :param wavelengths: _description_
+        :type wavelengths: _type_
+        :param fwhm: _description_
+        :type fwhm: _type_
+        :param envi_hdr_dict: _description_
+        :type envi_hdr_dict: _type_
+        """
+
         nx = ortho_datacube.shape[1]
         mx = ortho_datacube.shape[2]
         k = ortho_datacube.shape[0]
 
-        # Create the bsq file
-        with rasterio.open(datacube_path + '.bsq', 'w', driver='ENVI', height=nx, width=mx, count=k, crs=self.crs, dtype=ortho_datacube[0].dtype, transform=transform , nodata=nodata) as dst:
-            for i, band_data in enumerate(ortho_datacube, start=1):
-                dst.write(band_data, i)
+        # Make some simple modifications
+        data_file_path = datacube_path + '.' + interleave
+        header_file_path = datacube_path + '.hdr'
 
+        # Clean the files generated by rasterio
+        def write_band(args):
+            band_data, index, dst = args
+            dst.write(band_data, index + 1)
+        
+        if os.path.exists(data_file_path):
+            os.remove(data_file_path)
+            os.remove(header_file_path)
+
+        
+        # Assuming ortho_datacube is a 3D NumPy array with shape (k, nx, mx)
+        with rasterio.open(data_file_path, 'w', driver='ENVI', height=nx, width=mx, count=k, crs=crs, dtype=ortho_datacube.dtype, transform=transform, nodata=nodata) as dst:
+            # Create a ThreadPoolExecutor with as many threads as bands
+            with ThreadPoolExecutor(max_workers=k) as executor:
+                # Use executor.map to parallelize the band writing process
+                executor.map(write_band, [(band_data, i, dst) for i, band_data in enumerate(ortho_datacube)])
+            
+        
+        header = sp.io.envi.read_envi_header(datacube_path + '.hdr') # Open for extraction
+
+        
+        header.pop('band names')
+
+        for meta_key, value in metadata.items():
+            header[meta_key] = value
+
+        sp.io.envi.write_envi_header(fileName=header_file_path, header_dict=header)
+
+    @staticmethod
+    def write_ancillary_ENVI(anc_data, nodata, transform, anc_path, metadata, interleave, crs):
+        """_summary_
+
+        :param anc_data: An ancilliary data cube 
+        :type anc_data: j x m x n where j are the number of bands, and m, n are the raster dimensions 
+        :param nodata: _description_
+        :type nodata: _type_
+        :param transform: _description_
+        :type transform: _type_
+        :param datacube_path: _description_
+        :type datacube_path: _type_
+        :param metadata: _description_
+        :type metadata: _type_
+        :param interleave: _description_
+        :type interleave: _type_
+        :param crs: _description_
+        :type crs: _type_
+        """
+        nx = anc_data.shape[1]
+        mx = anc_data.shape[2]
+        k = anc_data.shape[0]
 
         # Make some simple modifications
-        data_file_path = datacube_path + '.bsq'
+        data_file_path = anc_path + '.' + interleave
+        header_file_path = anc_path + '.hdr'
 
+        if os.path.exists(data_file_path):
+            os.remove(data_file_path)
+            os.remove(header_file_path)
 
+        # Hack to exploit rasterio's generation of map info
 
-        # Include meta data regarding the unit
-        unit_str = self.config['General']['radiometric_unit']
-        header_file_path = datacube_path + '.hdr'
-        header = envi.open(header_file_path)
-        # Set the unit of the signal in the header
-        header.metadata['unit'] = unit_str
-        # Set wavelengths array in the header
-        header.bands.centers = wavelengths
-        # TODO: include support for the bandwidths
-        # header.bands.bandwidths = wl
-        envi.save_image(header_file_path, header, metadata={}, interleave='bsq', filename=data_file_path, force=True)
+        # Clean the files generated by rasterio
+        def write_band(args):
+            band_data, index, dst = args
+            dst.write(band_data, index + 1)
 
+        # Assuming ortho_datacube is a 3D NumPy array with shape (k, nx, mx)
+        with rasterio.open(data_file_path, 'w', driver='ENVI', height=nx, width=mx, count=k, crs=crs, dtype=anc_data.dtype, transform=transform, nodata=nodata) as dst:
+            # Create a ThreadPoolExecutor with as many threads as bands
+            with ThreadPoolExecutor(max_workers=k) as executor:
+                # Use executor.map to parallelize the band writing process
+                executor.map(write_band, [(band_data, i, dst) for i, band_data in enumerate(anc_data)])
+            
+        
+        header = sp.io.envi.read_envi_header(anc_path + '.hdr') # Open for modif
+        #header['interleave'] = interleave
+        header.pop('band names') # Remove defaults
 
-        os.remove(datacube_path + '.img')
+        for meta_key, value in metadata.items():
+            header[meta_key] = value
 
+        sp.io.envi.write_envi_header(fileName=header_file_path, header_dict=header)
 
     def compare_hsi_composite_with_rgb_mosaic(self):
         self.rgb_ortho_path = self.config['Absolute Paths']['rgbOrthoPath']
@@ -559,138 +973,6 @@ class GeoSpatialAbstractionHSI():
         #self.x1_x_rgb = v_rgb - np.floor(v_rgb)
         #self.y1_y_rgb = u_rgb - np.floor(u_rgb)
 
-def dem_2_mesh(path_dem, model_path, config):
-    """
-    A function for converting a specified DEM to a 3D mesh model (*.vtk, *.ply or *.stl). Consequently, mesh should be thought of as 2.5D representation.
-    :param path_dem: string
-    path to dem for reading
-    :param model_path: string
-    path to where 3D mesh model is to be written.
-    :return: Nothing
-    """
-    # Input and output file paths
-
-    output_xyz = model_path.split(sep = '.')[0] + '.xyz'
-    # No-data value
-    #no_data_value = int(config['General']['nodataDEM'])  # Replace with your actual no-data value
-    # Open the input raster dataset
-    ds = gdal.Open(path_dem)
-
-    # 
-
-    if ds is None:
-        print(f"Failed to open {path_dem}")
-    else:
-        # Read the first band (band index is 1)
-        band = ds.GetRasterBand(1)
-        no_data_value = band.GetNoDataValue()
-        if band is None:
-            print(f"Failed to open band 1 of {path_dem}")
-        else:
-            # Get the geotransform information to calculate coordinates
-            geotransform = ds.GetGeoTransform()
-            x_origin = geotransform[0]
-            y_origin = geotransform[3]
-            x_resolution = geotransform[1]
-            y_resolution = geotransform[5]
-            # Get the CRS information
-            spatial_reference = osr.SpatialReference(ds.GetProjection())
-
-            # Get the EPSG code
-            epsg_proj = None
-            if spatial_reference.IsProjected():
-                epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 1)
-            elif spatial_reference.IsGeographic():
-                epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 0)
-
-            print(f"DEM projected EPSG Code: {epsg_proj}")
-
-            config.set('Coordinate Reference Systems', 'dem_epsg', str(epsg_proj))
-            
-            # Get the band's data as a NumPy array
-            band_data = band.ReadAsArray()
-            # Create a mask to identify no-data values
-            mask = band_data != no_data_value
-            # Create and open the output XYZ file for writing if it does not exist:
-            #if not os.path.exists(output_xyz):
-            with open(output_xyz, 'w') as xyz_file:
-                # Write data to the XYZ file using the mask and calculated coordinates
-                for y in range(ds.RasterYSize):
-                    for x in range(ds.RasterXSize):
-                        if mask[y, x]:
-                            x_coord = x_origin + x * x_resolution
-                            y_coord = y_origin + y * y_resolution
-                            xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
-            # Clean up
-            ds = None
-            band = None
-    print("Conversion completed.")
-    points = np.loadtxt(output_xyz)
-    # Create a pyvista point cloud object
-    cloud = pv.PolyData(points)
-    # Generate a mesh from
-    mesh = cloud.delaunay_2d()
-
-    epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
-    # Transform the mesh points to from projected to geocentric ECEF.
-    geocsc = CRS.from_epsg(epsg_geocsc)
-    proj = CRS.from_epsg(epsg_proj)
-    transformer = Transformer.from_crs(proj, geocsc)
-
-    print(f"Mesh geocentric EPSG Code: {epsg_geocsc}")
-
-    points_proj = mesh.points
-
-    eastUTM = points_proj[:, 0].reshape((-1, 1))
-    northUTM = points_proj[:, 1].reshape((-1, 1))
-    heiUTM = points_proj[:, 2].reshape((-1, 1))
-
-    (xECEF, yECEF, zECEF) = transformer.transform(xx=eastUTM, yy=northUTM, zz=heiUTM)
-
-    mesh.points[:, 0] = xECEF.reshape(-1)
-    mesh.points[:, 1] = yECEF.reshape(-1)
-    mesh.points[:, 2] = zECEF.reshape(-1)
-
-    #mean_vec = np.mean(mesh.points, axis = 0)
-
-    offX = float(config['General']['offsetX'])
-    offY = float(config['General']['offsetY'])
-    offZ = float(config['General']['offsetZ'])
-
-    pos0 = np.array([offX, offY, offZ]).reshape((1, -1))
-
-    mesh.points -= pos0 # Add appropriate offset
-    # Save mesh
-    mesh.save(model_path)
-
-
-def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):
-    """
-    Function for transforming ECEF positions to latitude longitude height
-    :param position_ecef: numpy array floats (n,3)
-    :param epsg_from: int
-    EPSG code of the original geocentric coordinate system (ECEF)
-    :param epsg_to: int
-    EPSG code of the transformed geodetic coordinate system
-    :return lat_lon_hei: numpy array floats (n,3)
-    latitude, longitude ellipsoid height.
-    """
-    geocsc = CRS.from_epsg(epsg_from)
-    geod = CRS.from_epsg(epsg_to)
-    transformer = Transformer.from_crs(geocsc, geod)
-
-    xECEF = position_ecef[:, 0].reshape((-1, 1))
-    yECEF = position_ecef[:, 1].reshape((-1, 1))
-    zECEF = position_ecef[:, 2].reshape((-1, 1))
-
-    (lat, lon, hei) = transformer.transform(xx=xECEF, yy=yECEF, zz=zECEF)
-
-    lat_lon_hei = np.zeros(position_ecef.shape)
-    lat_lon_hei[:, 0] = lat.reshape((position_ecef.shape[0], 1))
-    lat_lon_hei[:, 1] = lon.reshape((position_ecef.shape[0], 1))
-    lat_lon_hei[:, 2] = hei.reshape((position_ecef.shape[0], 1))
-
-    return lat_lon_hei
 
 
 
