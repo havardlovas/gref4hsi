@@ -13,11 +13,13 @@ import pandas as pd
 from scipy.interpolate import interp1d
 from osgeo import gdal, osr
 import pyvista as pv
+from shapely.geometry import Polygon, mapping, MultiPoint
 
 import os
 import time
 from datetime import datetime
 from dateutil import parser
+
 # A file were we define geometry and geometric transforms.
 
 # Perhaps a class with one "__init__.py
@@ -525,20 +527,23 @@ class CameraGeometry():
         else:
 
             if tide_format == 'NMA':
+                try:
+                    df_tide = pd.read_csv(path_tide, sep='\s+', parse_dates=[0], index_col=0, comment='#', date_parser=parser.parse)
 
-                df_tide = pd.read_csv(path_tide, sep='\s+', parse_dates=[0], index_col=0, comment='#', date_parser=parser.parse)
+                    # Convert the datetime index to Unix time and add column
+                    df_tide['UnixTime'] = df_tide.index.astype('int64') // 10**9  # Convert nanoseconds to seconds
 
-                # Convert the datetime index to Unix time and add column
-                df_tide['UnixTime'] = df_tide.index.astype('int64') // 10**9  # Convert nanoseconds to seconds
+                    tide_height_NN2000 = 0.01*df_tide['Observations'] # Since in cm
 
-                tide_height_NN2000 = 0.01*df_tide['Observations'] # Since in cm
+                    tide_timestamp = df_tide['UnixTime']
+                    
+                    hsi_tide_interp = interp1d(x = tide_timestamp, y= tide_height_NN2000)(x = self.time)
 
-                tide_timestamp = df_tide['UnixTime']
-                
-                hsi_tide_interp = interp1d(x = tide_timestamp, y= tide_height_NN2000)(x = self.time)
-
-                # Make into gridded form:
-                self.hsi_tide_gridded = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), hsi_tide_interp.reshape((-1,1)))
+                    # Make into gridded form:
+                    self.hsi_tide_gridded = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), hsi_tide_interp.reshape((-1,1)))
+                except:
+                    print('No tide file was found!!')
+                    self.hsi_tide_gridded = constant_height*np.ones((n, m, 1))
 
 
 
@@ -1043,22 +1048,27 @@ def rot_mat_ned_2_ecef(lat, lon):
 
 def dem_2_mesh(path_dem, model_path, config):
     """
-    A function for converting a specified DEM to a 3D mesh model (*.vtk, *.ply or *.stl). Consequently, mesh should be thought of as 2.5D representation.
-    :param path_dem: string
-    path to dem for reading
-    :param model_path: string
-    path to where 3D mesh model is to be written.
-    :return: Nothing
-    """
-    # Input and output file paths
+    A function for converting a specified DEM to a 3D mesh model (*.vtk, *.ply or *.stl). 
+    Consequently, mesh should be thought of as 2.5D representation.
+    In the case 
 
+    :param path_dem: _description_
+    :type path_dem: _type_
+    :param model_path: _description_
+    :type model_path: _type_
+    :param config: _description_
+    :type config: _type_
+    """
+
+
+    # The desired CRS for the model must be same as positions, orientations
+    epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
+
+    # Intermediate point cloud format
     output_xyz = model_path.split(sep = '.')[0] + '.xyz'
-    # No-data value
-    #no_data_value = int(config['General']['nodataDEM'])  # Replace with your actual no-data value
+
     # Open the input raster dataset
     ds = gdal.Open(path_dem)
-
-    # 
 
     if ds is None:
         print(f"Failed to open {path_dem}")
@@ -1082,17 +1092,23 @@ def dem_2_mesh(path_dem, model_path, config):
             epsg_proj = None
             if spatial_reference.IsProjected():
                 epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 1)
+                is_projected = True
             elif spatial_reference.IsGeographic():
                 epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 0)
+                proj = ds.GetProjection()
+                is_projected = False
 
             print(f"DEM projected EPSG Code: {epsg_proj}")
 
+            # Automatically set
             config.set('Coordinate Reference Systems', 'dem_epsg', str(epsg_proj))
             
             # Get the band's data as a NumPy array
             band_data = band.ReadAsArray()
+
             # Create a mask to identify no-data values
             mask = band_data != no_data_value
+
             # Create and open the output XYZ file for writing if it does not exist:
             #if not os.path.exists(output_xyz):
             with open(output_xyz, 'w') as xyz_file:
@@ -1106,34 +1122,42 @@ def dem_2_mesh(path_dem, model_path, config):
             # Clean up
             ds = None
             band = None
-    print("Conversion completed.")
+    
+    print("DEM-Mesh conversion completed.")
     points = np.loadtxt(output_xyz)
+
     # Create a pyvista point cloud object
     cloud = pv.PolyData(points)
-    # Generate a mesh from
+
+    # Generate a mesh from points
     mesh = cloud.delaunay_2d()
 
-    epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
-    # Transform the mesh points to from projected to geocentric ECEF.
+    # Transform the mesh points from projected to geocentric ECEF.
     geocsc = CRS.from_epsg(epsg_geocsc)
-    proj = CRS.from_epsg(epsg_proj)
-    transformer = Transformer.from_crs(proj, geocsc)
 
-    print(f"Mesh geocentric EPSG Code: {epsg_geocsc}")
+    if epsg_proj == 'EPSG': # If a geographic CRS
+        pass
+    else:
+        proj = CRS.from_epsg(epsg_proj)
+
+    transformer = Transformer.from_crs(proj, geocsc)
 
     points_proj = mesh.points
 
-    eastUTM = points_proj[:, 0].reshape((-1, 1))
-    northUTM = points_proj[:, 1].reshape((-1, 1))
-    heiUTM = points_proj[:, 2].reshape((-1, 1))
+    if is_projected:
+        x_proj = points_proj[:, 0].reshape((-1, 1))
+        y_proj = points_proj[:, 1].reshape((-1, 1))
+    else:
+        x_proj = points_proj[:, 1].reshape((-1, 1))
+        y_proj = points_proj[:, 0].reshape((-1, 1))
+    
+    h_proj = points_proj[:, 2].reshape((-1, 1))
 
-    (xECEF, yECEF, zECEF) = transformer.transform(xx=eastUTM, yy=northUTM, zz=heiUTM)
+    (xECEF, yECEF, zECEF) = transformer.transform(xx=x_proj, yy=y_proj, zz=h_proj)
 
     mesh.points[:, 0] = xECEF.reshape(-1)
     mesh.points[:, 1] = yECEF.reshape(-1)
     mesh.points[:, 2] = zECEF.reshape(-1)
-
-    #mean_vec = np.mean(mesh.points, axis = 0)
 
     offX = float(config['General']['offsetX'])
     offY = float(config['General']['offsetY'])
@@ -1141,9 +1165,69 @@ def dem_2_mesh(path_dem, model_path, config):
 
     pos0 = np.array([offX, offY, offZ]).reshape((1, -1))
 
-    mesh.points -= pos0 # Add appropriate offset
+    # Add same offset as position data
+    mesh.points -= pos0
+
     # Save mesh
     mesh.save(model_path)
+
+def crop_dem_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_25.gtx'):
+    # The desired CRS for the model must be same as positions, orientations
+    epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
+
+    # Open the input raster dataset
+    
+    if os.path.exists(path_dem):
+        ds = gdal.Open(path_dem)
+    else:
+        # Take in use one of the geoids
+        ds = gdal.Open(geoid_path)
+
+    df_pose = pd.read_csv(config['Absolute Paths']['posepath'])
+
+    # Find CRS of DEM
+    spatial_reference = osr.SpatialReference(ds.GetProjection())
+
+
+    # Get the EPSG code
+    epsg_proj = None
+    if spatial_reference.IsProjected():
+        epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 1)
+    elif spatial_reference.IsGeographic():
+        epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 0)
+    
+    # Transform points to DEM CRS
+    geocsc = CRS.from_epsg(epsg_geocsc)
+    proj = ds.GetProjection()
+    transformer = Transformer.from_crs(geocsc, proj)
+
+    x_ecef = df_pose[' X'].values.reshape((-1, 1))
+    y_ecef = df_pose[' Y'].values.reshape((-1, 1))
+    z_ecef = df_pose[' Z'].values.reshape((-1, 1))
+
+    (x_proj, y_proj, z_proj) = transformer.transform(xx=x_ecef, yy=y_ecef, zz=z_ecef)
+
+    coords_horz = np.concatenate((x_proj.reshape((-1,1)), y_proj.reshape((-1,1))), axis = 1)
+
+    # Determine bounding rectangle ()
+    polygon = MultiPoint(coords_horz).envelope
+    # Corners
+    x, y = polygon.exterior.xy
+
+    # Determine padding
+    padding = float(config['General']['maxraylength'])
+
+    if spatial_reference.IsProjected():
+        xmin = x.min() - padding
+        ymin = y.min() - padding
+        xmax = x.max() + padding
+        ymax = y.max() + padding
+    elif spatial_reference.IsGeographic():
+        (x_new, y_new, z_new) = pm.enu2geodetic(e= np.array([-padding, padding]), n= np.array([-padding, padding]), u = 0, lon0=np.mean(y), lat0=np.mean(x), h0 = 0)
+
+        delta_x = x_new - np.mean(x)
+        delta_y = x_new - np.mean(x)
+        print()
 
 
 def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):

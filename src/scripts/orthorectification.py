@@ -1,17 +1,10 @@
 import configparser
 import os
-import pickle
 import sys
 from collections import namedtuple
 
-
-from scipy.spatial.transform import Rotation as RotLib
-import h5py
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import pyvista as pv
-from scipy.interpolate import interp1d
 
 # Local resources:
 from scripts.geometry import CameraGeometry, FeatureCalibrationObject, CalibHSI
@@ -137,10 +130,10 @@ def main(iniPath):
         
             wavelengths = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                             dataset_name=h5_path_wavelength_centers)
-            if h5_path_wavelength_widths != 'undefined':
+            try:
                 fwhm = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                             dataset_name=h5_path_wavelength_widths)
-            else:
+            except KeyError:
                 fwhm = np.nan
 
 
@@ -166,7 +159,7 @@ def main(iniPath):
                                      rgb_composite_dir=rgb_composite_dir,
                                      config_ortho=config_ortho)
 
-            os.remove('memmap_array.dat')
+            
 
             # The ancilliary data is read from h5 files and converted into a datacube
             if eval(config['Orthorectification']['resample_ancillary']): 

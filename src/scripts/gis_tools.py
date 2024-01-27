@@ -198,6 +198,8 @@ class GeoSpatialAbstractionHSI():
         
         # Extract relevant info from hyp object
         datacube = radiance_cube[:, :, :].reshape((-1, n_bands))
+
+        # RBG Composite
         rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
 
         # Horizontal coordinates of intersections in projected CRS
@@ -333,7 +335,7 @@ class GeoSpatialAbstractionHSI():
                                 crs=self.crs, transform=transform, nodata=nodata) as dst:
 
             dst.write(ortho_rgb)
-        memmap_array.flush()
+        
         
         
 

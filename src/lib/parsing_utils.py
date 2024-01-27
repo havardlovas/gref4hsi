@@ -24,7 +24,7 @@ from pyproj import CRS, Transformer
 # Local modules
 from scripts.geometry import CameraGeometry, GeoPose
 from scripts.geometry import rot_mat_ned_2_ecef, interpolate_poses
-from scripts.geometry import dem_2_mesh, position_transform_ecef_2_llh
+from scripts.geometry import dem_2_mesh, crop_dem_to_pose
 
 
 class Hyperspectral:
@@ -128,9 +128,6 @@ class Hyperspectral:
                 except:
                     pass
             
-            
-                    
-
 
 
 
@@ -828,6 +825,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
     headers = ['Timestamp', ' X', ' Y', ' Z', ' RotZ', ' RotY', ' RotX']
 
     # Create a DataFrame from the data_matrix and headers
+    # Stores the entire pose path
     df = pd.DataFrame(total_pose, columns=headers)
 
     pose_path = config['Absolute Paths']['posepath']
@@ -837,7 +835,6 @@ def reformat_h5_embedded_data_h5(config, config_file):
     config.set('General', 'offsetX', str(pos0[0]))
     config.set('General', 'offsetY', str(pos0[1]))
     config.set('General', 'offsetZ', str(pos0[2]))
-
     # Exporting models with offsets might be convenient
     with open(config_file, 'w') as configfile:
         config.write(configfile)
@@ -901,7 +898,17 @@ def export_model(config_file):
         file_path_dem = config['Absolute Paths']['dempath']
         file_path_3d_model = config['Absolute Paths']['modelpath']
         # Make new only once.
-        
+        #crop_dem_to_pose(path_dem=file_path_dem, config=config)
+
+        dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
+    
+    elif modelExportType == 'range_sensor_1d':
+        file_path_dem = config['Absolute Paths']['dempath']
+        file_path_3d_model = config['Absolute Paths']['modelpath']
+
+        # Make new only once.
+        ranges_to_dem(path_dem=file_path_dem, config=config)
+
         dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
     elif modelExportType == 'none':
         pass

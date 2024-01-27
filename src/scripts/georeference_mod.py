@@ -12,6 +12,7 @@ import h5py
 # Local resources:
 from scripts.geometry import CameraGeometry, CalibHSI
 from lib.parsing_utils import Hyperspectral
+from scripts import visualize
 
 
 def cal_file_to_rays(filename_cal, config):
@@ -121,7 +122,7 @@ def write_intersection_geometry_2_h5_file(hsi_geometry, config, h5_filename):
 
 
 # Function called to apply standard processing on a folder of files
-def main(iniPath):
+def main(iniPath, viz = False):
     config = configparser.ConfigParser()
     config.read(iniPath)
 
@@ -181,12 +182,19 @@ def main(iniPath):
             
             write_intersection_geometry_2_h5_file(hsi_geometry=hsi_geometry, config = config, h5_filename=path_hdf)
 
+            print('Writing Point Cloud')
+            hsi_geometry.writeRGBPointCloud(config = config, hyp = hyp, transect_string = filename.split('.')[0])
+
+            if viz:
+                 visualize.show_projected_hsi_points(HSICameraGeometry=hsi_geometry, 
+                                                     config=config, 
+                                                     transect_string = filename.split('.')[0])
+
             print('Intersection geometry written to:\n {0}'.format(filename))
 
 
             
-            print('Writing Point Cloud')
-            hsi_geometry.writeRGBPointCloud(config = config, hyp = hyp, transect_string = filename.split('.')[0])
+            
 
             #from scripts import visualize
             #visualize.show_projected_hsi_points(HSICameraGeometry=hsi_geometry, config=config, transect_string = filename.split('.')[0])

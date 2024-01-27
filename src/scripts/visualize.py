@@ -136,10 +136,9 @@ def show_camera_geometry(CameraGeometry, config):
 
 
 
-    rotMats = CameraGeometry.RotationHSI.as_matrix()
+    rotMats = CameraGeometry.rotation_hsi.as_matrix()
 
-    points_cam = CameraGeometry.PositionHSI
-
+    points_cam = CameraGeometry.position_ecef
 
     mesh = pv.read(mesh_path)
     tex = pv.read_texture(texture_path)
@@ -173,8 +172,8 @@ def show_projected_hsi_points(HSICameraGeometry, config, transect_string):
     
     point_cloud_path = config['Absolute Paths']['rgbPointCloudPath'] + transect_string + '.ply'
 
-    rotMats = HSICameraGeometry.RotationHSI.as_matrix()
-    points_cam = HSICameraGeometry.PositionHSI
+    rotMats = HSICameraGeometry.rotation_hsi.as_matrix()
+    points_cam = HSICameraGeometry.position_ecef
 
     mesh = pv.read(mesh_path)
 
