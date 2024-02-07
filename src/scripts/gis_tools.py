@@ -46,6 +46,10 @@ class GeoSpatialAbstractionHSI():
         self.offY = config_crs.off_y
         self.offZ = config_crs.off_z
 
+        if self.offX == -1:
+            print('Offsets have not been set, or they have been overwritten by default value -1')
+            RuntimeError
+
         self.epsg_geocsc = config_crs.epsg_geocsc
         
         self.n_lines = point_cloud.shape[0]

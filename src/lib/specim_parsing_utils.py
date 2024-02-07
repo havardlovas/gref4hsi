@@ -489,7 +489,7 @@ def main(config, config_specim):
     # Extract the starting/stopping lines
     START_STOP_DIR = mission_dir + '/start_stop_lines'
     
-    # Patch in the case that lines are not specified
+    # Allow software to function if start_stop_lines not specified
     if not os.path.exists(START_STOP_DIR + '/'):
         # Chunk according to chunk size
         start_lines = np.arange(start=0,

@@ -24,7 +24,7 @@ from pyproj import CRS, Transformer
 # Local modules
 from scripts.geometry import CameraGeometry, GeoPose
 from scripts.geometry import rot_mat_ned_2_ecef, interpolate_poses
-from scripts.geometry import dem_2_mesh, crop_dem_to_pose
+from scripts.geometry import dem_2_mesh, crop_geoid_to_pose
 
 
 class Hyperspectral:
@@ -247,10 +247,9 @@ class DataLogger:
 def ardupilot_extract_pose(config, iniPath):
     
     """
-    
-    :param config: 
-    :param iniPath: 
-    :return: 
+        :param config: The processing configuration object (from */configuration.ini file)
+        :param iniPath: The path to */configuration.ini file
+        :return: 
     """
     
     # Attitude retrieved from an ardupilot CSV
@@ -671,7 +670,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
 
                 Returns:
                     None: The function returns nothing.
-        """
+    """
 
 
     # Traverse through h5 dir to append the data to file
@@ -857,8 +856,13 @@ def export_pose(config_file):
 
     # This file handles pose exports of various types
     # As of now there are three types:
+
     # 1) Agisoft, h5_embedded and independent_file
-    poseExportType = config['General']['poseExportType']
+    try:
+        poseExportType = config['General']['poseExportType']
+    except:
+        # Default to h5_embedded
+        poseExportType = 'h5_embedded'
 
     if poseExportType == 'agisoft':
         # Just take in use the already existing parser
@@ -898,20 +902,19 @@ def export_model(config_file):
         file_path_dem = config['Absolute Paths']['dempath']
         file_path_3d_model = config['Absolute Paths']['modelpath']
         # Make new only once.
-        #crop_dem_to_pose(path_dem=file_path_dem, config=config)
 
         dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
-    
-    elif modelExportType == 'range_sensor_1d':
+
+    elif modelExportType == 'geoid':
         file_path_dem = config['Absolute Paths']['dempath']
+        file_path_geoid = config['Absolute Paths']['geoid_path']
         file_path_3d_model = config['Absolute Paths']['modelpath']
 
-        # Make new only once.
-        ranges_to_dem(path_dem=file_path_dem, config=config)
+        # Crop the DEM to appropriate size based on poses and maximum ray length
+        crop_geoid_to_pose(path_dem=file_path_dem, config=config, geoid_path=file_path_geoid)
 
+        # Make into a 3D model
         dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
-    elif modelExportType == 'none':
-        pass
 
 
 

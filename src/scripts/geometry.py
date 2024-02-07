@@ -14,6 +14,9 @@ from scipy.interpolate import interp1d
 from osgeo import gdal, osr
 import pyvista as pv
 from shapely.geometry import Polygon, mapping, MultiPoint
+from rasterio.transform import from_origin
+from rasterio.windows import from_bounds
+from rasterio.windows import Window
 
 import os
 import time
@@ -572,7 +575,6 @@ class CameraGeometry():
         points = self.points_ecef_crs[self.points_ecef_crs != 0].reshape((-1,3))
         rgb_points = (rgb[self.points_ecef_crs != 0] / rgb.max()).astype(np.float64).reshape((-1,3))
         pcd = o3d.geometry.PointCloud()
-
         pcd.points = o3d.utility.Vector3dVector(points)
         pcd.colors = o3d.utility.Vector3dVector(rgb_points)
         o3d.io.write_point_cloud(dir_point_cloud + transect_string + '.ply', pcd)
@@ -1093,6 +1095,7 @@ def dem_2_mesh(path_dem, model_path, config):
             if spatial_reference.IsProjected():
                 epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 1)
                 is_projected = True
+                config.set('Coordinate Reference Systems', 'dem_epsg', str(epsg_proj))
             elif spatial_reference.IsGeographic():
                 epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 0)
                 proj = ds.GetProjection()
@@ -1101,7 +1104,7 @@ def dem_2_mesh(path_dem, model_path, config):
             print(f"DEM projected EPSG Code: {epsg_proj}")
 
             # Automatically set
-            config.set('Coordinate Reference Systems', 'dem_epsg', str(epsg_proj))
+            
             
             # Get the band's data as a NumPy array
             band_data = band.ReadAsArray()
@@ -1171,17 +1174,13 @@ def dem_2_mesh(path_dem, model_path, config):
     # Save mesh
     mesh.save(model_path)
 
-def crop_dem_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_25.gtx'):
+def crop_geoid_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_25.gtx'):
     # The desired CRS for the model must be same as positions, orientations
     epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
 
     # Open the input raster dataset
     
-    if os.path.exists(path_dem):
-        ds = gdal.Open(path_dem)
-    else:
-        # Take in use one of the geoids
-        ds = gdal.Open(geoid_path)
+    ds = gdal.Open(geoid_path)
 
     df_pose = pd.read_csv(config['Absolute Paths']['posepath'])
 
@@ -1213,21 +1212,74 @@ def crop_dem_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_25.
     polygon = MultiPoint(coords_horz).envelope
     # Corners
     x, y = polygon.exterior.xy
+    x = np.array(x)
+    y = np.array(y)
 
     # Determine padding
     padding = float(config['General']['maxraylength'])
 
     if spatial_reference.IsProjected():
+        # Add padding to 
         xmin = x.min() - padding
         ymin = y.min() - padding
         xmax = x.max() + padding
         ymax = y.max() + padding
     elif spatial_reference.IsGeographic():
+        # Must translate metric padding into increments in lon/lat
         (x_new, y_new, z_new) = pm.enu2geodetic(e= np.array([-padding, padding]), n= np.array([-padding, padding]), u = 0, lon0=np.mean(y), lat0=np.mean(x), h0 = 0)
+        delta_x = x_new[1] - np.mean(x)
+        delta_y = y_new[1] - np.mean(y)
 
-        delta_x = x_new - np.mean(x)
-        delta_y = x_new - np.mean(x)
-        print()
+        # Swap x and y because x, y above is latitude, longitude and Rasterio expects opposite
+        ymin = x.min() - delta_x
+        xmin = y.min() - delta_y
+        ymax = x.max() + delta_x
+        xmax = y.max() + delta_y
+
+        minx, miny, maxx, maxy = [xmin, ymin, xmax, ymax]  # Replace with actual coordinates
+
+        
+
+        # Crops the DEM to the appropriate bounds and writes a new file (Copies CRS info from Geoid)
+        crop_dem_from_bounds(minx, miny, maxx, maxy, dem_path_source=geoid_path, dem_path_target=path_dem)
+     
+
+
+def crop_dem_from_bounds(minx, miny, maxx, maxy, dem_path_source, dem_path_target):
+
+    dem_dataset = rasterio.open(dem_path_source)
+    res_x = dem_dataset.transform.a
+    res_y = -dem_dataset.transform.e
+
+    if maxx-minx < res_x:
+        minx += -res_x
+        maxx += res_x
+    
+    if maxy-miny < res_y:
+        miny += -res_y
+        maxy += res_y
+
+    window = from_bounds(minx, miny, maxx, maxy, dem_dataset.transform)
+
+    window = Window(window.col_off, window.row_off, np.ceil(window.width), np.ceil(window.height))
+
+    cropped_dem_data = dem_dataset.read(window=window)
+
+    # Update the transform based on the new window
+    new_transform = dem_dataset.window_transform(window)
+    new_height, new_width = cropped_dem_data.shape[1], cropped_dem_data.shape[2]
+
+    # Create a new dataset for the cropped DEM
+    cropped_dem_profile = dem_dataset.profile.copy()
+    cropped_dem_profile.update({
+        'width': new_width,
+        'height': new_height,
+        'transform': new_transform
+    })
+
+
+    with rasterio.open(dem_path_target, 'w', **cropped_dem_profile) as dst:
+        dst.write(cropped_dem_data)
 
 
 def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):

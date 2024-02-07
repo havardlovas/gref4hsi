@@ -96,7 +96,7 @@ config_uhi_preprocess = SettingsPreprocess(dtype_datacube = np.float32,
                                                                     [1, 0, 0],
                                                                     [0, 0, -1]]),
                             # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.
-                            translation_alt_to_body = np.array([0.5, 0, -0.25]),
+                            translation_alt_to_body = np.array([0.5, 0, 0]),
                             time_offset_sec =  23,
                             lon_lat_alt_origin =  np.array([1, 1, 0]),
                             # The beast sets up a fake coordinate system at 1 deg lon/lat.
@@ -116,7 +116,7 @@ def main():
     config.read(config_file_mission)
 
     # The minimum for georeferencing is to parse 1) Mesh model and 2) The pose of the reference
-    uhi_parsing_utils.uhi_beast(config=config, config_uhi=config_uhi_preprocess)
+    """uhi_parsing_utils.uhi_beast(config=config, config_uhi=config_uhi_preprocess)"""
     #                          config_specim=config_specim_preprocess)"""
     
     config = parsing_utils.export_pose(config_file_mission)
