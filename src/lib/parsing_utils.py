@@ -503,7 +503,7 @@ def agisoft_export_model(config_file):
             Returns:
                 config: The function returns config object to allow that it is modified.
         """
-    MS.License().activate("EE2Z6-O5ZVF-1JYNV-NKSRY-UXTGR")
+    MS.License().activate("XXXX-XXXX-XXXX-XXXX-XXXX")
     doc = MS.Document()
     doc.read_only = False
 
