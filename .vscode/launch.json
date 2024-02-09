@@ -11,6 +11,17 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": true
+        },
+        {
+            "name": "Test Main",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/tests/test_main_hi.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "~/AppData/Local/miniconda3/envs/hyperspectral_toolchain/python.exe"
+            }
         }
     ]
 }

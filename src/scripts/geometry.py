@@ -1026,15 +1026,15 @@ def dem_2_mesh(path_dem, model_path, config):
         print(f"Failed to open {path_dem}")
     else:
         # Read the first band (band index is 1)
-        band = ds.GetRasterBand(1)
+        band          = ds.GetRasterBand(1)
         no_data_value = band.GetNoDataValue()
         if band is None:
             print(f"Failed to open band 1 of {path_dem}")
         else:
             # Get the geotransform information to calculate coordinates
             geotransform = ds.GetGeoTransform()
-            x_origin = geotransform[0]
-            y_origin = geotransform[3]
+            x_origin     = geotransform[0]
+            y_origin     = geotransform[3]
             x_resolution = geotransform[1]
             y_resolution = geotransform[5]
             # Get the CRS information
@@ -1066,7 +1066,7 @@ def dem_2_mesh(path_dem, model_path, config):
                             y_coord = y_origin + y * y_resolution
                             xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
             # Clean up
-            ds = None
+            ds   = None
             band = None
     print("Conversion completed.")
     points = np.loadtxt(output_xyz)
@@ -1077,17 +1077,17 @@ def dem_2_mesh(path_dem, model_path, config):
 
     epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
     # Transform the mesh points to from projected to geocentric ECEF.
-    geocsc = CRS.from_epsg(epsg_geocsc)
-    proj = CRS.from_epsg(epsg_proj)
+    geocsc      = CRS.from_epsg(epsg_geocsc)
+    proj        = CRS.from_epsg(epsg_proj)
     transformer = Transformer.from_crs(proj, geocsc)
 
     print(f"Mesh geocentric EPSG Code: {epsg_geocsc}")
 
     points_proj = mesh.points
 
-    eastUTM = points_proj[:, 0].reshape((-1, 1))
+    eastUTM  = points_proj[:, 0].reshape((-1, 1))
     northUTM = points_proj[:, 1].reshape((-1, 1))
-    heiUTM = points_proj[:, 2].reshape((-1, 1))
+    heiUTM   = points_proj[:, 2].reshape((-1, 1))
 
     (xECEF, yECEF, zECEF) = transformer.transform(xx=eastUTM, yy=northUTM, zz=heiUTM)
 

@@ -51,20 +51,20 @@ class Hyperspectral:
             
             try:
                 timestampHyperspectralPath = config['HDF.hyperspectral']['timestamp']
-                self.dataCubeTimeStamps = self.f[timestampHyperspectralPath][()]
+                self.dataCubeTimeStamps    = self.f[timestampHyperspectralPath][()]
             except:
                 pass
 
             try:
                 # The band center wavelengths
-                band2WavelengthPath = config['HDF.calibration']['band2Wavelength']
+                band2WavelengthPath  = config['HDF.calibration']['band2Wavelength']
                 self.band2Wavelength = self.f[band2WavelengthPath][()]
             except:
                 pass
             
             try:
                 # The band widths (if they exist)
-                fwhmPath = config['HDF.calibration']['fwhm']
+                fwhmPath = config['HDF.calibration']['fwhm']                 #Oliver: fwhm should usually be present, add to the config file
 
                 self.fwhm = self.f[fwhmPath][()]
             except:
@@ -73,11 +73,10 @@ class Hyperspectral:
             try:
                 # These should come together in the case that radiometric calibration should be done
                 radiometricFramePath = config['HDF.calibration']['radiometricFrame']
-                darkFramePath = config['HDF.calibration']['darkFrame']
-                exposureTimePath = config['HDF.hyperspectral']['exposureTime']
-                is_uhi = config['HDF']['is_uhi']
+                darkFramePath        = config['HDF.calibration']['darkFrame']
+                exposureTimePath     = config['HDF.hyperspectral']['exposureTime']
+                is_uhi               = config['HDF']['is_uhi']
 
-                
                 if eval(is_uhi):
                     self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
                 else:
@@ -87,58 +86,44 @@ class Hyperspectral:
                 self.radiometricFrame = self.f[radiometricFramePath][()]
             except:
                 pass
-            
+
             try:
                 RGBFramesPath = config['HDF.rgb']['rgbFrames']
                 timestampRGBPath = config['HDF.rgb']['timestamp']
                 try:
                     # Extract RGB image data if available
                     self.RGBTimeStamps = self.f[timestampRGBPath][()]
-                    self.RGBImgs = self.f[RGBFramesPath][()]
-                    self.n_imgs = self.RGBTimeStamps.shape[0]
+                    self.RGBImgs       = self.f[RGBFramesPath][()]                     #Oliver: Should be "self.RGBImgs  = list(self.f[RGBFramesPath].values())"        
+                    self.n_imgs        = self.RGBTimeStamps.shape[0]                   #Oliver: Should be "self.n_imgs = self.RGBTimeStamps.shape[1]"
                 except (UnboundLocalError, KeyError):
                     pass
             except:
                 pass
-            
-            
 
             if load_datacube:
                 # To save memory, we made it an option to not load datacube
                 self.dataCube = self.f[dataCubePath][()]
 
                 self.n_scanlines = self.dataCube.shape[0]
-                self.n_pix = self.dataCube.shape[1]
-                self.n_bands = self.dataCube.shape[1]
+                self.n_pix       = self.dataCube.shape[1]
+                self.n_bands     = self.dataCube.shape[1]
 
                 # Calculate radiance cube if this is cube is not calibrated
                 self.digital_counts_2_radiance(config=config)
 
             # Check if the dataset exists
             processed_nav_folder = config['HDF.processed_nav']['folder']
-            
-            # Read the position da
+
+            # Read the position data
             if processed_nav_folder in self.f:
                 try:
                     processed_nav_config = config['HDF.processed_nav']
-                    self.pos_ref = self.f[processed_nav_config['position_ecef']][()]
-                    self.pos0 = self.f[processed_nav_config['pos0']][()]
-                    self.quat_ref = self.f[processed_nav_config['quaternion_ecef']][()]
+                    self.pos_ref   = self.f[processed_nav_config['position_ecef']][()]
+                    self.pos0      = self.f[processed_nav_config['pos0']][()]
+                    self.quat_ref  = self.f[processed_nav_config['quaternion_ecef']][()]
                     self.pose_time = self.f[processed_nav_config['timestamp']][()]
                 except:
                     pass
-            
-            
-                    
-
-
-
-
-       
-
-            
-
-
 
     def digital_counts_2_radiance(self, config):
 
@@ -268,15 +253,16 @@ def ardupilot_extract_pose(config, iniPath):
     time_rot = matrix_att[:,0]
     
     # Position retrieved from an ardupilot CSV
-    pos_path = config['General']['ardupath'] + 'pos.csv'
-    df_pos = pd.read_csv(pos_path)
+    pos_path   = config['General']['ardupath'] + 'pos.csv'
+    df_pos     = pd.read_csv(pos_path)
     matrix_pos = np.array(df_pos.values.tolist())
 
     time_pos = matrix_pos[:, 0]
     Position = matrix_pos[:, 1:4]
 
+    #Oliver: Interpolate Position data (Nav data) to match the time stamps of the HSI data
     linearPositionInterpolator = interp1d(time_pos, np.transpose(Position), fill_value='extrapolate')
-    position_nav_interpolated = np.transpose(linearPositionInterpolator(time_rot))
+    position_nav_interpolated  = np.transpose(linearPositionInterpolator(time_rot))
 
     pose_path = config['General']['ardupath'] + 'pose.csv'
 
@@ -640,16 +626,12 @@ def append_agisoft_data_h5(config):
             # Add camera position
             position_hsi = RGBCamera.position_nav_interpolated
 
-
             # Add camera position
-            
 
             # Add camera quaternion
-            
 
             # Add time stamps
-            
-            
+
             position_ref_name = config['HDF.processed_nav']['position_ecef']
             hyp.add_dataset(data=position_hsi, name=position_ref_name)
 
@@ -666,30 +648,26 @@ def append_agisoft_data_h5(config):
 
 def reformat_h5_embedded_data_h5(config, config_file):
     """
-                Parses pose from h5, interpolates and reformats. Writes the positions and orientations of hyperspectral frames to
-                    dataset under the /Nav folder
+    Parses pose from h5, interpolates and reformats. Writes the positions and orientations of hyperspectral frames to
+    dataset under the /Nav folder
 
-                Args:
-                    config_file: The *.ini file containing the paths and configurations.
+    Args:
+      config_file: The *.ini file containing the paths and configurations.
 
-                Returns:
-                    None: The function returns nothing.
-        """
-
-
+    Returns:
+      None: The function returns nothing.
+    """
     # Traverse through h5 dir to append the data to file
-    h5dir = config['Absolute Paths']['h5dir']
+    h5dir    = config['Absolute Paths']['h5dir']
     is_first = True
     for filename in sorted(os.listdir(h5dir)):
-        
         # Find the interesting prefixes
         if filename.endswith('h5') or filename.endswith('hdf'):
             # Identify the total path
             path_hdf = h5dir + filename
 
             # Read out the data of a file
-            hyp = Hyperspectral(path_hdf, config, load_datacube = False)
-
+            hyp = Hyperspectral(path_hdf, config, load_datacube = False)                    #Oliver: Initialize the object "hyp" as Hyperspectral object
 
             # If rotation reference is quaternion:
             # Alternatives quat, eul_ZYX
@@ -698,10 +676,10 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 quaternion_ref = hyp.get_dataset(h5_filename=path_hdf, dataset_name=config['HDF.raw_nav']['quaternion'])
                 if quaternion_ref.shape[0] == 4:
                     quaternion_ref = np.transpose(quaternion_ref)
-                
+
                 quaternion_convention  = config['General']['quaternion_convention']
                 if quaternion_convention == 'wxyz':
-                    quat_temp = quaternion_ref
+                    quat_temp      = quaternion_ref
                     quaternion_ref = np.roll(quaternion_ref, shift=-1, axis=1)
                 elif quaternion_convention == 'xyzw':
                     # We use the xyzw convention for scipy, see:
@@ -712,29 +690,25 @@ def reformat_h5_embedded_data_h5(config, config_file):
             elif rotation_reference_type == 'eul_ZYX':
                 eul_ref = hyp.get_dataset(h5_filename=path_hdf,dataset_name=config['HDF.raw_nav']['eul_ZYX'])
                 if eul_ref.shape[0] == 3:
-                    eul_ref = np.transpose(eul_ref)
+                    eul_ref    = np.transpose(eul_ref)
                 eul_is_degrees = eval(config['HDF.raw_nav']['eul_is_degrees'])
                 print(eul_is_degrees)
                 ## Assuming It is given as roll, pitch, yaw
-                eul_ZYX_ref = np.flip(eul_ref, axis = 1)
+                eul_ZYX_ref    = np.flip(eul_ref, axis = 1)
                 quaternion_ref = RotLib.from_euler(angles = eul_ZYX_ref, seq = 'ZYX', degrees = eul_is_degrees).as_quat()
-                
             else:
                 raise ValueError("The rotation reference type must be defined as quat or eul_ZYX")
-
 
             is_global_rot = eval(config['HDF.raw_nav']['is_global_rot'])
 
             # Parse position
             position_ref = hyp.get_dataset(h5_filename=path_hdf,dataset_name=config['HDF.raw_nav']['position'])
-            
+
             if position_ref.shape[0] == 3:
                 position_ref = np.transpose(position_ref)
 
-
             timestamps_imu = hyp.get_dataset(h5_filename=path_hdf, dataset_name=config['HDF.raw_nav']['timestamp'])\
                 .reshape(-1)
-
 
             # The rotation of the reference
             rot_obj = RotLib.from_quat(quaternion_ref)
@@ -759,7 +733,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
             pos_epsg_orig = config['Coordinate Reference Systems']['pos_epsg_orig']
 
             # The positions supplied for exporting the model
-            pos_epsg_export = config['Coordinate Reference Systems']['geocsc_epsg_export']
+            pos_epsg_export = config['Coordinate Reference Systems']['geocsc_epsg_export']    #Oliver: EPGS:4936
 
             rot_interpolated = RotLib.from_quat(quaternion_interpolated)
 
@@ -769,7 +743,6 @@ def reformat_h5_embedded_data_h5(config, config_file):
 
             # Convert position to the epsg used for the 3D model
             geo_pose_ref.compute_geocentric_position(epsg_geocsc=pos_epsg_export)
-
 
             # calculate the geodetic position using the WGS-84 (for conversion of orientations)
             epsg_wgs84 = 4326
@@ -783,29 +756,22 @@ def reformat_h5_embedded_data_h5(config, config_file):
 
             quaternion_ref_ecef = geo_pose_ref.rot_obj_ecef.as_quat()
 
-
-            
-
-
-
-            
-
             if is_first:
                 # Calculate some appropriate offsets in ECEF
                 pos0 = np.mean(position_ref_ecef, axis=0)
-                
 
                 rot_vec_ecef = geo_pose_ref.rot_obj_ecef.as_euler('ZYX', degrees=True)
-                total_pose = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
+                total_pose   = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
                 # Ensure that flag is not raised again. Offsets should only be set once.
                 is_first = False
             else:
                 # Ensure that flag is not raised again. Offsets should only be set once.
-                is_first = False
+                is_first     = False
                 rot_vec_ecef = geo_pose_ref.rot_obj_ecef.as_euler('ZYX', degrees=True)
                 partial_pose = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
-                total_pose = np.concatenate((total_pose, partial_pose), axis=0)
-            
+                total_pose   = np.concatenate((total_pose, partial_pose), axis=0)
+
+            #Oliver: Writing pre-processed navigation data back to the *.h5 file
             position_offset_name = config['HDF.processed_nav']['pos0']
             Hyperspectral.add_dataset(data=pos0, name=position_offset_name, h5_filename=path_hdf)
 
@@ -820,10 +786,6 @@ def reformat_h5_embedded_data_h5(config, config_file):
             # Add time stamps
             time_stamps_name = config['HDF.processed_nav']['timestamp']
             Hyperspectral.add_dataset(data=timestamp_hsi, name=time_stamps_name, h5_filename=path_hdf)
-
-
-            
-
 
     headers = ['Timestamp', ' X', ' Y', ' Z', ' RotZ', ' RotY', ' RotX']
 
@@ -855,8 +817,8 @@ def export_pose(config_file):
         Returns:
             config: The function returns config object to allow that it is modified.
     """
-    config = configparser.ConfigParser()
-    config.read(config_file)
+    config = configparser.ConfigParser()                                                  #Oliver: same as in test_main.py (probably redundant)
+    config.read(config_file)                                                              #Oliver: same as in test_main.py (probably redundant)
 
     # This file handles pose exports of various types
     # As of now there are three types:
@@ -880,8 +842,7 @@ def export_pose(config_file):
         config = -1
 
     return config
-    
-    
+
 def export_model(config_file):
     """"""
     config = configparser.ConfigParser()
@@ -898,19 +859,13 @@ def export_model(config_file):
         # Nothing needs to be done then?
         pass
     elif modelExportType == 'dem_file':
-        file_path_dem = config['Absolute Paths']['dempath']
+        file_path_dem      = config['Absolute Paths']['dempath']
         file_path_3d_model = config['Absolute Paths']['modelpath']
         # Make new only once.
         
         dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
     elif modelExportType == 'none':
         pass
-
-
-
-
-
-
 
 if __name__ == "__main__":
     # Here we could set up necessary steps on a high level. 

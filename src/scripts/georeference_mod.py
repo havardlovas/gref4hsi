@@ -87,17 +87,16 @@ def cal_file_to_rays(filename_cal, config):
 def define_hsi_ray_geometry(pos_ref_ecef, quat_ref_ecef, time_pose, pos0, intrinsic_geometry_dict):
         # Instantiate a camera geometry object from the h5 pose data
 
-        pos = pos_ref_ecef # Reference positions in ECEF offset by pos0
+        pos     = pos_ref_ecef # Reference positions in ECEF offset by pos0
         rot_obj = RotLib.from_quat(quat_ref_ecef) # Reference orientations wrt ECEF
-        
+
         ray_directions_local = intrinsic_geometry_dict['ray_directions_local']
-        translation_hsi_ref = intrinsic_geometry_dict['translation_hsi_ref']
-        rot_hsi_ref_obj = intrinsic_geometry_dict['rot_hsi_ref_obj']
+        translation_hsi_ref  = intrinsic_geometry_dict['translation_hsi_ref']
+        rot_hsi_ref_obj      = intrinsic_geometry_dict['rot_hsi_ref_obj']
 
         translation_ref_hsi =- translation_hsi_ref
 
         hsi_geometry = CameraGeometry(pos0=pos0, pos=pos, rot=rot_obj, time=time_pose, is_interpolated=True, use_absolute_position=True)
-        
         
         hsi_geometry.intrinsicTransformHSI(translation_ref_hsi=translation_ref_hsi, rot_hsi_ref_obj = rot_hsi_ref_obj)
 
@@ -139,7 +138,7 @@ def main(iniPath):
         path_tide = config['Absolute Paths']['pathTide']
     except Exception as e:
         path_tide = 'Undefined'
-    
+
     # Maximal allowed ray length
     max_ray_length = float(config['General']['maxRayLength'])
 
@@ -158,14 +157,12 @@ def main(iniPath):
             # Using the cal file, we can define lever arm, boresight and local ray geometry (in dictionary)
             intrinsic_geometry_dict = cal_file_to_rays(filename_cal=hsi_cal_xml, config=config)
 
-            
             # Define the rays in ECEF for each frame. Note that if there is no position offset, pos0 is a 1x3 of zeros
             hsi_geometry = define_hsi_ray_geometry(pos_ref_ecef = hyp.pos_ref, 
                                     quat_ref_ecef = hyp.quat_ref, 
                                     time_pose = hyp.pose_time, 
                                     pos0 = hyp.pos0, 
                                     intrinsic_geometry_dict = intrinsic_geometry_dict)
-
             
             hsi_geometry.intersectWithMesh(mesh = mesh, max_ray_length=max_ray_length)
             
