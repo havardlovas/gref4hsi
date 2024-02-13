@@ -39,70 +39,57 @@ dtype_dict = {1:np.uint8,
 
 class GeoSpatialAbstractionHSI():
     def __init__(self, point_cloud, transect_string, config_crs):
-        self.name = transect_string
-        self.points_geocsc = point_cloud
+        self.name          = transect_string                                #Oliver: Name of the transect "NyAalesundMinicruiserMEKF_<n>"
+        self.points_geocsc = point_cloud                                    #Oliver: 2D-mesh intersections p_{e\;mesh}^e - pos0
 
-        self.offX = config_crs.off_x
-        self.offY = config_crs.off_y
-        self.offZ = config_crs.off_z
+        self.offX = config_crs.off_x                                        #Oliver: Offset in x-direction pox0_x
+        self.offY = config_crs.off_y                                        #Oliver: Offset in y-direction pox0_y
+        self.offZ = config_crs.off_z                                        #Oliver: Offset in z-direction pox0_z
 
-        self.epsg_geocsc = config_crs.epsg_geocsc
+        self.epsg_geocsc = config_crs.epsg_geocsc                           #Oliver: EPSG code for geocentric coordinates 4936 (WGS84 ECEF)
         
-        self.n_lines = point_cloud.shape[0]
-        self.n_pixels = point_cloud.shape[1]
-        self.n_bands = point_cloud.shape[1]
+        self.n_lines  = point_cloud.shape[0]                                #Oliver: Number of lines   2000 (less for last transect)
+        self.n_pixels = point_cloud.shape[1]                                #Oliver: Number of pixels  540
+        self.n_bands  = point_cloud.shape[1]                                #Oliver: Number of bands   540
 
         # A clean way of doing things would be to define 
     def transform_geocentric_to_projected(self, config_crs):
+        self.epsg_proj = config_crs.epsg_proj                                                                               #Oliver: EPSG code for projected coordinates 32633 (WGS84 UTM 33N)
+        self.crs       = 'EPSG:' + str(self.epsg_proj)                                                                      #Oliver: string: 'EPSG:32633'
 
-
+        self.points_proj  = np.zeros(self.points_geocsc.shape) # Remains same if it is local            
         
-        self.epsg_proj = config_crs.epsg_proj
-        self.crs = 'EPSG:' + str(self.epsg_proj)
-        
-        
-
-        self.points_proj  = np.zeros(self.points_geocsc.shape) # Remains same if it is local
-        
-        geocsc = CRS.from_epsg(self.epsg_geocsc)
-        proj = CRS.from_epsg(self.epsg_proj)
-        transformer = Transformer.from_crs(geocsc, proj)
+        geocsc      = CRS.from_epsg(self.epsg_geocsc)
+        proj        = CRS.from_epsg(self.epsg_proj)
+        transformer = Transformer.from_crs(geocsc, proj)                                                                     #Oliver: transfomer object from "pyproj import CRS, Transformer" (geocsc -> proj) (WGS84 EPSG 4936 -> UTM 33N EPSG 32633)
 
         xECEF = self.points_geocsc[:,:,0].reshape((-1, 1))
         yECEF = self.points_geocsc[:, :, 1].reshape((-1, 1))
         zECEF = self.points_geocsc[:, :, 2].reshape((-1, 1))
 
-        
+        (east, north, hei) = transformer.transform(xx=xECEF + self.offX, yy=yECEF + self.offY, zz=zECEF + self.offZ)          #Oliver: Transform geocentric to projected coordinates
 
-        (east, north, hei) = transformer.transform(xx=xECEF + self.offX, yy=yECEF + self.offY, zz=zECEF + self.offZ)
-
-        self.points_proj[:,:,0] = east.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
+        self.points_proj[:,:,0]   = east.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
         self.points_proj[:, :, 1] = north.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
         self.points_proj[:, :, 2] = hei.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
 
-        
-
-
     def footprint_to_shape_file(self, footprint_dir):
-        self.edge_start = self.points_proj[0, :, 0:2].reshape((-1,2))
-        self.edge_end = self.points_proj[-1, :, 0:2].reshape((-1,2))
-        self.side_1 = self.points_proj[:, 0, 0:2].reshape((-1,2))
-        self.side_2 = self.points_proj[:, -1, 0:2].reshape((-1,2))
+        self.edge_start = self.points_proj[0, :, 0:2].reshape((-1,2))                               #Oliver: Start of transect
+        self.edge_end   = self.points_proj[-1, :, 0:2].reshape((-1,2))                              #Oliver: End of transect
+        self.side_1     = self.points_proj[:, 0, 0:2].reshape((-1,2))                               #Oliver: "left" side of push-broom
+        self.side_2     = self.points_proj[:, -1, 0:2].reshape((-1,2))                              #Oliver: "right" side of push-broom
 
-
-        # Do it clockwise
+        # Do it clockwise                                                                           #Oliver: Create shapefile boundaryes 
         self.hull_line = np.concatenate((
             self.edge_start,
             self.side_2,
             np.flip(self.edge_end, axis=0),
             np.flip(self.side_1, axis = 0)
-
         ), axis = 0)
 
+        self.footprint_shp = Polygon(self.hull_line)                                                #Oliver: Create polygon from boundaryes (the footprint of the shapefile)
 
-        self.footprint_shp = Polygon(self.hull_line)
-
-        gdf = gpd.GeoDataFrame(geometry=[self.footprint_shp], crs=self.crs)
+        gdf = gpd.GeoDataFrame(geometry=[self.footprint_shp], crs=self.crs)                         #Oliver: Create geopandas dataframe with the footprint polygon and the crs
 
         shape_path = footprint_dir + self.name + '.shp'
 
@@ -124,43 +111,37 @@ class GeoSpatialAbstractionHSI():
         :param config_ortho: The relevant configurations for orthorectification
         :type config_ortho: Dictionary
         """
-
-
-        
         n_bands = len(wavelengths)
         #
         n = radiance_cube.shape[0]
         m = radiance_cube.shape[1]
         k = radiance_cube.shape[2] # Number of bands
 
-        bytes_per_entry = radiance_cube.itemsize
-        chunk_size_GB = config_ortho.chunk_size_cube_GB
-
+        bytes_per_entry = radiance_cube.itemsize                                                                                #Oliver: 8 (byte depth for one value)
+        chunk_size_GB   = config_ortho.chunk_size_cube_GB                                                                       #Oliver: ?? 
 
         # If chunking is to be applied, we can use square chunks. Round to the nearest thousand because of personal OCD
-        chunk_square_length = np.sqrt((chunk_size_GB*1024**3) / (k*bytes_per_entry))
-        self.chunk_square_length = int(np.round(chunk_square_length/1000)*1000)
+        chunk_square_length      = np.sqrt((chunk_size_GB*1024**3) / (k*bytes_per_entry))                                       #Oliver: chunk_size_GB*1024**3 => Gigabyte to byte conversion | k*bytes_per_entry => number of bands * byte depth for one value | chunk_square_length => square root of the 2D area of the chunk resulting in the number of pixels in one dimension
+        self.chunk_square_length = int(np.round(chunk_square_length/1000)*1000)                                                 #Oliver: round to the nearest thousand
 
         if self.chunk_square_length == 0:
             self.chunk_square_length = 1000
 
-        self.chunk_area = self.chunk_square_length**2
+        self.chunk_area = self.chunk_square_length**2                                                                           #Oliver: chunk area in pixels (derived from the rounded chunk square length)
 
         self.res = config_ortho.ground_resolution
 
-        wl_red = config_ortho.wl_red
+        wl_red   = config_ortho.wl_red
         wl_green = config_ortho.wl_green
-        wl_blue = config_ortho.wl_blue
+        wl_blue  = config_ortho.wl_blue
 
-        raster_transform_method = config_ortho.raster_transform_method
+        raster_transform_method = config_ortho.raster_transform_method                                                          #Oliver: 'north_east' or 'minimal_rectangle'
 
         # Set nodata value for ortho-products
-        nodata = config_ortho.nodata_value
+        nodata      = config_ortho.nodata_value                                                                                 #Oliver: no data value (-9999)                          
         self.nodata = nodata
 
         rgb_composite_only = config_ortho.resample_rgb_only
-
-        
 
         # Set custom RGB bands from *.ini file
         band_ind_R = np.argmin(np.abs(wl_red - wavelengths))
@@ -168,10 +149,10 @@ class GeoSpatialAbstractionHSI():
         band_ind_B = np.argmin(np.abs(wl_blue - wavelengths))
 
         # To let ENVI pick up on which bands are used for red-green-blue vizualization
-        self.default_bands_string = '{ '+' , '.join([str(band_ind_R), str(band_ind_G), str(band_ind_B)]) + ' }'
+        self.default_bands_string = '{ '+' , '.join([str(band_ind_R), str(band_ind_G), str(band_ind_B)]) + ' }'                 #Oliver: string: '{ band_ind_R , band_ind_G , band_ind_B }'
 
         # Some relevant metadata
-        metadata_ENVI = {
+        metadata_ENVI = {                                                                                                       #Oliver: metadata for the ENVI file
             'description': 'Radiance converted, georeferenced data',
             'unit': config_ortho.radiometric_unit,
             'wavelength units': config_ortho.wavelength_unit,
@@ -188,20 +169,17 @@ class GeoSpatialAbstractionHSI():
                 metadata_ENVI['fwhm'] = fwhm
         except AttributeError:
             # If scalar
-            if fwhm == np.nan:
+            if fwhm == np.nan:                                                                                                  #Oliver: fwhm is not defined
                 pass
             else:
                 metadata_ENVI['fwhm'] = fwhm
-
-            
-        
         
         # Extract relevant info from hyp object
         datacube = radiance_cube[:, :, :].reshape((-1, n_bands))
         rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
 
         # Horizontal coordinates of intersections in projected CRS
-        coords = self.points_proj[:, :, 0:2].reshape((-1, 2))
+        coords = self.points_proj[:, :, 0:2].reshape((-1, 2))                                                                   #Oliver: 2D-mesh intersections p_{e\;mesh}^e - pos0 (ENU coordinates)
 
         del radiance_cube
         
@@ -210,21 +188,20 @@ class GeoSpatialAbstractionHSI():
         transform, height, width, indexes, suffix = GeoSpatialAbstractionHSI.cube_to_raster_grid(coords, raster_transform_method, resolution = self.res)
 
         # Make accessible as attribute because it can be to write ancillary data
-        self.indexes = indexes.copy()
+        self.indexes   = indexes.copy()
         self.transform = transform
-        self.width = width
-        self.height = height
-        self.suffix = suffix
+        self.width     = width
+        self.height    = height
+        self.suffix    = suffix
 
         # Create raster mask from the polygon describing the footprint
         geoms = [mapping(self.footprint_shp)]
-        mask = geometry_mask(geoms, out_shape=(height, width), transform=transform)
+        mask  = geometry_mask(geoms, out_shape=(height, width), transform=transform)
 
         self.mask = mask
 
         # Build datacube
         if not rgb_composite_only:
-
             # For the later processing, storing the mapping from the rectified grid to the raw datacube makes sense:
             indexes_grid_unmasked = indexes.reshape((height, width))
             # Mask indexes
@@ -235,27 +212,24 @@ class GeoSpatialAbstractionHSI():
 
             # Step 1: Initialize a Memory Map
             filename = 'memmap_array.dat'
-            shape = (n_bands, height, width)
-            dtype = np.float32
+            shape    = (n_bands, height, width)
+            dtype    = np.float32
             
             memmap_array = np.memmap(filename, dtype=dtype, mode='w+', shape=shape)
 
             # In grid form, identify whether partitioning is needed
             area_idx_grid = width*height
 
-            if area_idx_grid > self.chunk_area:
-                
+            if area_idx_grid > self.chunk_area:                                                     #Oliver: if the area of the grid is larger than the chunk area => Resample / make raster smaller
                 # Subdivide along horizontal axis:
                 delta_width = int(self.chunk_area/height)
                 # Number of slices
                 num_delta_widths = int(width/delta_width) + 1
 
                 for i in range(num_delta_widths):
-                    
                     if i != num_delta_widths-1:
                         sub_indices = self.index_grid_masked[:, i*delta_width:(i+1)*delta_width].reshape((-1,1))
                         dw = delta_width
-                        
                     else:
                         sub_indices = self.index_grid_masked[:, i*delta_width:width].reshape((-1,1))
                         dw = np.arange(i*delta_width, width).size
@@ -287,13 +261,13 @@ class GeoSpatialAbstractionHSI():
                 del datacube
 
                 # Reshape to datacube form
-                ortho_datacube = ortho_datacube.reshape((height, width, n_bands))
+                ortho_datacube = ortho_datacube.reshape((height, width, n_bands))                                       #Oliver: reshape to 3D datacube
 
                 # Mask
                 ortho_datacube[mask == 1, :] = nodata
 
                 # Form to Rasterio friendly
-                ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])
+                ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])                                           #Oliver: transpose to band x height x width
 
                 # Write to memory map
                 memmap_array[:] = ortho_datacube
@@ -301,9 +275,7 @@ class GeoSpatialAbstractionHSI():
                 # Free memory
                 del ortho_datacube
                 
-
-                
-            GeoSpatialAbstractionHSI.write_datacube_ENVI(memmap_array, 
+            GeoSpatialAbstractionHSI.write_datacube_ENVI(memmap_array,                                                   #Oliver: write datacube to envi file 
                                 nodata, 
                                 transform, 
                                 datacube_path = envi_cube_dir + self.name + suffix, 
@@ -312,8 +284,6 @@ class GeoSpatialAbstractionHSI():
                                 metadata = metadata_ENVI,
                                 crs=self.crs,
                                 interleave = config_ortho.interleave)
-
-            
 
         # Resample RGB image data 
         ortho_rgb = rgb_cube[self.indexes, :].flatten()
@@ -330,10 +300,9 @@ class GeoSpatialAbstractionHSI():
         # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
         with rasterio.open(rgb_composite_dir + self.name + suffix + '.tif', 'w', driver='GTiff',
                                 height=height, width=width, count=3, dtype=ortho_rgb.dtype,
-                                crs=self.crs, transform=transform, nodata=nodata) as dst:
+                                crs=self.crs, transform=transform, nodata=nodata)                  as dst:
 
             dst.write(ortho_rgb)
-        
 
     def resample_ancillary(self, h5_filename, anc_dir, anc_dict, interleave = 'bil'):
 
@@ -377,11 +346,7 @@ class GeoSpatialAbstractionHSI():
                         band_names.append(band_name_data)
                     
                     band_counter += k
-                    
-                    
-            
-        
-        
+
         metadata_anc = {
             'description': 'Ancillary data',
             'band names': '{ '+' , '.join(band_names) + ' }'
@@ -415,24 +380,20 @@ class GeoSpatialAbstractionHSI():
                                                       metadata=metadata_anc,
                                                       interleave=interleave)
 
-        
-
     @staticmethod
     def cube_to_raster_grid(coords, raster_transform_method, resolution):
         if raster_transform_method == 'north_east':
             # Creates the minimal area (and thus memory) rectangle around chunk
-            polygon = MultiPoint(coords).envelope
+            polygon = MultiPoint(coords).envelope                                                           #Oliver: Create polygon from the minimal area around the chunk (coorinate points)
 
             # extract coordinates
-            x, y = polygon.exterior.xy
+            x, y = polygon.exterior.xy                                                                      #Oliver: x and y coordinates from the polygon
 
-            idx_ul = 3
-            idx_ur = 2
-            idx_ll = 4
+            idx_ul = 3                                                                                      #Oliver: upper left corner
+            idx_ur = 2                                                                                      #Oliver: upper right corner
+            idx_ll = 4                                                                                      #Oliver: lower left corner
 
             suffix = '_north_east'
-            
-
             
         elif raster_transform_method == 'minimal_rectangle':
             
@@ -451,19 +412,19 @@ class GeoSpatialAbstractionHSI():
 
             suffix = '_rotated'
 
-        x_ul = x[idx_ul]
-        y_ul = y[idx_ul]
+        x_ul = x[idx_ul]                                                                                    #Oliver: x coord upper left corner
+        y_ul = y[idx_ul]                                                                                    #Oliver: y coord upper left corner
 
-        x_ur = x[idx_ur]
-        y_ur = y[idx_ur]
+        x_ur = x[idx_ur]                                                                                    #Oliver: x coord upper right corner
+        y_ur = y[idx_ur]                                                                                    #Oliver: y coord upper right corner
 
-        x_ll = x[idx_ll]
-        y_ll = y[idx_ll]
+        x_ll = x[idx_ll]                                                                                    #Oliver: x coord lower left corner
+        y_ll = y[idx_ll]                                                                                    #Oliver: y coord lower left corner
 
         # The vector from upper-left corner aka origin to the upper-right equals lambda*e_basis_x
-        e_basis_x = np.array([x_ur-x_ul, y_ur-y_ul]).reshape((2,1))
-        w_transect = np.linalg.norm(e_basis_x)
-        e_basis_x /= w_transect
+        e_basis_x  = np.array([x_ur-x_ul, y_ur-y_ul]).reshape((2,1))                                        #Oliver: vector (2,1) from upper-left corner to upper-right corner
+        w_transect = np.linalg.norm(e_basis_x)                                                              #Oliver: length of the vector (resp. polygon edge)
+        e_basis_x /= w_transect                                                                             #Oliver: vector normalized                   
 
         # The y basis vector is the vector to the other edge
         e_basis_y = np.array([x_ll-x_ul, y_ll-y_ul]).reshape((2,1))
@@ -471,49 +432,48 @@ class GeoSpatialAbstractionHSI():
         e_basis_y /= h_transect
         e_basis_y *= -1 # Ensuring Right handedness (image storage y direction is o)
 
-        R = np.hstack((e_basis_x, e_basis_y)) # 2D rotation matrix by definition
+        R = np.hstack((e_basis_x, e_basis_y)) # 2D rotation matrix by definition                            #Oliver: 2D rotation matrix for the basis vectors (resp. polygon edges)
         
         # Define origin/translation vector
-        o = np.array([x[idx_ul], y[idx_ul]]).reshape((2))
+        o = np.array([x[idx_ul], y[idx_ul]]).reshape((2))                                                   #Oliver: origin vector (2,1) from upper-left corner
 
         # Transformation matrix rigid body 2D
-        Trb = np.zeros((3,3))
+        Trb          = np.zeros((3,3))                                                                      #Oliver: Transformation matrix (3x3) ECEF to UTM
         Trb[0:2,0:2] = R
-        Trb[0:2,2] = o
-        Trb[2,2] = 1
+        Trb[0:2,2]   = o
+        Trb[2,2]     = 1
 
         s_x = resolution
         s_y = resolution
 
-        S = np.diag(np.array([s_x, s_y, 1]))
+        S = np.diag(np.array([s_x, s_y, 1]))                                                                #Oliver: matrix (3x3) scaling matrix
 
         # Reflection to account for opposite row/up direction
         Ref = np.diag(np.array([1, -1, 1]))
 
         # The affine transform is then expressed:
-        Taff = Trb.dot(S).dot(Ref)
+        Taff = Trb.dot(S).dot(Ref)                                                                          #Oliver: Affine transformation matrix (3x3) -> ECEF to UTM
 
         # The metric width and length of the transect can give us the number of pixels
-        width = int(np.ceil(w_transect/s_x))
-        height = int(np.ceil(h_transect/s_y))
+        width  = int(np.ceil(w_transect/s_x))                                                               #Oliver: number of pixels in East-direction
+        height = int(np.ceil(h_transect/s_y))                                                               #Oliver: number of pixels in North-direction
 
         # Rasterio operates with a conventional affine
         a, b, c, d, e, f = Taff[0,0], Taff[0,1], Taff[0,2], Taff[1,0], Taff[1,1], Taff[1,2]
 
-        transform = rasterio.Affine(a, b, c, d, e, f)
+        transform = rasterio.Affine(a, b, c, d, e, f)                                                       #Oliver: Affine transformation object from "rasterio" -> ECEF to UTM
 
         # Pixel centers reside at half coordinates.
         xi, yi = np.meshgrid(np.arange(width) + 0.5, 
-                                np.arange(height) + 0.5)
-        zi = np.ones(xi.shape)
+                             np.arange(height) + 0.5)
+        zi = np.ones(xi.shape)                                                                              #Oliver: making a mesh / grid with resolution 1m and the width / hight of the transect
 
         # Form homogeneous vectors
-        x_r = np.vstack((xi.flatten(), yi.flatten(), zi.flatten())).T
+        x_r = np.vstack((xi.flatten(), yi.flatten(), zi.flatten())).T                                       #Oliver: meshgrid to vector (pixels x 3)
 
         x_p = np.matmul(Taff, x_r.T).T # Map pixels to geographic
 
         xy = np.vstack((x_p[:,0].flatten(), x_p[:,1].flatten())).T
-        
 
         # Locate nearest neighbors in a radius defined by the resolution
         tree = NearestNeighbors(radius=resolution).fit(coords)
@@ -567,10 +527,8 @@ class GeoSpatialAbstractionHSI():
             with ThreadPoolExecutor(max_workers=k) as executor:
                 # Use executor.map to parallelize the band writing process
                 executor.map(write_band, [(band_data, i, dst) for i, band_data in enumerate(ortho_datacube)])
-            
         
         header = sp.io.envi.read_envi_header(datacube_path + '.hdr') # Open for extraction
-
         
         header.pop('band names')
 
@@ -641,11 +599,9 @@ class GeoSpatialAbstractionHSI():
         self.dem_path = self.config['Absolute Paths']['demPath']
         self.dem_reshaped = self.config['Absolute Paths']['demReshaped'] + self.name + '_dem.tif'
 
-
         self.resample_rgb_ortho_to_hsi_ortho()
 
         self.resample_dem_to_hsi_ortho()
-
 
         raster_rgb = gdal.Open(self.rgb_ortho_reshaped, gdal.GA_Update)
         xoff1, a1, b1, yoff1, d1, e1 = raster_rgb.GetGeoTransform()  # This should be equal
@@ -674,10 +630,8 @@ class GeoSpatialAbstractionHSI():
         ortho_hsi[ortho_hsi == 0] = 255
         hsi_image = Imcol(ortho_hsi)
 
-
         # Dem
         self.raster_dem = rasterio.open(self.dem_reshaped)
-
 
         # Adjust Clahe
         hsi_image.clahe_adjustment()
@@ -687,8 +641,6 @@ class GeoSpatialAbstractionHSI():
         rgb_image.to_luma(gamma=False, image_array= rgb_image.clahe_adjusted)
 
         self.compute_sift_difference(hsi_image.luma_array, rgb_image.luma_array)
-
-
 
     def resample_rgb_ortho_to_hsi_ortho(self):
         """Reproject RGB orthophoto to match the shape and projection of HSI raster.

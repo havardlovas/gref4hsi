@@ -730,31 +730,31 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 rot_ref = 'ECEF'
 
             # The positions supplied for the reference
-            pos_epsg_orig = config['Coordinate Reference Systems']['pos_epsg_orig']
+            pos_epsg_orig = config['Coordinate Reference Systems']['pos_epsg_orig']                                     #Oliver: EPGS:4978 (WGS-84, ECEF)
 
             # The positions supplied for exporting the model
-            pos_epsg_export = config['Coordinate Reference Systems']['geocsc_epsg_export']    #Oliver: EPGS:4936
+            pos_epsg_export = config['Coordinate Reference Systems']['geocsc_epsg_export']                              #Oliver: EPGS:4936 (Europe) (string)
 
-            rot_interpolated = RotLib.from_quat(quaternion_interpolated)
+            rot_interpolated = RotLib.from_quat(quaternion_interpolated)                                                #Oliver: Convert (interpolated) quaternion vector to a "scipy rotation object" (rotation in NED)
 
-            geo_pose_ref = GeoPose(timestamps=timestamp_hsi,
-                                   rot_obj= rot_interpolated, rot_ref=rot_ref,
-                                   pos = position_interpolated, pos_epsg=pos_epsg_orig)
+            geo_pose_ref = GeoPose(timestamps=timestamp_hsi,                                                            #Oliver: Object holding time, position and orientation (and information about the coordinate system)
+                                   rot_obj=rot_interpolated, rot_ref=rot_ref,
+                                   pos=position_interpolated, pos_epsg=pos_epsg_orig)
 
             # Convert position to the epsg used for the 3D model
-            geo_pose_ref.compute_geocentric_position(epsg_geocsc=pos_epsg_export)
+            geo_pose_ref.compute_geocentric_position(epsg_geocsc=pos_epsg_export)                                       #Oliver: EPGS:4936 (Europe)               => Calculate the positions in geocentric coordinates (x y z in ECEF)
 
             # calculate the geodetic position using the WGS-84 (for conversion of orientations)
-            epsg_wgs84 = 4326
+            epsg_wgs84 = 4326                                                                                           #Oliver: EPGS:4326 (WGS-84, lat lon alt)  => Calculate the positions in geodetic coordinates (lat lon alt in WGS-84)
             geo_pose_ref.compute_geodetic_position(epsg_geod=epsg_wgs84)
 
             # calculate ECEF orientation
-            geo_pose_ref.compute_geocentric_orientation()
+            geo_pose_ref.compute_geocentric_orientation()                                                               #Oliver: Computing the rotation matrix R_b^e (from NED to ECEF) for each time stamp
 
             # For readability
             position_ref_ecef = geo_pose_ref.pos_geocsc
 
-            quaternion_ref_ecef = geo_pose_ref.rot_obj_ecef.as_quat()
+            quaternion_ref_ecef = geo_pose_ref.rot_obj_ecef.as_quat()                                                   #Oliver: UAV orientation rotated to ECEF (UAV orientation in ECEF) (from NED to ECEF)
 
             if is_first:
                 # Calculate some appropriate offsets in ECEF
@@ -773,24 +773,24 @@ def reformat_h5_embedded_data_h5(config, config_file):
 
             #Oliver: Writing pre-processed navigation data back to the *.h5 file
             position_offset_name = config['HDF.processed_nav']['pos0']
-            Hyperspectral.add_dataset(data=pos0, name=position_offset_name, h5_filename=path_hdf)
+            Hyperspectral.add_dataset(data=pos0, name=position_offset_name, h5_filename=path_hdf)                       #Oliver: Writing the offset position to the *.h5 file
 
             # Add camera position
             position_ref_name = config['HDF.processed_nav']['position_ecef']
-            Hyperspectral.add_dataset(data=position_ref_ecef - pos0, name=position_ref_name, h5_filename=path_hdf)
+            Hyperspectral.add_dataset(data=position_ref_ecef - pos0, name=position_ref_name, h5_filename=path_hdf)      #Oliver: Writing the position to the *.h5 file (position - offset position => "ECEF" with coordinate origin moved to pos_0)
 
             # Add camera quaternion
             quaternion_ref_name = config['HDF.processed_nav']['quaternion_ecef']
-            Hyperspectral.add_dataset(data=quaternion_ref_ecef, name=quaternion_ref_name, h5_filename=path_hdf)
+            Hyperspectral.add_dataset(data=quaternion_ref_ecef, name=quaternion_ref_name, h5_filename=path_hdf)         #Oliver: Writing the orientation to the *.h5 file (in ECEF coordinates, from NED to ECEF)
 
             # Add time stamps
             time_stamps_name = config['HDF.processed_nav']['timestamp']
-            Hyperspectral.add_dataset(data=timestamp_hsi, name=time_stamps_name, h5_filename=path_hdf)
+            Hyperspectral.add_dataset(data=timestamp_hsi, name=time_stamps_name, h5_filename=path_hdf)                  #Oliver: Writing the HSI time stamps to the *.h5 file
 
     headers = ['Timestamp', ' X', ' Y', ' Z', ' RotZ', ' RotY', ' RotX']
 
     # Create a DataFrame from the data_matrix and headers
-    df = pd.DataFrame(total_pose, columns=headers)
+    df = pd.DataFrame(total_pose, columns=headers)                                                                      #Oliver: df = Data Frame (containing "total pose" (time p_ECEF, rot_ECEF) => Written to pose.csv)
 
     pose_path = config['Absolute Paths']['posepath']
     # Save the DataFrame as a CSV file
@@ -817,8 +817,8 @@ def export_pose(config_file):
         Returns:
             config: The function returns config object to allow that it is modified.
     """
-    config = configparser.ConfigParser()                                                  #Oliver: same as in test_main.py (probably redundant)
-    config.read(config_file)                                                              #Oliver: same as in test_main.py (probably redundant)
+    config = configparser.ConfigParser()
+    config.read(config_file)
 
     # This file handles pose exports of various types
     # As of now there are three types:
@@ -869,5 +869,5 @@ def export_model(config_file):
 
 if __name__ == "__main__":
     # Here we could set up necessary steps on a high level. 
-    args = sys.argv[1:]
+    args        = sys.argv[1:]
     config_file = args[0]

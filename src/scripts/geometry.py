@@ -39,8 +39,8 @@ class CalibHSI:
             xml_dict = xmltodict.parse(my_xml)
             self.calibrationHSI = xml_dict['calibration']
 
-            self.w = float(self.calibrationHSI['width'])
-            self.f = float(self.calibrationHSI['f'])
+            self.w  = float(self.calibrationHSI['width'])
+            self.f  = float(self.calibrationHSI['f'])
             self.cx = float(self.calibrationHSI['cx'])
 
             # Rotations
@@ -91,19 +91,15 @@ class CameraGeometry():
         else:
             self.position_nav = pos - np.transpose(pos0) # Camera pos
 
+        self.rotation_nav = rot                                                                #Oliver: Reference orientations wrt ECEF
 
-
-        self.rotation_nav = rot
-
-        self.time = time
-        self.IsLocal = False
+        self.time      = time
+        self.IsLocal   = False
         self.decoupled = True
 
         if is_interpolated:
-            self.position_nav_interpolated = self.position_nav
-            self.rotation_nav_interpolated = self.rotation_nav
-
-
+            self.position_nav_interpolated = self.position_nav                                 #Oliver: Reference position wrt ECEF
+            self.rotation_nav_interpolated = self.rotation_nav                                 #Oliver: Reference orientations wrt ECEF
 
     def interpolate(self, time_hsi, minIndRGB, maxIndRGB, extrapolate):
         """"""
@@ -111,7 +107,6 @@ class CameraGeometry():
         # Should also implement a more sensor fusion-like Kalman filter implementation
         self.time_hsi = time_hsi
         if self.decoupled == True:
-
             if extrapolate == False:
                 time_interpolation = time_hsi[minIndRGB:maxIndRGB]
                 linearPositionInterpolator = interp1d(self.time, np.transpose(self.position_nav))
@@ -119,90 +114,82 @@ class CameraGeometry():
                 linearSphericalInterpolator = Slerp(self.time, self.rotation_nav)
                 self.rotation_nav_interpolated = linearSphericalInterpolator(time_interpolation)
             else:
+                ##############################
                 # Extrapolation of position:
-                time_interpolation = time_hsi
-                linearPositionInterpolator = interp1d(self.time, np.transpose(self.position_nav), fill_value='extrapolate')
-                self.position_nav_interpolated = np.transpose(linearPositionInterpolator(time_interpolation))
+                ##############################
+                time_interpolation             = time_hsi
+                linearPositionInterpolator     = interp1d(self.time, np.transpose(self.position_nav), fill_value='extrapolate')
+                self.position_nav_interpolated = np.transpose(linearPositionInterpolator(time_interpolation))                         #Oliver: Nav position interpolated to fit HSI time-stamps
 
+                ##########################################
                 # Extrapolation of orientation/rotation:
-
+                ##########################################
                 # Synthetizize additional frames
-                delta_rot_b1_b2 = (self.rotation_nav[-1].inv()) * (self.rotation_nav[-2])
-                delta_time_last = self.time[-1] - self.time[-2]
-                time_last = self.time[-1] + delta_time_last
-                rot_last = self.rotation_nav[-1] * (delta_rot_b1_b2.inv()) # Assuming a continuation of the rotation
+                delta_rot_b1_b2 = (self.rotation_nav[-1].inv()) * (self.rotation_nav[-2])                                             #Oliver: \DeltaR  = R_0^{-1} * R_{n-1}     => rotation difference between last and second last frame
+                delta_time_last = self.time[-1] - self.time[-2]                                                                       #Oliver: \DeltaT  = T_0^{n} - T_{n-1}      => time difference between last and second last frame
+                time_last       = self.time[-1] + delta_time_last                                                                     #Oliver: T_n      = T_{n-1} + \DeltaT      => time of the last frame
+                rot_last        = self.rotation_nav[-1] * (delta_rot_b1_b2.inv()) # Assuming a continuation of the rotation           #Oliver: R_{last} = R_{n-1} * \DeltaR^{-1} => rotation of the last frame
 
                 # Rotation from second to first attitude
-                delta_rot_b1_b2 = (self.rotation_nav[0].inv()) * (self.rotation_nav[1])
-                delta_time_last = self.time[0] - self.time[1]
-                time_first = self.time[0] + delta_time_last # Subtraction
+                delta_rot_b1_b2 = (self.rotation_nav[0].inv()) * (self.rotation_nav[1])                                               #Oliver: \DeltaR = R_0^{-1} * R_1          => rotation difference between first and second frame)
+                delta_time_last = self.time[0] - self.time[1]                                                                         #Oliver: \DeltaT = T_0 - T_1               => time difference between first and second frame)
+                time_first      = self.time[0] + delta_time_last # Subtraction                                                        #Oliver: T_0     = T_1 + \DeltaT           => time of the first frame
                 # Add the rotation from second to first attitude to the first attitude "continue" rotation
-                rot_first = self.rotation_nav[0] * (delta_rot_b1_b2.inv())  # Assuming a continuation of the rotation
+                rot_first         = self.rotation_nav[0] * (delta_rot_b1_b2.inv())  # Assuming a continuation of the rotation         #Oliver: R_{first} = R_0 * \DeltaR^{-1}    => rotation of the first frame (start position)
                 time_concatenated = np.concatenate((np.array(time_first).reshape((1,-1)),
                                                     self.time.reshape((1,-1)),
                                                     np.array(time_last).reshape((1,-1))), axis = 1)\
                     .reshape(-1).astype(np.float64)
                 rotation_list = [self.rotation_nav]
-                rotation_list.append(rot_last)
-                rotation_list.insert(0, rot_first)
+                rotation_list.append(rot_last)                                                                                        #Oliver: Add the last rotation to the list (at the end)
+                rotation_list.insert(0, rot_first)                                                                                    #Oliver: Add the first rotation to the list (at the beginning)
 
+                rot_vec_first = rot_first.as_rotvec().reshape((1,-1))                                                                 #Oliver: First rotation to a rotation vector
+                rot_vec_mid   = self.rotation_nav.as_rotvec()                                                                         #Oliver: Rotation vector, containing all rotations
+                rot_vec_last  = rot_last.as_rotvec().reshape((1,-1))                                                                  #Oliver: Last rotation to a rotation vector
 
-                rot_vec_first = rot_first.as_rotvec().reshape((1,-1))
-                rot_vec_mid = self.rotation_nav.as_rotvec()
-                rot_vec_last = rot_last.as_rotvec().reshape((1,-1))
+                rotation_vec_tot = np.concatenate((rot_vec_first, rot_vec_mid, rot_vec_last), axis = 0)                               #Oliver: Concatenate all rotation vectors (+ one additioanl rotation at the beginning and the end)
 
-                rotation_vec_tot = np.concatenate((rot_vec_first, rot_vec_mid, rot_vec_last), axis = 0)
+                Rotation_tot = RotLib.from_rotvec(rotation_vec_tot)                                                                   #Oliver: Convert back to "scipy rotation object"
 
-                Rotation_tot = RotLib.from_rotvec(rotation_vec_tot)
-
-
-
-                time_concatenated = np.array(time_concatenated).astype(np.float64)
-
-                linearSphericalInterpolator = Slerp(time_concatenated, Rotation_tot)
-
-                self.rotation_nav_interpolated = linearSphericalInterpolator(time_interpolation)
-
-
-
-
-
-
+                time_concatenated              = np.array(time_concatenated).astype(np.float64)
+                linearSphericalInterpolator    = Slerp(time_concatenated, Rotation_tot)
+                self.rotation_nav_interpolated = linearSphericalInterpolator(time_interpolation)                                      #Oliver: Rotation position interpolated to fit HSI time-stamps (with additinal rotation at the beginning and the end)
         else:
             print('Proper interpolation of transformation with constant velocity and rotation has not yet been implemented')
             print('See https://www.geometrictools.com/Documentation/InterpolationRigidMotions.pdf')
             #self.rotation_nav_interpolated, self.PositionInterpolated = self.interpolateTransforms()
-    def intrinsicTransformHSI(self, translation_ref_hsi, rot_hsi_ref_obj):
 
+    def intrinsicTransformHSI(self, translation_ref_hsi, rot_hsi_ref_obj):
         # An intrinsic transform is a transformation to another reference frame on the moving body, i.e. the IMU or an RGB cam
-        self.position_ecef = self.position_nav_interpolated + self.rotation_nav_interpolated.apply(translation_ref_hsi)
+        self.position_ecef = self.position_nav_interpolated + self.rotation_nav_interpolated.apply(translation_ref_hsi)         #Oliver: p_{e\;HSI}^e = p_{eb}^e + R_{b}^e * p_{b\;HSI}^b
         
-        self.rotation_hsi_rgb = rot_hsi_ref_obj
+        self.rotation_hsi_rgb = rot_hsi_ref_obj                                                                                 #Oliver: R_{HSI}^b
 
         # Composing rotations. See:
         # https: // docs.scipy.org / doc / scipy / reference / generated / scipy.spatial.transform.Rotation.__mul__.html
-        self.rotation_hsi = self.rotation_nav_interpolated * self.rotation_hsi_rgb 
+        self.rotation_hsi = self.rotation_nav_interpolated * self.rotation_hsi_rgb                                              #Oliver: R_{HSI}^e = R_{b}^e * R_{HSI}^b
 
-        self.quaternion_ecef = self.rotation_hsi.as_quat()
+        self.quaternion_ecef = self.rotation_hsi.as_quat()                                                                      #Oliver: Quaternion q_{HSI}^b from R_{HSI}^e
         
     def localTransform(self, frame):
         self.IsLocal = True
         self.LocalTransformFrame = frame
 
         if frame == 'ENU':
-            self.position_nav_interpolated = self.Rotation_ecef_enu*self.position_nav_interpolated
-            self.rotation_nav_interpolated = self.Rotation_ecef_enu*self.rotation_nav_interpolated
-            self.position_nav = self.Rotation_ecef_enu * self.position_nav
-            self.rotation_nav = self.Rotation_ecef_enu * self.rotation_nav
-            self.rotation_hsi = self.Rotation_ecef_enu * self.rotation_hsi
-            self.position_nav = self.Rotation_ecef_enu * self.position_ecef
+            self.position_nav_interpolated = self.Rotation_ecef_enu * self.position_nav_interpolated
+            self.rotation_nav_interpolated = self.Rotation_ecef_enu * self.rotation_nav_interpolated
+            self.position_nav              = self.Rotation_ecef_enu * self.position_nav
+            self.rotation_nav              = self.Rotation_ecef_enu * self.rotation_nav
+            self.rotation_hsi              = self.Rotation_ecef_enu * self.rotation_hsi
+            self.position_nav              = self.Rotation_ecef_enu * self.position_ecef
         elif frame == 'NED':
-            self.localPositionInterpolated = self.Rotation_ecef_ned*self.position_nav_interpolated
-            self.localRotationInterpolated = self.Rotation_ecef_ned*self.rotation_nav_interpolated
-            self.localPosition = self.Rotation_ecef_ned * self.position_nav
-            self.localRotation = self.Rotation_ecef_ned * self.rotation_nav
-            self.rotation_hsi = self.Rotation_ecef_ned * self.rotation_hsi
-            self.position_nav = self.Rotation_ecef_ned * self.position_ecef
+            self.localPositionInterpolated = self.Rotation_ecef_ned * self.position_nav_interpolated
+            self.localRotationInterpolated = self.Rotation_ecef_ned * self.rotation_nav_interpolated
+            self.localPosition             = self.Rotation_ecef_ned * self.position_nav
+            self.localRotation             = self.Rotation_ecef_ned * self.rotation_nav
+            self.rotation_hsi              = self.Rotation_ecef_ned * self.rotation_hsi                                                           #Oliver: R_{HSI}^n = R_{e}^n * R_{HSI}^e (orientation of HSI frame in NED frame)
+            self.position_nav              = self.Rotation_ecef_ned * self.position_ecef
         else:
             print('Frame must be ENU or NED')
     def localTransformInverse(self):
@@ -228,10 +215,10 @@ class CameraGeometry():
         else:
             print('Poses are defined globally already')
     def defineRayDirections(self, dir_local):
-        self.rayDirectionsLocal = dir_local
+        self.rayDirectionsLocal = dir_local                                                     #Oliver: Ray directions in HSI frame (p_dir)
 
-        n = self.position_ecef.shape[0]
-        m = dir_local.shape[0]
+        n = self.position_ecef.shape[0]                                                         #Oliver: Number of frames
+        m = dir_local.shape[0]                                                                  #Oliver: Number of rays (pixels)
 
         self.rayDirectionsGlobal = np.zeros((n, m, 3))
 
@@ -249,61 +236,62 @@ class CameraGeometry():
         n = self.rayDirectionsGlobal.shape[0]
         m = self.rayDirectionsGlobal.shape[1]
 
-        self.points_ecef_crs = np.zeros((n, m, 3), dtype=np.float64)
+        self.points_ecef_crs  = np.zeros((n, m, 3), dtype=np.float64)
         self.normals_ecef_crs = np.zeros((n, m, 3), dtype=np.float64)
 
         # Duplicate multiple camera centres
-        start = np.einsum('ijk, ik -> ijk', np.ones((n, m, 3), dtype=np.float64), self.position_ecef).reshape((-1,3))
-
-        dir = (self.rayDirectionsGlobal * max_ray_length).reshape((-1,3))
+        start = np.einsum('ijk, ik -> ijk', np.ones((n, m, 3), dtype=np.float64), self.position_ecef).reshape((-1,3))            #Oliver: 2D array of the camera postions (540 x the same "starting position" for each ray) => (2000 * 540) x 3 -> 2D array
+                                                                                                                                 #          => start = p_eb^e - p_e0^e = p_nb^e
+        dir = (self.rayDirectionsGlobal * max_ray_length).reshape((-1,3))                                                        #Oliver: All global ray directions (2000 * 540) x 3 -> 2D array
 
         print('Starting Ray Tracing')
         
         start_time = time.time()
 
-        points, rays, cells = mesh.multi_ray_trace(origins=start, directions=dir, first_point=True)
-
+        points, rays, cells = mesh.multi_ray_trace(origins=start, directions=dir, first_point=True)                              #Oliver: Actual ray trace through 2D-mesh 
+                                                                                                                                            #points = The intersection points of the rays with the mesh
+                                                                                                                                            #rays   = The ray indices (numberes from 0 to no_of_rays)
+                                                                                                                                            #cells  = the cell numbers of the intersected cells (several rays can intersect the same cell)
         stop_time = time.time()
 
         print('Ray traced {0} rays on a mesh with {1} cells in {2} seconds'.format(dir.shape[0], mesh.cell_normals.shape[0], stop_time - start_time))
 
-        normals = mesh.cell_normals[cells,:]
+        normals = mesh.cell_normals[cells,:]                                                                                     #Oliver: Normals of the intersected cells (vector of the normals of the intersected cells) (there are duplicates if the cell has been intersected twice by a ray)
 
-        slit_image_number = np.floor(rays / m).astype(np.int32)
+        slit_image_number = np.floor(rays / m).astype(np.int32)                                                                  #Oliver: The number of the slit image 0,0,0 (540 times) + 1,1,1,(540 times) + 2,2,2,2 (540 times) + ... + 1999,1999,1999 (540 times) (for 540 rays per capture)
 
-        pixel_number = rays % m
+        pixel_number = rays % m                                                                                                  #Oliver: The number of the pixel in the image (0, 1, 2, ..., 539, 0, 1, 2, ..., 539, ...)
 
         # Assign normals
-        self.points_ecef_crs[slit_image_number, pixel_number] = points
+        self.points_ecef_crs[slit_image_number, pixel_number]  = points                                                          #Oliver: [2000 x 540 x 3] -> 3D array of the intersection points on the 2D mesh
 
-        self.normals_ecef_crs[slit_image_number, pixel_number] = normals
+        self.normals_ecef_crs[slit_image_number, pixel_number] = normals                                                         #Oliver: "n_{mesh}^e" [2000 x 540 x 3] -> 3D array of the normals of the intersected cells on the 2D mesh (duplicates if cell was intersected twice)
 
-        self.camera_to_seabed_ECEF = self.points_ecef_crs - start.reshape((n, m, 3))
+        self.camera_to_seabed_ECEF                             = self.points_ecef_crs - start.reshape((n, m, 3))                 #Oliver: "p_{mesh\;HSI}^e = p_{e\;mesh}^e - p_{e\;HSI}^e"  Vector from the camera to the intersection points (2000 x 540 x 3)  (camera -> seabed)
 
-        self.points_hsi_crs = np.zeros(self.camera_to_seabed_ECEF.shape)
+        self.points_hsi_crs                                    = np.zeros(self.camera_to_seabed_ECEF.shape)                      #Oliver: 3D array of zeros (2000 x 540 x 3)
 
-        self.normals_hsi_crs = np.zeros(self.normals_ecef_crs.shape)
+        self.normals_hsi_crs                                   = np.zeros(self.normals_ecef_crs.shape)                           #Oliver: 3D array of zeros (2000 x 540 x 3)
 
-        self.depth_map = np.zeros((n, m))
+        self.depth_map                                         = np.zeros((n, m))                                                #Oliver: 2D array of zeros (2000 x 540)
 
         # For local geometry (when vehicle fixed artificial light is used):
         for i in range(n):
             # Calculate vector from HSI to seabed in local coordinates (for artificial illumination)
-            self.points_hsi_crs[i, :, :] = (self.rotation_hsi[i].inv()).apply(self.camera_to_seabed_ECEF[i, :, :])
+            self.points_hsi_crs[i, :, :] = (self.rotation_hsi[i].inv()).apply(self.camera_to_seabed_ECEF[i, :, :])                  #Oliver: "p_{mesh\;HSI}^n = R_{e}^n * p_{mesh\;e}^e" => rays seabed -> camera in local NED frame
 
             # Calculate surface normals of intersected triangles (for artificial illumination)
-            self.normals_hsi_crs[i,:,:] = (self.rotation_hsi[i].inv()).apply(self.normals_ecef_crs[i, :, :])
+            self.normals_hsi_crs[i,:,:] = (self.rotation_hsi[i].inv()).apply(self.normals_ecef_crs[i, :, :])                        #Oliver: n_{mesh}^n = R_{e}^n * n_{mesh}^e" => normals on the 2D mesh cells in local NED frame
 
             # Calculate a depth map (the z-component, 1D scanline)
-            self.depth_map[i, :] = self.points_hsi_crs[i, :, 2]/self.rayDirectionsLocal[:, 2]
+            self.depth_map[i, :] = self.points_hsi_crs[i, :, 2]/self.rayDirectionsLocal[:, 2]                                       #Oliver: depth = p_{mesh\;e_z}^n / r_{i_z}^{HSI} (depth of pixel, if the ray hits the mesh at an angle, depth is smaller)
 
         print('Finished ray tracing')
 
         self.unix_time_grid = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), self.time.reshape((-1,1)))
-        self.unix_time = self.unix_time_grid.reshape((-1, 1)) # Vector-form
-        self.pixel_nr_grid = np.matlib.repmat(np.arange(m), n, 1)
-        self.frame_nr_grid = np.matlib.repmat(np.arange(n).reshape(-1,1), 1, m)
-
+        self.unix_time      = self.unix_time_grid.reshape((-1, 1)) # Vector-form
+        self.pixel_nr_grid  = np.matlib.repmat(np.arange(m), n, 1)
+        self.frame_nr_grid  = np.matlib.repmat(np.arange(n).reshape(-1,1), 1, m)
         
     @staticmethod
     def intersect_ray_with_earth_ellipsoid(p0, dir_hat, B):
@@ -342,38 +330,38 @@ class CameraGeometry():
     def calculate_sun_directions(longitude, latitude, altitude, unix_time, degrees=True):
         # Ensure all inputs are NumPy arrays
         longitude = np.asarray(longitude).flatten()
-        latitude = np.asarray(latitude).flatten()
-        altitude = np.asarray(altitude).flatten()
+        latitude  = np.asarray(latitude).flatten()
+        altitude  = np.asarray(altitude).flatten()
         unix_time = np.asarray(unix_time).flatten()
 
         n = max(longitude.size, latitude.size, altitude.size, unix_time.size)
 
         # If a single value is provided for any parameter, broadcast it to match the size of the other parameters
         longitude = np.broadcast_to(longitude, (n,))
-        latitude = np.broadcast_to(latitude, (n,))
-        altitude = np.broadcast_to(altitude, (n,))
+        latitude  = np.broadcast_to(latitude, (n,))
+        altitude  = np.broadcast_to(altitude, (n,))
         unix_time = np.broadcast_to(unix_time, (n,))
 
-        phi_s = np.zeros(n)
+        phi_s   = np.zeros(n)
         theta_s = np.zeros(n)
 
         observer = ephem.Observer()
 
         for i in range(n):
             # Extract a single value from the arrays
-            observer.lon = str(longitude[i])
-            observer.lat = str(latitude[i])
+            observer.lon  = str(longitude[i])
+            observer.lat  = str(latitude[i])
             observer.elev = altitude[i]
             
-            sun = ephem.Sun()
+            sun           = ephem.Sun()
             observer.date = datetime.utcfromtimestamp(unix_time[i])
             sun.compute(observer)
 
-            phi_s[i] = np.rad2deg(sun.az)
+            phi_s[i]   = np.rad2deg(sun.az)
             theta_s[i] = 90 - np.rad2deg(sun.alt)
 
         if not degrees:
-            phi_s = np.deg2rad(phi_s)
+            phi_s   = np.deg2rad(phi_s)
             theta_s = np.deg2rad(theta_s)
 
         return phi_s, theta_s
@@ -385,9 +373,9 @@ class CameraGeometry():
         m = self.rayDirectionsGlobal.shape[1]
 
         self.seabed_to_camera_NED = np.zeros(self.camera_to_seabed_ECEF.shape)
-        self.normals_ned_crs = np.zeros(self.normals_ecef_crs.shape)
-        self.theta_v = np.zeros((n, m))
-        self.phi_v = np.zeros((n, m))
+        self.normals_ned_crs      = np.zeros(self.normals_ecef_crs.shape)
+        self.theta_v              = np.zeros((n, m))
+        self.phi_v                = np.zeros((n, m))
 
         x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1)) + self.pos0[0]
         y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1)) + self.pos0[1]
@@ -397,9 +385,9 @@ class CameraGeometry():
 
         start = np.einsum('ijk, ik -> ijk', np.ones((n, m, 3), dtype=np.float64), self.position_ecef).reshape((-1,3))
 
-        x_hsi = start[:, 0].reshape((-1,1)) + self.pos0[0]
-        y_hsi = start[:, 1].reshape((-1,1)) + self.pos0[1]
-        z_hsi = start[:, 2].reshape((-1,1)) + self.pos0[2]
+        x_hsi = start[:, 0].reshape((-1,1)) + self.pos0[0]                                                                          #Oliver: ECEF X position for each ray start at the UAV
+        y_hsi = start[:, 1].reshape((-1,1)) + self.pos0[1]                                                                          #Oliver: ECEF Y position for each ray start at the UAV
+        z_hsi = start[:, 2].reshape((-1,1)) + self.pos0[2]                                                                          #Oliver: ECEF Z position for each ray start at the UAV
 
         # Compute vectors from seabed intersections to HSI in NED
         NED = pm.ecef2ned(x= x_hsi, y= y_hsi, z=z_hsi, lat0 = lats, lon0=lons, h0 = alts)
@@ -417,15 +405,12 @@ class CameraGeometry():
             # Decompose vector to angles
             polar = cartesian_to_polar(xyz = self.seabed_to_camera_NED[i,:,:])
 
-            self.theta_v[i, :] = polar[:,1]
+            self.theta_v[i, :] = polar[:,1]                                                                                         #Oliver: viewing angle of imaging spectrometer
 
-            self.phi_v[i, :] = polar[:,2]
+            self.phi_v[i, :]   = polar[:,2]                                                                                         #Oliver: viewing angle of imaging spectrometer
 
             # Calculate surface normals of intersected triangles (for artificial illumination)
             self.normals_ned_crs[i, :, :] = R_ecef_2_ned.apply(self.normals_ecef_crs[i, :, :])
-
-            
-
 
     def compute_sun_angles_local_tangent_plane(self):
         n = self.rayDirectionsGlobal.shape[0]
@@ -443,14 +428,9 @@ class CameraGeometry():
 
         phi_s, theta_s = CameraGeometry.calculate_sun_directions(longitude = lons, latitude = lats, altitude = alts, unix_time = self.unix_time, degrees = True)
 
-        self.phi_s = phi_s.reshape((n, m, 1))
+        self.phi_s = phi_s.reshape((n, m, 1))                                      #Oliver: Solar azimuth angle for each pixel (2000 x 540 x 1) (angle between north and the sun on horz. plane)
 
-        self.theta_s = theta_s.reshape((n, m, 1))
-
-        
-
-        
-    
+        self.theta_s = theta_s.reshape((n, m, 1))                                  #Oliver: Solar zenith angle for each pixel (2000 x 540 x 1) (90deg - sun elevation)
 
     def compute_tide_level(self, path_tide, tide_format, constant_height = 0):
 
@@ -458,11 +438,8 @@ class CameraGeometry():
         m = self.rayDirectionsGlobal.shape[1]
 
         if path_tide == 'Undefined':
-
             self.hsi_tide_gridded = constant_height*np.ones((n, m, 1))
-
         else:
-
             if tide_format == 'NMA':
 
                 df_tide = pd.read_csv(path_tide, sep='\s+', parse_dates=[0], index_col=0, comment='#', date_parser=parser.parse)
@@ -500,17 +477,16 @@ class CameraGeometry():
 
         unix_time = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), self.time.reshape((-1,1))).reshape((-1, 1))
 
-        phi_s, theta_s = CameraGeometry.calculate_sun_directions(longitude = lons, latitude = lats, altitude = alts, unix_time = unix_time, degrees = True)
+        phi_s, theta_s = CameraGeometry.calculate_sun_directions(longitude = lons, latitude = lats, altitude = alts, unix_time = unix_time, degrees = True)   #Oliver: I belive this is redundant, sun angles have been calculated already
 
         self.phi_s = phi_s.reshape((n, m, 1))
 
         self.theta_s = theta_s.reshape((n, m, 1))
 
-        
     def writeRGBPointCloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
-        wl_red = float(config['General']['RedWavelength'])
-        wl_green = float(config['General']['GreenWavelength'])
-        wl_blue = float(config['General']['BlueWavelength'])
+        wl_red          = float(config['General']['RedWavelength'])
+        wl_green        = float(config['General']['GreenWavelength'])
+        wl_blue         = float(config['General']['BlueWavelength'])
         dir_point_cloud = config['Absolute Paths']['rgbPointCloudPath']
 
         wavelength_nm = np.array([wl_red, wl_green, wl_blue])
@@ -523,17 +499,15 @@ class CameraGeometry():
         if extrapolate == False:
             rgb = hyp.dataCubeRadiance[minInd:maxInd, :, [band_ind_R, band_ind_G, band_ind_B]]
         else:
-            rgb = hyp.dataCubeRadiance[:, :, [band_ind_R, band_ind_G, band_ind_B]]
+            rgb = hyp.dataCubeRadiance[:, :, [band_ind_R, band_ind_G, band_ind_B]]                                                              #Oliver: getting RGB datacube
 
+        points     = self.points_ecef_crs[self.points_ecef_crs != 0].reshape((-1,3))                                                            #Oliver: points_ecef_crs => Points in local NED frame, reshaped 3D -> 2D
+        rgb_points = (rgb[self.points_ecef_crs != 0] / rgb.max()).astype(np.float64).reshape((-1,3))                                            #Oliver: rgb points reshaped 3D -> 2D and scaled 0 -> 1
+        pcd        = o3d.geometry.PointCloud()                                                                                                  #Oliver: initialize point cloud object
 
-        points = self.points_ecef_crs[self.points_ecef_crs != 0].reshape((-1,3))
-        rgb_points = (rgb[self.points_ecef_crs != 0] / rgb.max()).astype(np.float64).reshape((-1,3))
-        pcd = o3d.geometry.PointCloud()
-
-        pcd.points = o3d.utility.Vector3dVector(points)
-        pcd.colors = o3d.utility.Vector3dVector(rgb_points)
-        o3d.io.write_point_cloud(dir_point_cloud + transect_string + '.ply', pcd)
-
+        pcd.points = o3d.utility.Vector3dVector(points)                                                                                         #Oliver: Generate point cloude
+        pcd.colors = o3d.utility.Vector3dVector(rgb_points)                                                                                     #Oliver: assign color to points
+        o3d.io.write_point_cloud(dir_point_cloud + transect_string + '.ply', pcd)                                                               #Oliver: write point cloud to *.ply file
 
     #def transformRays(self, rays):
         # Rays are a n x m x 3 set of rays where n is each time step and coincides with the rotations and translations:
@@ -725,9 +699,8 @@ class FeatureCalibrationObject():
 
 
 
-def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, extrapolate = True, use_absolute_position = True):
+def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, extrapolate=True, use_absolute_position=True):
     """
-
     :param timestamp_from:
     Original timestamps
     :param pos_from: numpy array (n,3)
@@ -759,7 +732,6 @@ def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, e
     min_ind = 0
     max_ind = timestamps_to.size
 
-
     # Setting use_absolute_position to True means that position calculations are done with absolute
     referenceGeometry = CameraGeometry(pos0=pos0,
                                pos=pos_from,
@@ -773,16 +745,11 @@ def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, e
                           maxIndRGB=max_ind,
                           extrapolate=extrapolate)
 
+    position_to = referenceGeometry.position_nav_interpolated                   #Oliver: position interpolated to HSI timestamps, in ECEF (n,3)
 
-
-    position_to = referenceGeometry.position_nav_interpolated
-
-    quaternion_to = referenceGeometry.rotation_nav_interpolated.as_quat()
+    quaternion_to = referenceGeometry.rotation_nav_interpolated.as_quat()       #Oliver: rotation interpolated to HSI timestamps, in ECEF (n,4)
 
     return position_to, quaternion_to
-
-
-
 
 def cartesian_to_polar(xyz):
     """Converts from 3D cartesian coordinates to polar coordinates
@@ -867,10 +834,10 @@ class GeoPose:
     def __init__(self, timestamps, rot_obj, rot_ref, pos, pos_epsg):
         self.timestamps = timestamps
         if rot_ref == 'NED':
-            self.rot_obj_ned = rot_obj
+            self.rot_obj_ned  = rot_obj
             self.rot_obj_ecef = None
         elif rot_ref == 'ECEF':
-            self.rot_obj_ned = None
+            self.rot_obj_ned  = None
             self.rot_obj_ecef = rot_obj
         else:
             print('This rotation reference is not supported')
@@ -878,8 +845,7 @@ class GeoPose:
 
         # Define position
         self.position = pos
-        self.epsg = pos_epsg
-
+        self.epsg     = pos_epsg
 
         self.lat = None
         self.lon = None
@@ -892,8 +858,8 @@ class GeoPose:
             EPSG code of the transformed geodetic coordinate system
         """
         # If geocentric position has not been defined.
-        from_CRS = CRS.from_epsg(self.epsg)
-        geod_CRS = CRS.from_epsg(epsg_geod)
+        from_CRS    = CRS.from_epsg(self.epsg)
+        geod_CRS    = CRS.from_epsg(epsg_geod)
         transformer = Transformer.from_crs(from_CRS, geod_CRS)
 
         x = self.position[:, 0].reshape((-1, 1))
@@ -914,8 +880,8 @@ class GeoPose:
             EPSG code of the transformed geodetic coordinate system
         """
 
-        from_CRS = CRS.from_epsg(self.epsg)
-        geod_CRS = CRS.from_epsg(epsg_geocsc)
+        from_CRS    = CRS.from_epsg(self.epsg)
+        geod_CRS    = CRS.from_epsg(epsg_geocsc)
         transformer = Transformer.from_crs(from_CRS, geod_CRS)
 
         x = self.position[:, 0].reshape((-1, 1))
@@ -933,8 +899,8 @@ class GeoPose:
                 # Needed to encode rotation between NED and ECEF
                 self.compute_geodetic_position()
 
-            R_body_2_ned = self.rot_obj_ned
-            R_ned_2_ecef = self.compute_rot_obj_ned_2_ecef()
+            R_body_2_ned  = self.rot_obj_ned
+            R_ned_2_ecef  = self.compute_rot_obj_ned_2_ecef()
             R_body_2_ecef = R_ned_2_ecef*R_body_2_ned
 
             self.rot_obj_ecef = R_body_2_ecef
@@ -954,21 +920,17 @@ class GeoPose:
             R_body_2_ned = R_ecef_2_ned*R_body_2_ecef
 
             self.rot_obj_ned = R_body_2_ned
-
-
         else:
             pass
 
     def compute_rot_obj_ned_2_ecef(self):
-
-        N = self.lat.shape[0]
+        N                   = self.lat.shape[0]
         rot_mats_ned_2_ecef = np.zeros((N, 3, 3), dtype=np.float64)
         
         for i in range(N):
             rot_mats_ned_2_ecef[i,:,:] = rot_mat_ned_2_ecef(lat=self.lat[i], lon = self.lon[i])
 
-
-        self.rots_obj_ned_2_ecef = RotLib.from_matrix(rot_mats_ned_2_ecef)
+        self.rots_obj_ned_2_ecef = RotLib.from_matrix(rot_mats_ned_2_ecef)                     #Oliver: convert rotation matrices to rotation object "scipi rotation"
 
         return self.rots_obj_ned_2_ecef
 
@@ -978,19 +940,20 @@ class GeoPose:
 def rot_mat_ned_2_ecef(lat, lon):
     """
     Computes the rotation matrix R from north-east-down (NED) to earth-fixed-earth centered (ECEF)
-    :param lat: float in range [-90, 90]
-    The latitude in degrees
-    :param lon: float in range [-180, 180]
-    :return R_ned_ecef: numpy array of shape (3,3)
-    rotation matrix from NED to ECEF
-    """
+        :param lat: float in range [-90, 90]
+                The latitude in degrees
 
+        :param lon: float in range [-180, 180]
+        
+        :return R_ned_ecef: numpy array of shape (3,3)
+                            rotation matrix from NED to ECEF
+    """
     # Ensure lat and lon are scalar values
     lat_scalar = lat[0] if isinstance(lat, np.ndarray) else lat
     lon_scalar = lon[0] if isinstance(lon, np.ndarray) else lon
 
     # Convert to radians
-    l = np.deg2rad(lon_scalar)
+    l  = np.deg2rad(lon_scalar)
     mu = np.deg2rad(lat_scalar)
 
     # Compute rotation matrix
@@ -999,9 +962,6 @@ def rot_mat_ned_2_ecef(lat, lon):
                            [-np.sin(l) * np.sin(mu), np.cos(l), -np.sin(l) * np.cos(mu)],
                            [np.cos(mu), 0, -np.sin(mu)]])
     return R_ned_ecef
-
-
-
 
 def dem_2_mesh(path_dem, model_path, config):
     """
@@ -1014,13 +974,13 @@ def dem_2_mesh(path_dem, model_path, config):
     """
     # Input and output file paths
 
-    output_xyz = model_path.split(sep = '.')[0] + '.xyz'
+    output_xyz = model_path.split(sep = '.')[0] + '.xyz'                                                     #Oliver: output file path for the file model.xyz
+
     # No-data value
     #no_data_value = int(config['General']['nodataDEM'])  # Replace with your actual no-data value
+
     # Open the input raster dataset
     ds = gdal.Open(path_dem)
-
-    # 
 
     if ds is None:
         print(f"Failed to open {path_dem}")
@@ -1032,18 +992,18 @@ def dem_2_mesh(path_dem, model_path, config):
             print(f"Failed to open band 1 of {path_dem}")
         else:
             # Get the geotransform information to calculate coordinates
-            geotransform = ds.GetGeoTransform()
-            x_origin     = geotransform[0]
-            y_origin     = geotransform[3]
-            x_resolution = geotransform[1]
-            y_resolution = geotransform[5]
+            geotransform = ds.GetGeoTransform()                                         #Oliver: This step gets the geotransform information from the raster dataset, so that the position of the DEM in the real world can be determined.
+            x_origin     = geotransform[0]                                              #Oliver: The x-coordinate of the upper-left corner of the top-left pixel.
+            y_origin     = geotransform[3]                                              #Oliver: The y-coordinate of the upper-left corner of the top-left pixel.
+            x_resolution = geotransform[1]                                              #Oliver: The pixel width in the x-direction.
+            y_resolution = geotransform[5]                                              #Oliver: The pixel height in the y-direction.
             # Get the CRS information
             spatial_reference = osr.SpatialReference(ds.GetProjection())
 
             # Get the EPSG code
             epsg_proj = None
             if spatial_reference.IsProjected():
-                epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 1)
+                epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 1)              #Oliver: The EPSG code 32633
             elif spatial_reference.IsGeographic():
                 epsg_proj = spatial_reference.GetAttrValue("AUTHORITY", 0)
 
@@ -1059,7 +1019,7 @@ def dem_2_mesh(path_dem, model_path, config):
             #if not os.path.exists(output_xyz):
             with open(output_xyz, 'w') as xyz_file:
                 # Write data to the XYZ file using the mask and calculated coordinates
-                for y in range(ds.RasterYSize):
+                for y in range(ds.RasterYSize):                                         #Oliver: This creates the model.xyz file, used for further processing.
                     for x in range(ds.RasterXSize):
                         if mask[y, x]:
                             x_coord = x_origin + x * x_resolution
@@ -1069,11 +1029,11 @@ def dem_2_mesh(path_dem, model_path, config):
             ds   = None
             band = None
     print("Conversion completed.")
-    points = np.loadtxt(output_xyz)
+    points = np.loadtxt(output_xyz)                                                     #Oliver: Loads the model.xyz file into a numpy array (model.xyz was created a few lines ago).
     # Create a pyvista point cloud object
     cloud = pv.PolyData(points)
     # Generate a mesh from
-    mesh = cloud.delaunay_2d()
+    mesh = cloud.delaunay_2d()                                                          #Oliver: Creates a 2D mesh from the 3D point cloud.
 
     epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
     # Transform the mesh points to from projected to geocentric ECEF.
@@ -1083,6 +1043,7 @@ def dem_2_mesh(path_dem, model_path, config):
 
     print(f"Mesh geocentric EPSG Code: {epsg_geocsc}")
 
+    #Oliver: Projecting mesh from EPSG 32633 to EPSG 4326 (WGS84 geocentric/ECEF)
     points_proj = mesh.points
 
     eastUTM  = points_proj[:, 0].reshape((-1, 1))
@@ -1106,7 +1067,6 @@ def dem_2_mesh(path_dem, model_path, config):
     mesh.points -= pos0 # Add appropriate offset
     # Save mesh
     mesh.save(model_path)
-
 
 def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):
     """

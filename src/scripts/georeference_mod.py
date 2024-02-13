@@ -19,8 +19,8 @@ def cal_file_to_rays(filename_cal, config):
         # Loads line camera parameters for the hyperspectral imager from an xml file.
 
         # Certain imagers deliver geometry "per pixel". This can be resolved by fitting model parameters.
-        calHSI = CalibHSI(file_name_cal_xml=filename_cal, config = config)
-        f = calHSI.f
+        calHSI = CalibHSI(file_name_cal_xml=filename_cal, config=config)
+        f   = calHSI.f
         u_c = calHSI.cx
 
         # Radial distortion parameters
@@ -61,9 +61,9 @@ def cal_file_to_rays(filename_cal, config):
         p_dir[:, 0] = x_norm
         p_dir[:, 2] = 1
 
-        rot_hsi_ref_eul = np.array([rot_z, rot_y, rot_x])
+        rot_hsi_ref_eul = np.array([rot_z, rot_y, rot_x])                                          #Oliver: Rotation angles in radians (body frame -> HSI frame)
 
-        rot_hsi_ref_obj = RotLib.from_euler(seq = 'ZYX',angles = rot_hsi_ref_eul, degrees=False)
+        rot_hsi_ref_obj = RotLib.from_euler(seq = 'ZYX',angles = rot_hsi_ref_eul, degrees=False)   #Oliver: Create obj "scipy.spatial.transform._rotation.Rotation" from Euler angles (body frame -> HSI frame)
 
         try:
             lever_arm_unit = config['General']['lever_arm_unit']
@@ -74,7 +74,7 @@ def cal_file_to_rays(filename_cal, config):
         if lever_arm_unit == 'mm':
             translation_hsi_ref = np.array([trans_x, trans_y, trans_z]) / 1000 # These are millimetres
         elif lever_arm_unit == 'm':
-            translation_hsi_ref = np.array([trans_x, trans_y, trans_z])
+            translation_hsi_ref = np.array([trans_x, trans_y, trans_z])                            #Oliver: Translation vector from body frame to HSI frame TBD update with lever arm
 
         intrinsic_geometry_dict = {'translation_hsi_ref': translation_hsi_ref,
                                    'rot_hsi_ref_obj': rot_hsi_ref_obj,
@@ -87,16 +87,16 @@ def cal_file_to_rays(filename_cal, config):
 def define_hsi_ray_geometry(pos_ref_ecef, quat_ref_ecef, time_pose, pos0, intrinsic_geometry_dict):
         # Instantiate a camera geometry object from the h5 pose data
 
-        pos     = pos_ref_ecef # Reference positions in ECEF offset by pos0
+        pos     = pos_ref_ecef                    # Reference positions in ECEF offset by pos0
         rot_obj = RotLib.from_quat(quat_ref_ecef) # Reference orientations wrt ECEF
 
-        ray_directions_local = intrinsic_geometry_dict['ray_directions_local']
-        translation_hsi_ref  = intrinsic_geometry_dict['translation_hsi_ref']
-        rot_hsi_ref_obj      = intrinsic_geometry_dict['rot_hsi_ref_obj']
+        ray_directions_local = intrinsic_geometry_dict['ray_directions_local']              #Oliver: Ray directions in HSI frame (p_dir)
+        translation_hsi_ref  = intrinsic_geometry_dict['translation_hsi_ref']               #Oliver: Translation vector from body frame to HSI frame
+        rot_hsi_ref_obj      = intrinsic_geometry_dict['rot_hsi_ref_obj']                   #Oliver: Rotation matrix from body frame to HSI frame
 
         translation_ref_hsi =- translation_hsi_ref
 
-        hsi_geometry = CameraGeometry(pos0=pos0, pos=pos, rot=rot_obj, time=time_pose, is_interpolated=True, use_absolute_position=True)
+        hsi_geometry = CameraGeometry(pos0=pos0, pos=pos, rot=rot_obj, time=time_pose, is_interpolated=True, use_absolute_position=True)  #Oliver: Create new obj "CameraGeometry"
         
         hsi_geometry.intrinsicTransformHSI(translation_ref_hsi=translation_ref_hsi, rot_hsi_ref_obj = rot_hsi_ref_obj)
 
@@ -117,7 +117,6 @@ def write_intersection_geometry_2_h5_file(hsi_geometry, config, h5_filename):
                     del f[h5_hierarchy_item_path]
                 dset = f.create_dataset(name=h5_hierarchy_item_path, 
                                                 data = getattr(hsi_geometry, attribute_name))
-
 
 # Function called to apply standard processing on a folder of files
 def main(iniPath):
@@ -167,37 +166,22 @@ def main(iniPath):
             hsi_geometry.intersectWithMesh(mesh = mesh, max_ray_length=max_ray_length)
             
             # Computes the view angles in the local NED. Computationally intensive as local NED is defined for each intersection
-            hsi_geometry.compute_view_directions_local_tangent_plane()
+            hsi_geometry.compute_view_directions_local_tangent_plane()                                                                #Oliver: TBD
 
             # Computes the sun angles in the local NED. Computationally intensive as local NED is defined for each intersection
-            hsi_geometry.compute_sun_angles_local_tangent_plane()
+            hsi_geometry.compute_sun_angles_local_tangent_plane()                                                                     #Oliver: Sun angles in local NED using "ephem" library (azimuth and zenith angle)
 
             hsi_geometry.compute_tide_level(path_tide, tide_format = 'NMA')
-            
+
             write_intersection_geometry_2_h5_file(hsi_geometry=hsi_geometry, config = config, h5_filename=path_hdf)
 
             print('Intersection geometry written to:\n {0}'.format(filename))
 
-
-            
             print('Writing Point Cloud')
             hsi_geometry.writeRGBPointCloud(config = config, hyp = hyp, transect_string = filename.split('.')[0])
 
             #from scripts import visualize
             #visualize.show_projected_hsi_points(HSICameraGeometry=hsi_geometry, config=config, transect_string = filename.split('.')[0])
-
-            
-
-
-
-
-
-
-
-
-
-
-
 
 if __name__ == '__main__':
     args = sys.argv[1:]
