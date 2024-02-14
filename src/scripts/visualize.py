@@ -6,7 +6,7 @@ from scipy.spatial.transform import Rotation
 import open3d as o3d
 import pymap3d as pm
 # A simple visualization of various types of data
-from scripts.geometry import rotation_matrix_ecef2ned, rotation_matrix_ecef2enu
+from utils.geometry_utils import rotation_matrix_ecef2ned, rotation_matrix_ecef2enu
 
 def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'ECEF'):
     """
@@ -56,6 +56,7 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
         x = offset_x
         y = offset_y
         z = offset_z
+        
         lat0, lon0, hei0 = pm.ecef2geodetic(x, y, z, deg=True)
         R_ecef_to_ned = Rotation.from_matrix(rotation_matrix_ecef2ned(lon=lon0, lat=lat0))
 
@@ -72,7 +73,10 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
         x_mesh, y_mesh, z_mesh = pm.ecef2ned(x = points_mesh_ecef[:,0] + x, y = points_mesh_ecef[:,1] + y, z = points_mesh_ecef[:,2] + z, lon0=lon0, lat0=lat0, h0=hei0)
 
         points_mesh = np.concatenate((x_mesh.reshape((-1,1)), y_mesh.reshape((-1,1)), z_mesh.reshape((-1,1))), axis = 1)
+
         mesh.points = points_mesh
+
+
     elif ref_frame == 'ENU':
         x = offset_x
         y = offset_y

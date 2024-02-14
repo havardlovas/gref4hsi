@@ -6,7 +6,7 @@ import os
 # Local resources
 from scripts import georeference
 from scripts import orthorectification
-from lib import parsing_utils
+from utils import parsing_utils
 from scripts import visualize
 from scripts.config_utils import prepend_data_dir_to_relative_paths
 

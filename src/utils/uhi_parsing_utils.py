@@ -15,7 +15,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import pymap3d as pm
-from scripts.geometry import CalibHSI
+from utils.geometry_utils import CalibHSI
 
 from pyvistaqt import BackgroundPlotter
 import numpy as np
@@ -26,7 +26,7 @@ from rasterio.transform import from_origin, Affine
 from scipy.spatial.transform import Rotation as RotLib
 
 from scripts.config_utils import prepend_data_dir_to_relative_paths
-from lib.specim_parsing_utils import Specim
+from utils.specim_parsing_utils import Specim
 
 
 """Reader for the h5 file format in UHI context. The user provides h5 hierarchy paths as values and keys are the names given to the attributes """
@@ -634,7 +634,7 @@ def uhi_beast(config, config_uhi):
     time_offset = config_uhi.time_offset_sec
     lon0, lat0, alt0 = config_uhi.lon_lat_alt_origin
 
-    from lib.photogrammetry_utils import Photogrammetry
+    from utils.photogrammetry_utils import Photogrammetry
     agisoft_object = Photogrammetry(project_folder = MISSION_PATH, software_type='agisoft')
 
     for h5_index in range(number_of_h5_files):

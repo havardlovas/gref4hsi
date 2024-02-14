@@ -18,10 +18,10 @@ from scipy.interpolate import interp1d
 import pandas as pd
 import numpy as np
 from scipy.optimize import least_squares
-from scripts.geometry import CalibHSI
+from utils.geometry_utils import CalibHSI
 from scipy.spatial.transform import Rotation as RotLib
 
-from scripts.geometry import CalibHSI
+from utils.geometry_utils import CalibHSI
 from scripts.config_utils import prepend_data_dir_to_relative_paths
 
 ACTIVE_SENSOR_SPATIAL_PIXELS = 1024 # Constant for AFX10

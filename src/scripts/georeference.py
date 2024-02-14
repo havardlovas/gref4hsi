@@ -10,8 +10,8 @@ import pyvista as pv
 import h5py
 
 # Local resources:
-from scripts.geometry import CameraGeometry, CalibHSI
-from lib.parsing_utils import Hyperspectral
+from utils.geometry_utils import CameraGeometry, CalibHSI
+from utils.parsing_utils import Hyperspectral
 from scripts import visualize
 
 

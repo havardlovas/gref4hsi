@@ -23,7 +23,7 @@ import h5py
 
 # Local module
 from scripts.colours import Image as Imcol
-from lib.parsing_utils import Hyperspectral
+from utils.parsing_utils import Hyperspectral
 
 GRAVITY = 9.81 # m/s^2
 # ENVI datatype conversion dictionary
@@ -717,7 +717,6 @@ class GeoSpatialAbstractionHSI():
         self.rgb_ortho_reshaped = self.config['Absolute Paths']['rgbOrthoReshaped'] + self.name + '.tif'
         self.dem_path = self.config['Absolute Paths']['dem_path']
         self.dem_reshaped = self.config['Absolute Paths']['demReshaped'] + self.name + '_dem.tif'
-
 
         self.resample_rgb_ortho_to_hsi_ortho()
 

@@ -22,9 +22,9 @@ from scipy.interpolate import interp1d
 from pyproj import CRS, Transformer
 
 # Local modules
-from scripts.geometry import CameraGeometry, GeoPose
-from scripts.geometry import rot_mat_ned_2_ecef, interpolate_poses
-from scripts.geometry import dem_2_mesh, crop_geoid_to_pose
+from utils.geometry_utils import CameraGeometry, GeoPose
+from utils.geometry_utils import rot_mat_ned_2_ecef, interpolate_poses
+from utils.geometry_utils import dem_2_mesh, crop_geoid_to_pose
 
 
 class Hyperspectral:

@@ -4,7 +4,7 @@ import os
 
 import numpy as np
 
-from lib import parsing_utils, uhi_parsing_utils
+from utils import parsing_utils, uhi_parsing_utils
 from scripts import georeference, orthorectification
 from scripts import visualize
 from scripts.config_utils import prepend_data_dir_to_relative_paths, customize_config

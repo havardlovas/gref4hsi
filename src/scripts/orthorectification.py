@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Local resources:
-from scripts.geometry import CameraGeometry, FeatureCalibrationObject, CalibHSI
-from scripts.gis_tools import GeoSpatialAbstractionHSI
-from lib.parsing_utils import Hyperspectral
+from utils.geometry_utils import CameraGeometry, FeatureCalibrationObject, CalibHSI
+from utils.gis_tools import GeoSpatialAbstractionHSI
+from utils.parsing_utils import Hyperspectral
 
 
 
@@ -37,9 +37,15 @@ def main(iniPath):
 
 
     # The necessary data from the H5 file for resampling the datacube and composite (fwhm is optional)
+    # ECEF point cloud from georeferencing.
     h5_folder_point_cloud_ecef = config['Georeferencing']['points_ecef_crs']
+
+    # Radiance cube
     h5_folder_radiance_cube = config['HDF.hyperspectral']['datacube']
+
+    # Wavelength centers for all bands
     h5_folder_wavelength_centers = config['HDF.calibration']['band2wavelength']
+    
     try:
         h5_folder_wavelength_widths = config['HDF.calibration']['fwhm']
     except:
