@@ -4,11 +4,11 @@ import sys
 import os
 
 # Local resources
-from scripts import georeference_mod
+from scripts import georeference
 from scripts import orthorectification
 from lib import parsing_utils
 from scripts import visualize
-from scripts.modulate_config import prepend_data_dir_to_relative_paths
+from scripts.config_utils import prepend_data_dir_to_relative_paths
 
 """
 This script is meant to be used for testing the processing pipeline of airborne HI data.
@@ -43,7 +43,7 @@ def main():
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
     
-    #georeference_mod.main(config_file)
+    #georeference.main(config_file)
 
     orthorectification.main(config_file)
 

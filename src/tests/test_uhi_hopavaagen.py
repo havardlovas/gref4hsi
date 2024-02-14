@@ -28,21 +28,21 @@ config.read(config_file)
 
 def main():
     """
-    Writes each *.h5 file (in "h5dir") radiance to a *.tif file (in "tiff_dir").
+    Writes each *.h5 file (in "h5_folder") radiance to a *.tif file (in "tiff_dir").
     """
 
 
 
     # Traverse through h5 dir to append the data to file
 
-    h5dir = config['HDF']['h5dir']
+    h5_folder = config['HDF']['h5_folder']
     tiff_dir = 'E:/double-blueye/Radiance_composites/'
 
     concat_rgb_composite_img = None
     is_first_image_of_transect = True
     prev_chunk_number = 0
     prev_transect_name = ''
-    files = os.listdir(h5dir)
+    files = os.listdir(h5_folder)
 
     # TODO: Make numerical sort properly sort last element
     # Sort the filenames based on the numeric part
@@ -58,7 +58,7 @@ def main():
             # Find the interesting prefixes
             if filename.endswith('h5') or filename.endswith('hdf'):
                 # Identify the total path and read data into Hyperspectral object
-                path_hdf = h5dir + filename
+                path_hdf = h5_folder + filename
                 hyp = Hyperspectral(path_hdf, config)
 
                 # Identify transect number
@@ -74,9 +74,9 @@ def main():
                 hyp.digital_counts_2_radiance(config)
 
                 # Set custom RGB bands from *.ini file
-                wl_red = float(config['General']['RedWavelength'])
-                wl_green = float(config['General']['GreenWavelength'])
-                wl_blue = float(config['General']['BlueWavelength'])
+                wl_red = float(config['General']['red_wave_length'])
+                wl_green = float(config['General']['green_wave_length'])
+                wl_blue = float(config['General']['blue_wave_length'])
 
 
                 wavelength_nm = np.array([wl_red, wl_green, wl_blue])

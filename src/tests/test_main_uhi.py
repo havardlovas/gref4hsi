@@ -5,9 +5,9 @@ import os
 import numpy as np
 
 from lib import parsing_utils, uhi_parsing_utils
-from scripts import georeference_mod, orthorectification
+from scripts import georeference, orthorectification
 from scripts import visualize
-from scripts.modulate_config import prepend_data_dir_to_relative_paths, customize_config
+from scripts.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 
 DATA_DIR = "D:/HyperspectralDataAll/UHI/2020-07-01-14-34-57-ArcticSeaIce-Ben-Lange/"
@@ -30,9 +30,9 @@ else:
 
     # Non-default settings
     custom_config = {'General':
-                        {'missiondir': DATA_DIR,
-                        'modelexporttype': 'dem_file', # Infer seafloor structure from altimeter recordings
-                        'maxraylength': 5,
+                        {'mission_dir': DATA_DIR,
+                        'model_export_type': 'dem_file', # Infer seafloor structure from altimeter recordings
+                        'max_ray_length': 5,
                         'lab_cal_dir': 'D:/HyperspectralDataAll/UHI/Lab_Calibration_Data/NP/'}, # Max distance in meters from UHI to seafloor
 
                     'Coordinate Reference Systems': 
@@ -112,12 +112,13 @@ config_uhi_preprocess = SettingsPreprocess(dtype_datacube = np.float32,
 config.read(config_file)"""
 
 def main():
+
+    # The config stores all relevant configurations
     config = configparser.ConfigParser()
     config.read(config_file_mission)
 
     # The minimum for georeferencing is to parse 1) Mesh model and 2) The pose of the reference
-    """uhi_parsing_utils.uhi_beast(config=config, config_uhi=config_uhi_preprocess)"""
-    #                          config_specim=config_specim_preprocess)"""
+    uhi_parsing_utils.uhi_beast(config=config, config_uhi=config_uhi_preprocess)
     
     config = parsing_utils.export_pose(config_file_mission)
 
@@ -132,11 +133,11 @@ def main():
     visualize.show_mesh_camera(config)
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference_mod.main(config_file_mission, viz=False)
+    georeference.main(config_file_mission, viz=False)
 
     orthorectification.main(config_file_mission)
     # Alternatively mode = 'calibrate'
-    # georeference_mod.main(config_file, mode='calibrate', is_calibrated=True)
+    # georeference.main(config_file, mode='calibrate', is_calibrated=True)
 
 
 if __name__ == "__main__":

@@ -65,10 +65,10 @@ class Photogrammetry:
             f.flush()
 
     
-    def export_rgb_from_h5(self, h5_path, rgb_write_dir, rgb_image_cube, nav_rgb, pos_acc, rot_acc):
+    def export_rgb_from_h5(self, h5_folder, rgb_write_dir, rgb_image_cube, nav_rgb, pos_acc, rot_acc):
         """
         Write images into png, appends to a nav file, and tags. Is potentially called many times"""
-        h5_filename = ntpath.basename(h5_path).split('.')[0]
+        h5_filename = ntpath.basename(h5_folder).split('.')[0]
         
         
 

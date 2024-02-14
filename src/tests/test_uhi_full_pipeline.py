@@ -4,7 +4,7 @@ import os
 from lib import parsing_utils
 from scripts import georeference
 from scripts import visualize
-from scripts.modulate_config import prepend_data_dir_to_relative_paths
+from scripts.config_utils import prepend_data_dir_to_relative_paths
 from scripts import extract_rgb_from_h5
 
 from scripts.image_color_correction import GrayWorldCorrection
@@ -19,11 +19,11 @@ config = configparser.ConfigParser()
 config.read(config_file)
 
 # Define the path to the h5-dir
-h5dir = config['Absolute Paths']['h5dir']
+h5_folder = config['Absolute Paths']['h5_folder']
 # Define the write path
 rgbimgpath_raw = config['Absolute Paths']['rgbimgpath']
 
-extract_rgb_from_h5.main(folder_path=h5dir, save_path=rgbimgpath_raw)
+extract_rgb_from_h5.main(folder_path=h5_folder, save_path=rgbimgpath_raw)
 
 rgbimgpath_corrected =  config['Absolute Paths']['rgbimgpathcorrected']
 

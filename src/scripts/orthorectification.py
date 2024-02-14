@@ -18,32 +18,32 @@ def main(iniPath):
     config.read(iniPath)
 
     # Paths for input data
-    h5_dir = config['Absolute Paths']['h5Dir']
+    h5_folder = config['Absolute Paths']['h5_folder']
 
     # Paths for output data:
     # 1) The data cube locations
-    envi_cube_dir = config['Absolute Paths']['orthoCubePaths']
+    envi_cube_dir = config['Absolute Paths']['orthorectified_cube_folder']
 
     # 2) The RGB composite locations
-    rgb_composite_dir = config['Absolute Paths']['rgbCompositePaths']
+    rgb_composite_dir = config['Absolute Paths']['rgb_composite_folder']
 
     # 3) The ancillary data locations
-    anc_dir = config['Absolute Paths']['anc_paths']
+    anc_dir = config['Absolute Paths']['anc_folder']
 
     # 3) The footprints
-    footprint_dir = config['Absolute Paths']['footprintpaths']
+    footprint_dir = config['Absolute Paths']['footprint_folder']
 
     
 
 
     # The necessary data from the H5 file for resampling the datacube and composite (fwhm is optional)
-    h5_path_point_cloud_ecef = config['Georeferencing']['points_ecef_crs']
-    h5_path_radiance_cube = config['HDF.hyperspectral']['datacube']
-    h5_path_wavelength_centers = config['HDF.calibration']['band2wavelength']
+    h5_folder_point_cloud_ecef = config['Georeferencing']['points_ecef_crs']
+    h5_folder_radiance_cube = config['HDF.hyperspectral']['datacube']
+    h5_folder_wavelength_centers = config['HDF.calibration']['band2wavelength']
     try:
-        h5_path_wavelength_widths = config['HDF.calibration']['fwhm']
+        h5_folder_wavelength_widths = config['HDF.calibration']['fwhm']
     except:
-        h5_path_wavelength_widths = 'undefined'
+        h5_folder_wavelength_widths = 'undefined'
 
     # The necessary data (a dictionary) from H5 file for resampling ancillary data (uses the same grid as datacube)
     anc_dict = config['Georeferencing']
@@ -59,11 +59,11 @@ def main(iniPath):
                              # The epsg code of the geocentric coordinate system (ECEF)
                              epsg_proj=int(config['Coordinate Reference Systems']['proj_epsg']),
                              # The epsg code of the projected coordinate system (e.g. UTM 32 has epsg 32632 for wgs 84 ellipsoid)
-                             off_x = float(config['General']['offsetX']),
+                             off_x = float(config['General']['offset_x']),
                              # The geocentric offset along x
-                             off_y = float(config['General']['offsetY']),
+                             off_y = float(config['General']['offset_y']),
                              # The geocentric offset along y
-                             off_z = float(config['General']['offsetZ'])
+                             off_z = float(config['General']['offset_z'])
                              # The geocentric offset along z
                              )
 
@@ -83,11 +83,11 @@ def main(iniPath):
     
     config_ortho = SettingsOrtho(ground_resolution = float(config['Orthorectification']['resolutionHyperspectralMosaic']), 
                                  # Rectified grid resolution in meters
-                              wl_red = float(config['General']['RedWavelength']), 
+                              wl_red = float(config['General']['red_wave_length']), 
                               # Red wavelength in <wavelength_unit>
-                              wl_green = float(config['General']['GreenWavelength']), 
+                              wl_green = float(config['General']['green_wave_length']), 
                               # Green wavelength in <wavelength_unit>
-                              wl_blue = float(config['General']['BlueWavelength']), 
+                              wl_blue = float(config['General']['blue_wave_length']), 
                               # Blue wavelength in <wavelength_unit>
                               raster_transform_method = config['Orthorectification']['raster_transform_method'], 
                               # Describes what raster transform to use. Either "north_east" or "minimal_rectangle". 
@@ -115,24 +115,24 @@ def main(iniPath):
 
     print('Orthorectifying Images')
 
-    for filename in sorted(os.listdir(h5_dir)):
+    for filename in sorted(os.listdir(h5_folder)):
         if filename.endswith('h5') or filename.endswith('hdf'):
             # Path to hierarchical file
-            h5_filename = h5_dir + filename
+            h5_filename = h5_folder + filename
 
             # Read the 3D point cloud, radiance cube 
             # Extract the point cloud
             point_cloud_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                         dataset_name=h5_path_point_cloud_ecef)
+                                                         dataset_name=h5_folder_point_cloud_ecef)
             # Need the radiance cube for resampling
             radiance_cube = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                         dataset_name=h5_path_radiance_cube)
+                                                         dataset_name=h5_folder_radiance_cube)
         
             wavelengths = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                            dataset_name=h5_path_wavelength_centers)
+                                                            dataset_name=h5_folder_wavelength_centers)
             try:
                 fwhm = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                            dataset_name=h5_path_wavelength_widths)
+                                                            dataset_name=h5_folder_wavelength_widths)
             except KeyError:
                 fwhm = np.nan
 

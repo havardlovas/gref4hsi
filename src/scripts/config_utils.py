@@ -17,7 +17,7 @@ def prepend_data_dir_to_relative_paths(config_path, DATA_DIR, mkdirs = True):
     config.read(config_path)
 
     # Set the value
-    config.set('General', 'missiondir', DATA_DIR)
+    config.set('General', 'mission_dir', DATA_DIR)
 
     if mkdirs:
         if os.path.exists(DATA_DIR):

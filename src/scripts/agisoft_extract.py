@@ -116,9 +116,9 @@ def extract_pose(chunkName, chunks, csv_name, crs_export, config):
                     dlogr.append_data([cam.label, pos[0], pos[1], pos[2], roll, pitch, -yaw, rotx, roty, rotz])
     mean_pos /= count
 
-    config.set('General', 'offsetX', str(mean_pos[0]))
-    config.set('General', 'offsetY', str(mean_pos[1]))
-    config.set('General', 'offsetZ', str(mean_pos[2]))
+    config.set('General', 'offset_x', str(mean_pos[0]))
+    config.set('General', 'offset_y', str(mean_pos[1]))
+    config.set('General', 'offset_z', str(mean_pos[2]))
     return config
 
 
@@ -161,8 +161,8 @@ def main(iniPath):
     chunkName = [chunk_str]
 
     # Output. CSV contains labeled roll, pitch, yaw
-    csv_name = config['General']['posePath']
-    model_name = config['General']['modelPath']
+    csv_name = config['General']['pose_path']
+    model_name = config['General']['model_path']
 
 
 
@@ -183,9 +183,9 @@ def main(iniPath):
     # Extract camera model from project
 
     # Exporting models with offsets might be convenient
-    offsetX = float(config['General']['offsetX'])
-    offsetY = float(config['General']['offsetY'])
-    offsetZ = float(config['General']['offsetZ'])
+    offset_x = float(config['General']['offset_x'])
+    offset_y = float(config['General']['offset_y'])
+    offset_z = float(config['General']['offset_z'])
     with open(iniPath, 'w') as configfile:
         config.write(configfile)
 
@@ -195,9 +195,9 @@ def main(iniPath):
         print('Model File Already exists. Overwriting')
     chunk = extract_model(chunkName=chunkName, chunks=chunks, model_name=model_name)
     if local:
-        chunk.exportModel(path=model_name, crs=chunk.crs, shift=vec((offsetX, offsetY, offsetZ)))
+        chunk.exportModel(path=model_name, crs=chunk.crs, shift=vec((offset_x, offset_y, offset_z)))
     else:
-        chunk.exportModel(path=model_name, crs=crs_export, shift=vec((offsetX, offsetY, offsetZ)))
+        chunk.exportModel(path=model_name, crs=crs_export, shift=vec((offset_x, offset_y, offset_z)))
 
 
 

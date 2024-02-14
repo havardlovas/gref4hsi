@@ -19,25 +19,25 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
 
 
     # Todo: encode show mesh camera to use h5-embedded data? Or is this a loss of performance?
-    mesh_path = config['Absolute Paths']['modelPath']
+    mesh_path = config['Absolute Paths']['model_path']
     try:
-        texture_path = config['Absolute Paths']['texPath']
+        texture_path = config['Absolute Paths']['tex_path']
     except KeyError:
         texture_path = None
         
-    pose_path = config['Absolute Paths']['posePath']
+    pose_path = config['Absolute Paths']['pose_path']
 
     # Offsets used for plotting
-    offsetX = float(config['General']['offsetX'])
-    offsetY = float(config['General']['offsetY'])
-    offsetZ = float(config['General']['offsetZ'])
+    offset_x = float(config['General']['offset_x'])
+    offset_y = float(config['General']['offset_y'])
+    offset_z = float(config['General']['offset_z'])
 
 
     pose = pd.read_csv(
         pose_path, sep=',',
         header=0)
 
-    points_cam_ecef = np.concatenate( (pose[" X"].values.reshape((-1,1)) - offsetX, pose[" Y"].values.reshape((-1,1)) - offsetY, pose[" Z"].values.reshape((-1,1)) - offsetZ), axis = 1)
+    points_cam_ecef = np.concatenate( (pose[" X"].values.reshape((-1,1)) - offset_x, pose[" Y"].values.reshape((-1,1)) - offset_y, pose[" Z"].values.reshape((-1,1)) - offset_z), axis = 1)
     use_local = False
     if use_local == True:
         eul_cam = np.concatenate((pose[" Yaw"].values.reshape((-1, 1)),
@@ -53,9 +53,9 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
     # Read the mesh
     mesh = pv.read(mesh_path)
     if ref_frame == 'NED':
-        x = offsetX
-        y = offsetY
-        z = offsetZ
+        x = offset_x
+        y = offset_y
+        z = offset_z
         lat0, lon0, hei0 = pm.ecef2geodetic(x, y, z, deg=True)
         R_ecef_to_ned = Rotation.from_matrix(rotation_matrix_ecef2ned(lon=lon0, lat=lat0))
 
@@ -74,9 +74,9 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
         points_mesh = np.concatenate((x_mesh.reshape((-1,1)), y_mesh.reshape((-1,1)), z_mesh.reshape((-1,1))), axis = 1)
         mesh.points = points_mesh
     elif ref_frame == 'ENU':
-        x = offsetX
-        y = offsetY
-        z = offsetZ
+        x = offset_x
+        y = offset_y
+        z = offset_z
         lat0, lon0, hei0 = pm.ecef2geodetic(x, y, z, deg=True)
         R_ecef_to_enu = Rotation.from_matrix(rotation_matrix_ecef2enu(lon=lon0, lat=lat0))
 
@@ -130,8 +130,8 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
     p.app.exec_()
 
 def show_camera_geometry(CameraGeometry, config):
-    mesh_path = config['General']['modelPath']
-    texture_path = config['General']['texPath']
+    mesh_path = config['General']['model_path']
+    texture_path = config['General']['tex_path']
 
 
 
@@ -168,9 +168,9 @@ def show_camera_geometry(CameraGeometry, config):
     p.app.exec_()
 
 def show_projected_hsi_points(HSICameraGeometry, config, transect_string):
-    mesh_path = config['Absolute Paths']['modelPath']
+    mesh_path = config['Absolute Paths']['model_path']
     
-    point_cloud_path = config['Absolute Paths']['rgbPointCloudPath'] + transect_string + '.ply'
+    point_cloud_path = config['Absolute Paths']['rgb_point_cloud_folder'] + transect_string + '.ply'
 
     rotMats = HSICameraGeometry.rotation_hsi.as_matrix()
     points_cam = HSICameraGeometry.position_ecef
@@ -178,7 +178,7 @@ def show_projected_hsi_points(HSICameraGeometry, config, transect_string):
     mesh = pv.read(mesh_path)
 
     try:
-        texture_path = config['Absolute Paths']['texPath']
+        texture_path = config['Absolute Paths']['tex_path']
         tex = pv.read_texture(texture_path)
     except:
         pass

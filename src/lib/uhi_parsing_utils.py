@@ -25,7 +25,7 @@ from rasterio.transform import from_origin, Affine
 # We need to convert the altimeter data to a point cloud
 from scipy.spatial.transform import Rotation as RotLib
 
-from scripts.modulate_config import prepend_data_dir_to_relative_paths
+from scripts.config_utils import prepend_data_dir_to_relative_paths
 from lib.specim_parsing_utils import Specim
 
 
@@ -197,12 +197,12 @@ def print_dict_tree_keys(dictionary, indent=0):
 """Writer (in append mode) for the h5 file format in UHI context. The user provides h5 hierarchy paths as values and keys are the names given to the attributes """
 def write_data_to_h5_file(h5_filename, h5_dict_write, h5_dict_data):
     with h5py.File(h5_filename, 'a', libver='latest') as f:
-        for key, h5_path in h5_dict_write.items():
+        for key, h5_folder in h5_dict_write.items():
             # Check if the dataset exists
-            if h5_path in f:
-                del f[h5_path]
+            if h5_folder in f:
+                del f[h5_folder]
 
-            dset = f.create_dataset(name=h5_path, 
+            dset = f.create_dataset(name=h5_folder, 
                                             data = h5_dict_data[key])
             
 def immersion_filename_to_unix_time(immersion_file_name):
@@ -265,7 +265,7 @@ def set_camera_model(config, config_file_path, config_uhi, model_type, binning_s
         param_dict['tz'] = t_hsi_body[2]
         
         file_name_xml = 'HSI_' + str(binning_spatial) + 'b.xml'
-        CAMERA_CALIB_XML_DIR = config['Absolute Paths']['calibfolder']
+        CAMERA_CALIB_XML_DIR = config['Absolute Paths']['calib_folder']
         xml_cal_write_path = CAMERA_CALIB_XML_DIR + file_name_xml
 
         CalibHSI(file_name_cal_xml= xml_cal_write_path, 
@@ -275,7 +275,7 @@ def set_camera_model(config, config_file_path, config_uhi, model_type, binning_s
 
 
         # Set value in config file and update:
-        config.set('Relative Paths', 'hsicalibfile', value = 'Input/Calib/' + file_name_xml)
+        config.set('Relative Paths', 'hsi_calib_path', value = 'Input/Calib/' + file_name_xml)
 
         with open(config_file_path, 'w') as configfile:
                 config.write(configfile)
@@ -362,7 +362,7 @@ def write_nav_data_to_h5(nav, time_offset, config, H5_FILE_PATH):
     # Append the time offset to nav data so that all h5 data is synced to UHI clock
     hsi_synced_nav_timestamp_rov = nav_timestamp_rov + time_offset
 
-    nav_dict_h5_paths = {'eul_ZYX' : config['HDF.raw_nav']['eul_ZYX'],
+    nav_dict_h5_folders = {'eul_ZYX' : config['HDF.raw_nav']['eul_ZYX'],
             'position_ecef' : config['HDF.raw_nav']['position'],
             'nav_timestamp' : config['HDF.raw_nav']['timestamp']}
 
@@ -373,10 +373,10 @@ def write_nav_data_to_h5(nav, time_offset, config, H5_FILE_PATH):
             'nav_timestamp' : hsi_synced_nav_timestamp_rov[~invalid_rows]}
 
     # Update config object with this info
-    for key, value in nav_dict_h5_paths.items():
+    for key, value in nav_dict_h5_folders.items():
         config.set('HDF.raw_nav', key, value = value)
     # +
-    write_data_to_h5_file(H5_FILE_PATH, h5_dict_write=nav_dict_h5_paths, h5_dict_data=nav_dict_h5_data)
+    write_data_to_h5_file(H5_FILE_PATH, h5_dict_write=nav_dict_h5_folders, h5_dict_data=nav_dict_h5_data)
 
 def altimeter_data_to_point_cloud(nav, config_uhi, lat0, lon0, h0, true_time_hsi):
     """Converts the pose + altimeter data to a point cloud using the geometry of the range sensor
@@ -478,10 +478,10 @@ def altimeter_data_to_point_cloud(nav, config_uhi, lat0, lon0, h0, true_time_hsi
 def write_point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, method='nearest', smooth_DEM=True):
     
     # The name of the digital elevation model
-    output_dem_path = config['Absolute Paths']['dempath']
+    output_dem_path = config['Absolute Paths']['dem_path']
 
     # The padding (ensuring that all rays hit the model)
-    pad_xy = float(config['General']['maxraylength'])
+    pad_xy = float(config['General']['max_ray_length'])
 
     x_coords = points[:,0]
     y_coords = points[:,1]
@@ -592,7 +592,7 @@ def write_point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, met
 
 
 def uhi_beast(config, config_uhi):
-    MISSION_PATH = config['General']['missiondir'] # Where h5 data is 
+    MISSION_PATH = config['General']['mission_dir'] # Where h5 data is 
     
 
     # For writing
@@ -603,7 +603,7 @@ def uhi_beast(config, config_uhi):
 
     INPUT_DIR = MISSION_PATH + 'Input/'
 
-    H5_DIR = config['Absolute Paths']['h5dir']
+    h5_folder = config['Absolute Paths']['h5_folder']
     H5_PATTERN = '*.h5'
 
     MAT_DIR = INPUT_DIR
@@ -619,7 +619,7 @@ def uhi_beast(config, config_uhi):
     
 
     # Search the h5 folder (these are the files to iterate)
-    search_path_h5 = os.path.normpath(os.path.join(H5_DIR, H5_PATTERN))
+    search_path_h5 = os.path.normpath(os.path.join(h5_folder, H5_PATTERN))
     H5_FILE_PATHS = glob.glob(search_path_h5)
 
     number_of_h5_files = len(H5_FILE_PATHS)
@@ -681,7 +681,7 @@ def uhi_beast(config, config_uhi):
 
             # Prepare for SfM/photogrammetry processing
             try:
-                agisoft_object.export_rgb_from_h5(h5_path=H5_FILE_PATH, 
+                agisoft_object.export_rgb_from_h5(h5_folder=H5_FILE_PATH, 
                                             rgb_image_cube = hyp.rgb_frames, 
                                             nav_rgb = nav_rgb,
                                             rgb_write_dir=config['Absolute Paths']['rgbimagedir'],

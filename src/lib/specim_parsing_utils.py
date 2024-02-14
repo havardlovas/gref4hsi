@@ -22,7 +22,7 @@ from scripts.geometry import CalibHSI
 from scipy.spatial.transform import Rotation as RotLib
 
 from scripts.geometry import CalibHSI
-from scripts.modulate_config import prepend_data_dir_to_relative_paths
+from scripts.config_utils import prepend_data_dir_to_relative_paths
 
 ACTIVE_SENSOR_SPATIAL_PIXELS = 1024 # Constant for AFX10
 ACTIVE_SENSOR_SPECTRAL_PIXELS = 448 # Constant for AFX10
@@ -123,7 +123,7 @@ class Specim():
 
         param_dict = Specim.fov_2_param(fov = fov_arr)
         
-        file_name_calib = self.config['Absolute Paths']['hsicalibfile']
+        file_name_calib = self.config['Absolute Paths']['hsi_calib_path']
 
         CalibHSI(file_name_cal_xml=file_name_calib, 
                  config = self.config, 
@@ -416,7 +416,7 @@ def main(config, config_specim):
     param_dict['ty'] = t_hsi_body[1]
     param_dict['tz'] = t_hsi_body[2]
 
-    camera_calib_xml_dir = config['Absolute Paths']['calibfolder']
+    camera_calib_xml_dir = config['Absolute Paths']['calib_folder']
 
     file_name_xml = 'HSI_' + str(metadata_obj.binning_spatial) + 'b.xml'
     xml_cal_write_path = camera_calib_xml_dir + file_name_xml
@@ -428,7 +428,7 @@ def main(config, config_specim):
 
 
     # Set value in config file:
-    config.set('Relative Paths', 'hsicalibfile', value = xml_cal_write_path)
+    config.set('Relative Paths', 'hsi_calib_path', value = xml_cal_write_path)
 
     config_file_path = out_dir + config_specim.config_file_name
 
@@ -491,6 +491,7 @@ def main(config, config_specim):
     
     # Allow software to function if start_stop_lines not specified
     if not os.path.exists(START_STOP_DIR + '/'):
+        os.mkdir(START_STOP_DIR + '/')
         # Chunk according to chunk size
         start_lines = np.arange(start=0,
                                 stop=metadata_obj.autodarkstartline, 
@@ -620,7 +621,7 @@ def main(config, config_specim):
 
     # +
     # Define h5 file name
-    H5_DIR = config['Absolute Paths']['h5dir']
+    h5_folder = config['Absolute Paths']['h5_folder']
 
     # It is nicer to deal with 4 byte numbers in general
     n_transects = df_start_stop.shape[0]
@@ -647,7 +648,7 @@ def main(config, config_specim):
             specim_object.hsi_timestamps = hsi_timestamps_total[chunk_start_idx:chunk_stop_idx]
 
             # Possible to name files with <PREFIX>_<time_start>_<Transect#>_<Chunk#>.h5
-            h5_filename = H5_DIR + mission_name + '_transectnr_' + str(int(transect_number)) + '_chunknr_' + str(int(chunk_number)) + '.h5'
+            h5_filename = h5_folder + mission_name + '_transectnr_' + str(int(transect_number)) + '_chunknr_' + str(int(chunk_number)) + '.h5'
 
             specim_object_2_h5_file(h5_filename=h5_filename, h5_tree_dict=h5_dict_write, specim_object=specim_object)
 

@@ -555,6 +555,8 @@ class GeoSpatialAbstractionHSI():
         mx = ortho_datacube.shape[2]
         k = ortho_datacube.shape[0]
 
+        writer_type = "envi"
+
         # Make some simple modifications
         data_file_path = datacube_path + '.' + interleave
         header_file_path = datacube_path + '.hdr'
@@ -563,25 +565,92 @@ class GeoSpatialAbstractionHSI():
         def write_band(args):
             band_data, index, dst = args
             dst.write(band_data, index + 1)
+
+        
+        def write_band_gdal(args):
+            band_data, index, dst = args
+            dst.GetRasterBand(index + 1).WriteArray(band_data)
         
         if os.path.exists(data_file_path):
             os.remove(data_file_path)
             os.remove(header_file_path)
-
         
-        # Assuming ortho_datacube is a 3D NumPy array with shape (k, nx, mx)
-        with rasterio.open(data_file_path, 'w', driver='ENVI', height=nx, width=mx, count=k, crs=crs, dtype=ortho_datacube.dtype, transform=transform, nodata=nodata) as dst:
+        import time
+        start_time = time.time()
+
+        if writer_type == "rasterio":
+            # Assuming ortho_datacube is a 3D NumPy array with shape (k, nx, mx)
+            with rasterio.open(data_file_path, 'w', driver='ENVI', height=nx, width=mx, count=k, crs=crs, dtype=ortho_datacube.dtype, transform=transform, nodata=nodata) as dst:
+                # Create a ThreadPoolExecutor with as many threads as bands
+                with ThreadPoolExecutor(max_workers=k) as executor:
+                    # Use executor.map to parallelize the band writing process
+                    executor.map(write_band, [(band_data, i, dst) for i, band_data in enumerate(ortho_datacube)])
+                
+            
+            header.pop('band names')
+        elif writer_type == "gdal":
+            # Create the output raster dataset
+            driver = gdal.GetDriverByName('ENVI')
+            dst_ds = driver.Create(data_file_path, mx, nx, k, gdal.GDT_Float32)
+            dst_ds.SetProjection(crs)
+
+            gdal_transform = (transform[2], transform[0], transform[1], transform[5], transform[3], transform[4])
+            dst_ds.SetGeoTransform(gdal_transform)
+            
+            # Set nodata value for all bands
+            for i in range(k):
+                dst_ds.GetRasterBand(i + 1).SetNoDataValue(nodata)
+            
             # Create a ThreadPoolExecutor with as many threads as bands
             with ThreadPoolExecutor(max_workers=k) as executor:
                 # Use executor.map to parallelize the band writing process
-                executor.map(write_band, [(band_data, i, dst) for i, band_data in enumerate(ortho_datacube)])
+                executor.map(write_band_gdal, [(band_data, i, dst_ds) for i, band_data in enumerate(ortho_datacube)])
+
+            dst_ds.FlushCache()
+            dst_ds = None  # Close the dataset
+
+            header.pop('band names')
+        
+        elif writer_type == "envi":
+            # Create metadata for the output raster dataset
+            crs_gdal = osr.SpatialReference()
             
+            crs_gdal.ImportFromEPSG(int(crs.split(':')[1]))
+
+            crs_wkt = crs_gdal.ExportToWkt()
+
+            data_type = [i for i in dtype_dict if dtype_dict[i] == ortho_datacube.dtype][0]
+            
+            metadata = {
+                'lines': nx,
+                'samples': mx,
+                'bands': k,
+                "data type" : data_type,
+                'wavelength': [i + 1 for i in range(k)],
+                'coordinate system string': crs_wkt,
+                'map info': "{ " + f'UTM, 1.0, 1.0, {transform[0]}, {transform[3]}, {transform[1]}, {transform[5]}, {transform[2]}, {transform[4]}, {crs_gdal.GetAttrValue("UNIT")}' + " }" ,
+                'data ignore value': nodata
+            }
+
+            # Reshape the ortho_datacube to (nx, mx, k)
+            ortho_datacube_reshaped = ortho_datacube.transpose(1, 2, 0)
+
+            # Create the output raster dataset
+            # Create ENVI image without using a context manager
+            dst = envi.create_image(datacube_path + '.hdr', interleave='bsq', metadata=metadata, force=True)
+
+            mm = dst.open_memmap(writable=True)
+
+            mm[:] = ortho_datacube_reshaped
+
+
+
+        dt = time.time() - start_time
+        print(f"The time difference for {writer_type} was {dt} seconds")
         
         header = sp.io.envi.read_envi_header(datacube_path + '.hdr') # Open for extraction
-
         
-        header.pop('band names')
-
+        # Write all meta_data to header
         for meta_key, value in metadata.items():
             header[meta_key] = value
 
@@ -643,10 +712,10 @@ class GeoSpatialAbstractionHSI():
         sp.io.envi.write_envi_header(fileName=header_file_path, header_dict=header)
 
     def compare_hsi_composite_with_rgb_mosaic(self):
-        self.rgb_ortho_path = self.config['Absolute Paths']['rgbOrthoPath']
-        self.hsi_composite = self.config['Absolute Paths']['rgbCompositePaths'] + self.name + '.tif'
+        self.rgb_ortho_path = self.config['Absolute Paths']['rgb_ortho_path']
+        self.hsi_composite = self.config['Absolute Paths']['rgb_composite_folder'] + self.name + '.tif'
         self.rgb_ortho_reshaped = self.config['Absolute Paths']['rgbOrthoReshaped'] + self.name + '.tif'
-        self.dem_path = self.config['Absolute Paths']['demPath']
+        self.dem_path = self.config['Absolute Paths']['dem_path']
         self.dem_reshaped = self.config['Absolute Paths']['demReshaped'] + self.name + '_dem.tif'
 
 

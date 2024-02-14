@@ -60,14 +60,6 @@ class CalibHSI:
             self.ty = float(self.calibrationHSI['ty'])
             self.tz = float(self.calibrationHSI['tz'])
 
-
-            # If encoding this into
-            if eval(config['General']['isFlippedRGB']):
-                self.tx *= -1
-                self.ty *= -1
-            if eval(config['General']['isFlippedHSI']):
-                self.rz += np.pi
-
             # Distortions
             self.k1 = float(self.calibrationHSI['k1'])
             self.k2 = float(self.calibrationHSI['k2'])
@@ -554,10 +546,10 @@ class CameraGeometry():
                 TypeError
         
     def writeRGBPointCloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
-        wl_red = float(config['General']['RedWavelength'])
-        wl_green = float(config['General']['GreenWavelength'])
-        wl_blue = float(config['General']['BlueWavelength'])
-        dir_point_cloud = config['Absolute Paths']['rgbPointCloudPath']
+        wl_red = float(config['General']['red_wave_length'])
+        wl_green = float(config['General']['green_wave_length'])
+        wl_blue = float(config['General']['blue_wave_length'])
+        dir_point_cloud = config['Absolute Paths']['rgb_point_cloud_folder']
 
         wavelength_nm = np.array([wl_red, wl_green, wl_blue])
 
@@ -855,12 +847,12 @@ def cartesian_to_polar(xyz):
 
 class MeshGeometry():
     def __init__(self, config):
-        mesh_path = config['General']['modelPath']
-        texture_path = config['General']['texPath']
-        offsetX = float(config['General']['offsetX'])
-        offsetY = float(config['General']['offsetY'])
-        offsetZ = float(config['General']['offsetZ'])
-        self.pos0 = np.array([offsetX, offsetY, offsetZ]).reshape([-1, 1])
+        mesh_path = config['General']['model_path']
+        texture_path = config['General']['tex_path']
+        offset_x = float(config['General']['offset_x'])
+        offset_y = float(config['General']['offset_y'])
+        offset_z = float(config['General']['offset_z'])
+        self.pos0 = np.array([offset_x, offset_y, offset_z]).reshape([-1, 1])
 
 
 
@@ -1162,9 +1154,9 @@ def dem_2_mesh(path_dem, model_path, config):
     mesh.points[:, 1] = yECEF.reshape(-1)
     mesh.points[:, 2] = zECEF.reshape(-1)
 
-    offX = float(config['General']['offsetX'])
-    offY = float(config['General']['offsetY'])
-    offZ = float(config['General']['offsetZ'])
+    offX = float(config['General']['offset_x'])
+    offY = float(config['General']['offset_y'])
+    offZ = float(config['General']['offset_z'])
 
     pos0 = np.array([offX, offY, offZ]).reshape((1, -1))
 
@@ -1182,7 +1174,7 @@ def crop_geoid_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_2
     
     ds = gdal.Open(geoid_path)
 
-    df_pose = pd.read_csv(config['Absolute Paths']['posepath'])
+    df_pose = pd.read_csv(config['Absolute Paths']['pose_path'])
 
     # Find CRS of DEM
     spatial_reference = osr.SpatialReference(ds.GetProjection())
@@ -1216,7 +1208,7 @@ def crop_geoid_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_2
     y = np.array(y)
 
     # Determine padding
-    padding = float(config['General']['maxraylength'])
+    padding = float(config['General']['max_ray_length'])
 
     if spatial_reference.IsProjected():
         # Add padding to 

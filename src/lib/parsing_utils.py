@@ -276,7 +276,7 @@ def ardupilot_extract_pose(config, iniPath):
 
     pose_path = config['General']['ardupath'] + 'pose.csv'
 
-    config.set('General', 'posepath', pose_path)
+    config.set('General', 'pose_path', pose_path)
 
     epsg_proj = 4326 # Standard
     epsg_geocsc = config['General']['modelepsg']
@@ -383,8 +383,8 @@ def agisoft_export_pose(config, config_file):
     chunkName = [chunk_str]
 
     # Output. CSV contains labeled roll, pitch, yaw
-    csv_name = config['Absolute Paths']['posePath']
-    model_name = config['Absolute Paths']['modelPath']
+    csv_name = config['Absolute Paths']['pose_path']
+    model_name = config['Absolute Paths']['model_path']
 
     chunks = doc.chunks
 
@@ -484,9 +484,9 @@ def agisoft_export_pose(config, config_file):
 
     mean_pos /= count
 
-    config.set('General', 'offsetX', str(mean_pos[0]))
-    config.set('General', 'offsetY', str(mean_pos[1]))
-    config.set('General', 'offsetZ', str(mean_pos[2]))
+    config.set('General', 'offset_x', str(mean_pos[0]))
+    config.set('General', 'offset_y', str(mean_pos[1]))
+    config.set('General', 'offset_z', str(mean_pos[2]))
 
     # Exporting models with offsets might be convenient
     with open(config_file, 'w') as configfile:
@@ -528,25 +528,25 @@ def agisoft_export_model(config_file):
     chunkName = [chunk_str]
 
     # Output.
-    model_name = config['Absolute Paths']['modelPath']
+    model_name = config['Absolute Paths']['model_path']
 
     chunks = doc.chunks
     # Extract camera model from project
 
     # Exporting models with offsets might be convenient
-    offsetX = float(config['General']['offsetX'])
-    offsetY = float(config['General']['offsetY'])
-    offsetZ = float(config['General']['offsetZ'])
+    offset_x = float(config['General']['offset_x'])
+    offset_y = float(config['General']['offset_y'])
+    offset_z = float(config['General']['offset_z'])
 
     # Extract the 3D model and texture file
     if path.exists(model_name):
         print('Model File Already exists. Overwriting')
     chunk = find_desired_chunk(chunkName=chunkName, chunks=chunks, model_name=model_name)
     if local:
-        chunk.exportModel(path=model_name, crs=chunk.crs, shift=vec((offsetX, offsetY, offsetZ)), save_texture = True, texture_format = MS.ImageFormat.ImageFormatPNG)
+        chunk.exportModel(path=model_name, crs=chunk.crs, shift=vec((offset_x, offset_y, offset_z)), save_texture = True, texture_format = MS.ImageFormat.ImageFormatPNG)
         
     else:
-        chunk.exportModel(path=model_name, crs=crs_export, shift=vec((offsetX, offsetY, offsetZ)), save_texture = True, texture_format = MS.ImageFormat.ImageFormatPNG)
+        chunk.exportModel(path=model_name, crs=crs_export, shift=vec((offset_x, offset_y, offset_z)), save_texture = True, texture_format = MS.ImageFormat.ImageFormatPNG)
 
 def append_agisoft_data_h5(config):
     """
@@ -560,23 +560,23 @@ def append_agisoft_data_h5(config):
                 None: The function returns nothing.
     """
     # Retrieve the pose file (per RGB image, with RGB image name tags)
-    filename_pose = config['Absolute Paths']['posePath']
+    filename_pose = config['Absolute Paths']['pose_path']
     pose = pd.read_csv(filename_pose, sep=',', header=0)
 
     # Offsets should correspond with polygon model offset
-    off_x = float(config['General']['offsetX'])
-    off_y = float(config['General']['offsetY'])
-    off_z = float(config['General']['offsetZ'])
+    off_x = float(config['General']['offset_x'])
+    off_y = float(config['General']['offset_y'])
+    off_z = float(config['General']['offset_z'])
     pos0 = np.array([off_x, off_y, off_z]).reshape([-1, 1])
 
 
     # Traverse through h5 dir to append the data to file
-    h5dir = config['Absolute Paths']['h5dir']
-    for filename in sorted(os.listdir(h5dir)):
+    h5_folder = config['Absolute Paths']['h5_folder']
+    for filename in sorted(os.listdir(h5_folder)):
         # Find the interesting prefixes
         if filename.endswith('h5') or filename.endswith('hdf'):
             # Identify the total path
-            path_hdf = h5dir + filename
+            path_hdf = h5_folder + filename
 
             # Read out the data of a file
             hyp = Hyperspectral(path_hdf, config)
@@ -674,14 +674,14 @@ def reformat_h5_embedded_data_h5(config, config_file):
 
 
     # Traverse through h5 dir to append the data to file
-    h5dir = config['Absolute Paths']['h5dir']
+    h5_folder = config['Absolute Paths']['h5_folder']
     is_first = True
-    for filename in sorted(os.listdir(h5dir)):
+    for filename in sorted(os.listdir(h5_folder)):
         
         # Find the interesting prefixes
         if filename.endswith('h5') or filename.endswith('hdf'):
             # Identify the total path
-            path_hdf = h5dir + filename
+            path_hdf = h5_folder + filename
 
             # Read out the data of a file
             hyp = Hyperspectral(path_hdf, config, load_datacube = False)
@@ -695,7 +695,10 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 if quaternion_ref.shape[0] == 4:
                     quaternion_ref = np.transpose(quaternion_ref)
                 
-                quaternion_convention  = config['General']['quaternion_convention']
+            
+                quaternion_convention  = config['HDF.raw_nav']['quaternion_convention']
+
+                # If scalar-first convention
                 if quaternion_convention == 'wxyz':
                     quat_temp = quaternion_ref
                     quaternion_ref = np.roll(quaternion_ref, shift=-1, axis=1)
@@ -745,7 +748,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
                                                              timestamps_to=timestamp_hsi,
                                                              use_absolute_position = True)
 
-            # If the original orientations are with respect to NED
+            # If the original orientations are with respect to (North-East-Down) NED
             if not is_global_rot:
                 rot_ref = 'NED'
             else:
@@ -757,8 +760,10 @@ def reformat_h5_embedded_data_h5(config, config_file):
             # The positions supplied for exporting the model
             pos_epsg_export = config['Coordinate Reference Systems']['geocsc_epsg_export']
 
+            # The interpolated rotation-object
             rot_interpolated = RotLib.from_quat(quaternion_interpolated)
 
+            # For simple geo-pose for changing between formats.
             geo_pose_ref = GeoPose(timestamps=timestamp_hsi,
                                    rot_obj= rot_interpolated, rot_ref=rot_ref,
                                    pos = position_interpolated, pos_epsg=pos_epsg_orig)
@@ -767,31 +772,25 @@ def reformat_h5_embedded_data_h5(config, config_file):
             geo_pose_ref.compute_geocentric_position(epsg_geocsc=pos_epsg_export)
 
 
-            # calculate the geodetic position using the WGS-84 (for conversion of orientations)
+            # Calculate the geodetic position using the WGS-84 (for conversion of orientations)
             epsg_wgs84 = 4326
             geo_pose_ref.compute_geodetic_position(epsg_geod=epsg_wgs84)
 
-            # calculate ECEF orientation
+            # Calculate ECEF orientation
             geo_pose_ref.compute_geocentric_orientation()
 
-            # For readability
+            # For readability, extract the position and orientation wrt ECEF
             position_ref_ecef = geo_pose_ref.pos_geocsc
-
             quaternion_ref_ecef = geo_pose_ref.rot_obj_ecef.as_quat()
-
-
-            
-
-
-
-            
 
             if is_first:
                 # Calculate some appropriate offsets in ECEF
                 pos0 = np.mean(position_ref_ecef, axis=0)
-                
 
+                # For stacking in CSV
                 rot_vec_ecef = geo_pose_ref.rot_obj_ecef.as_euler('ZYX', degrees=True)
+
+                # 
                 total_pose = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
                 # Ensure that flag is not raised again. Offsets should only be set once.
                 is_first = False
@@ -827,13 +826,13 @@ def reformat_h5_embedded_data_h5(config, config_file):
     # Stores the entire pose path
     df = pd.DataFrame(total_pose, columns=headers)
 
-    pose_path = config['Absolute Paths']['posepath']
+    pose_path = config['Absolute Paths']['pose_path']
     # Save the DataFrame as a CSV file
     df.to_csv(pose_path, index=False)
 
-    config.set('General', 'offsetX', str(pos0[0]))
-    config.set('General', 'offsetY', str(pos0[1]))
-    config.set('General', 'offsetZ', str(pos0[2]))
+    config.set('General', 'offset_x', str(pos0[0]))
+    config.set('General', 'offset_y', str(pos0[1]))
+    config.set('General', 'offset_z', str(pos0[2]))
     # Exporting models with offsets might be convenient
     with open(config_file, 'w') as configfile:
         config.write(configfile)
@@ -859,25 +858,25 @@ def export_pose(config_file):
 
     # 1) Agisoft, h5_embedded and independent_file
     try:
-        poseExportType = config['General']['poseExportType']
+        pose_export_type = config['General']['pose_export_type']
     except:
         # Default to h5_embedded
-        poseExportType = 'h5_embedded'
+        pose_export_type = 'h5_embedded'
 
-    if poseExportType == 'agisoft':
+    if pose_export_type == 'agisoft':
         # Just take in use the already existing parser
         config = agisoft_export_pose(config = config, config_file=config_file)
         # This gives a csv file with RGB poses, but they should be appended to each H5 file.
         append_agisoft_data_h5(config=config)
 
-    elif poseExportType == 'h5_embedded':
+    elif pose_export_type == 'h5_embedded':
         config = reformat_h5_embedded_data_h5(config=config,
                                               config_file=config_file)
-    elif poseExportType == 'independent_file':
+    elif pose_export_type == 'independent_file':
         print('There is no support for this export functionality! Fix immediately!')
         config = -1
     else:
-        print('File type: ' + poseExportType + 'type is not defined!')
+        print('File type: ' + pose_export_type + 'type is not defined!')
         config = -1
 
     return config
@@ -891,24 +890,24 @@ def export_model(config_file):
     # This file handles model exports of various types
     # As of now there are three types:
     # 1) Agisoft, *.ply file/DEM and None
-    modelExportType = config['General']['modelExportType']
+    model_export_type = config['General']['model_export_type']
 
-    if modelExportType == 'agisoft':
+    if model_export_type == 'agisoft':
         agisoft_export_model(config_file=config_file)
-    elif modelExportType == 'ply_file':
+    elif model_export_type == 'ply_file':
         # Nothing needs to be done then?
         pass
-    elif modelExportType == 'dem_file':
-        file_path_dem = config['Absolute Paths']['dempath']
-        file_path_3d_model = config['Absolute Paths']['modelpath']
+    elif model_export_type == 'dem_file':
+        file_path_dem = config['Absolute Paths']['dem_path']
+        file_path_3d_model = config['Absolute Paths']['model_path']
         # Make new only once.
 
         dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
 
-    elif modelExportType == 'geoid':
-        file_path_dem = config['Absolute Paths']['dempath']
+    elif model_export_type == 'geoid':
+        file_path_dem = config['Absolute Paths']['dem_path']
         file_path_geoid = config['Absolute Paths']['geoid_path']
-        file_path_3d_model = config['Absolute Paths']['modelpath']
+        file_path_3d_model = config['Absolute Paths']['model_path']
 
         # Crop the DEM to appropriate size based on poses and maximum ray length
         crop_geoid_to_pose(path_dem=file_path_dem, config=config, geoid_path=file_path_geoid)
