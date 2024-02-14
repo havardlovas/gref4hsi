@@ -555,7 +555,9 @@ class GeoSpatialAbstractionHSI():
         mx = ortho_datacube.shape[2]
         k = ortho_datacube.shape[0]
 
-        writer_type = "envi"
+        crs_rasterio = CRS.from_string(crs)
+
+        writer_type = "gdal"
 
         # Make some simple modifications
         data_file_path = datacube_path + '.' + interleave
@@ -580,7 +582,7 @@ class GeoSpatialAbstractionHSI():
 
         if writer_type == "rasterio":
             # Assuming ortho_datacube is a 3D NumPy array with shape (k, nx, mx)
-            with rasterio.open(data_file_path, 'w', driver='ENVI', height=nx, width=mx, count=k, crs=crs, dtype=ortho_datacube.dtype, transform=transform, nodata=nodata) as dst:
+            with rasterio.open(data_file_path, 'w', driver='ENVI', height=nx, width=mx, count=k, crs=crs_rasterio, dtype=ortho_datacube.dtype, transform=transform, nodata=nodata) as dst:
                 # Create a ThreadPoolExecutor with as many threads as bands
                 with ThreadPoolExecutor(max_workers=k) as executor:
                     # Use executor.map to parallelize the band writing process
@@ -609,7 +611,7 @@ class GeoSpatialAbstractionHSI():
             dst_ds.FlushCache()
             dst_ds = None  # Close the dataset
 
-            header.pop('band names')
+            
         
         elif writer_type == "envi":
             # Create metadata for the output raster dataset
@@ -620,24 +622,33 @@ class GeoSpatialAbstractionHSI():
             crs_wkt = crs_gdal.ExportToWkt()
 
             data_type = [i for i in dtype_dict if dtype_dict[i] == ortho_datacube.dtype][0]
+
+            # Create dummy file to exploit builtin driver
+            with rasterio.open(data_file_path, 'w', driver='ENVI', height=1, width=1, count=1, crs=crs, dtype=ortho_datacube.dtype, transform=transform, nodata=nodata) as dst:
+                pass
             
-            metadata = {
+            os.remove(data_file_path)
+
+            header = sp.io.envi.read_envi_header(datacube_path + '.hdr') # Open for extraction
+
+            
+            
+            metadata_dim = {
                 'lines': nx,
                 'samples': mx,
-                'bands': k,
-                "data type" : data_type,
-                'wavelength': [i + 1 for i in range(k)],
-                'coordinate system string': crs_wkt,
-                'map info': "{ " + f'UTM, 1.0, 1.0, {transform[0]}, {transform[3]}, {transform[1]}, {transform[5]}, {transform[2]}, {transform[4]}, {crs_gdal.GetAttrValue("UNIT")}' + " }" ,
-                'data ignore value': nodata
+                'bands': k
             }
+
+            # Write all meta data to header
+            for meta_key, value in metadata_dim.items():
+                header[meta_key] = value
 
             # Reshape the ortho_datacube to (nx, mx, k)
             ortho_datacube_reshaped = ortho_datacube.transpose(1, 2, 0)
 
             # Create the output raster dataset
             # Create ENVI image without using a context manager
-            dst = envi.create_image(datacube_path + '.hdr', interleave='bsq', metadata=metadata, force=True)
+            dst = envi.create_image(datacube_path + '.hdr', interleave='bsq', metadata=header, force=True)
 
             mm = dst.open_memmap(writable=True)
 
@@ -649,6 +660,11 @@ class GeoSpatialAbstractionHSI():
         print(f"The time difference for {writer_type} was {dt} seconds")
         
         header = sp.io.envi.read_envi_header(datacube_path + '.hdr') # Open for extraction
+        header.pop('band names')
+
+        # Nobody in the history of the world would have come up with a more annoying bug.
+        # Apparently, the CRS s
+        header['coordinate system string'] = '{' + ",".join(header['coordinate system string']) + '}'
         
         # Write all meta_data to header
         for meta_key, value in metadata.items():
