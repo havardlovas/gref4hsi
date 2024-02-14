@@ -246,69 +246,10 @@ class GeoSpatialAbstractionHSI():
             
             memmap_array = np.memmap(filename, dtype=dtype, mode='w+', shape=shape)
 
-            # In grid form, identify whether partitioning is needed
-            area_idx_grid = width*height
+            # Manipulate memory map
+            GeoSpatialAbstractionHSI.write_datacube_memmap(memmap_array, indexes, self.index_grid_masked, mask, nodata, height, width, datacube, self.chunk_area)
 
-            if area_idx_grid > self.chunk_area:
-                
-                # Subdivide along horizontal axis:
-                delta_width = int(self.chunk_area/height)
-                # Number of slices
-                num_delta_widths = int(width/delta_width) + 1
 
-                for i in range(num_delta_widths):
-                    
-                    if i != num_delta_widths-1:
-                        sub_indices = self.index_grid_masked[:, i*delta_width:(i+1)*delta_width].reshape((-1,1))
-                        dw = delta_width
-                        
-                    else:
-                        sub_indices = self.index_grid_masked[:, i*delta_width:width].reshape((-1,1))
-                        dw = np.arange(i*delta_width, width).size
-                    
-                    # Only extraxt valid data:
-                    sub_ortho_cube = np.ones((sub_indices.shape[0]*sub_indices.shape[1], n_bands))*nodata
-                    
-                    # From the grid, the only valid pixels are
-                    valid_pixels = (sub_indices != nodata).reshape(-1)
-                    valid_pixels_raw = sub_indices[valid_pixels].reshape(-1)
-                    valid_pixels_geo = np.arange(sub_indices.size)[valid_pixels]
-
-                    sub_ortho_cube[valid_pixels_geo, :] = datacube[valid_pixels_raw, :]
-
-                    sub_ortho_cube = sub_ortho_cube.reshape((height, dw, n_bands))
-
-                    # Form to Rasterio friendly
-                    sub_ortho_cube = np.transpose(sub_ortho_cube, axes=[2, 0, 1])
-
-                    memmap_array[:, :, i*delta_width:i*delta_width + dw] = sub_ortho_cube
-                # Free memory
-                del datacube
-                del sub_ortho_cube
-            else:
-                # Resample
-                ortho_datacube = datacube[self.indexes, :]
-
-                # Free memory
-                del datacube
-
-                # Reshape to datacube form
-                ortho_datacube = ortho_datacube.reshape((height, width, n_bands))
-
-                # Mask
-                ortho_datacube[mask == 1, :] = nodata
-
-                # Form to Rasterio friendly
-                ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])
-
-                # Write to memory map
-                memmap_array[:] = ortho_datacube
-
-                # Free memory
-                del ortho_datacube
-                
-
-                
             GeoSpatialAbstractionHSI.write_datacube_ENVI(memmap_array, 
                                 nodata, 
                                 transform, 
@@ -340,8 +281,75 @@ class GeoSpatialAbstractionHSI():
 
             dst.write(ortho_rgb)
         
+    @staticmethod
+    def write_datacube_memmap(memmap_array, indexes, index_grid_masked, mask, nodata, height, width, datacube, chunk_area):  
         
-        
+
+        # Step 1: Initialize a Memory Map
+        n_bands = datacube.shape[1]
+
+        # In grid form, identify whether partitioning is needed
+        area_idx_grid = width*height
+
+        if area_idx_grid > chunk_area:
+            
+            # Subdivide along horizontal axis:
+            delta_width = int(chunk_area/height)
+            # Number of slices
+            num_delta_widths = int(width/delta_width) + 1
+
+            for i in range(num_delta_widths):
+                
+                if i != num_delta_widths-1:
+                    sub_indices = index_grid_masked[:, i*delta_width:(i+1)*delta_width].reshape((-1,1))
+                    dw = delta_width
+                    
+                else:
+                    sub_indices = index_grid_masked[:, i*delta_width:width].reshape((-1,1))
+                    dw = np.arange(i*delta_width, width).size
+                
+                # Only extraxt valid data:
+                sub_ortho_cube = np.ones((sub_indices.shape[0]*sub_indices.shape[1], n_bands))*nodata
+                
+                # From the grid, the only valid pixels are
+                valid_pixels = (sub_indices != nodata).reshape(-1)
+                valid_pixels_raw = sub_indices[valid_pixels].reshape(-1)
+                valid_pixels_geo = np.arange(sub_indices.size)[valid_pixels]
+
+                sub_ortho_cube[valid_pixels_geo, :] = datacube[valid_pixels_raw, :]
+
+                sub_ortho_cube = sub_ortho_cube.reshape((height, dw, n_bands))
+
+                # Form to Rasterio friendly
+                sub_ortho_cube = np.transpose(sub_ortho_cube, axes=[2, 0, 1])
+
+                memmap_array[:, :, i*delta_width:i*delta_width + dw] = sub_ortho_cube
+            # Free memory
+            del datacube
+            del sub_ortho_cube
+        else:
+            # Resample
+            ortho_datacube = datacube[indexes, :]
+
+            # Free memory
+            del datacube
+
+            # Reshape to datacube form
+            ortho_datacube = ortho_datacube.reshape((height, width, n_bands))
+
+            # Mask
+            ortho_datacube[mask == 1, :] = nodata
+
+            # Form to Rasterio friendly
+            ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])
+
+            # Write to memory map
+            memmap_array[:] = ortho_datacube
+
+            # Free memory
+            del ortho_datacube
+
+        return  
 
     def resample_ancillary(self, h5_filename, anc_dir, anc_dict, interleave = 'bsq'):
 
@@ -557,7 +565,7 @@ class GeoSpatialAbstractionHSI():
 
         crs_rasterio = CRS.from_string(crs)
 
-        writer_type = "gdal"
+        writer_type = "envi"
 
         # Make some simple modifications
         data_file_path = datacube_path + '.' + interleave
@@ -630,9 +638,8 @@ class GeoSpatialAbstractionHSI():
             os.remove(data_file_path)
 
             header = sp.io.envi.read_envi_header(datacube_path + '.hdr') # Open for extraction
-
             
-            
+            # Since dummy image was made as 1x1x1 data cube
             metadata_dim = {
                 'lines': nx,
                 'samples': mx,
@@ -662,8 +669,8 @@ class GeoSpatialAbstractionHSI():
         header = sp.io.envi.read_envi_header(datacube_path + '.hdr') # Open for extraction
         header.pop('band names')
 
-        # Nobody in the history of the world would have come up with a more annoying bug.
-        # Apparently, the CRS s
+        # Nobody in the history of the world could have come up with a more annoying bug.
+        # Apparently, the CRS string is written with white spaces by rasterio/GDAL, wheras it should have none.
         header['coordinate system string'] = '{' + ",".join(header['coordinate system string']) + '}'
         
         # Write all meta_data to header
