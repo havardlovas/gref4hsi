@@ -239,18 +239,20 @@ class GeoSpatialAbstractionHSI():
             # Make masked indices accessible as these allow orthorectification of ancilliary data
             self.index_grid_masked = indexes_grid_unmasked
 
-            # Step 1: Initialize a Memory Map
-            filename = 'memmap_array.dat'
-            shape = (n_bands, height, width)
-            dtype = np.float32
-            
-            memmap_array = np.memmap(filename, dtype=dtype, mode='w+', shape=shape)
+            # To do the writing of the rasters we use a memory map, and writes chunks at a time.
+            # For this writing process, we need to know all the below
+            memmap_gen_params = {
+                'indexes': indexes,
+                'index_grid_masked': self.index_grid_masked,
+                'mask': mask,
+                'nodata': nodata,
+                'height': height,
+                'width': width,
+                'datacube': datacube,
+                'chunk_area': self.chunk_area
+            }
 
-            # Manipulate memory map
-            GeoSpatialAbstractionHSI.write_datacube_memmap(memmap_array, indexes, self.index_grid_masked, mask, nodata, height, width, datacube, self.chunk_area)
-
-
-            GeoSpatialAbstractionHSI.write_datacube_ENVI(memmap_array, 
+            GeoSpatialAbstractionHSI.write_datacube_ENVI(memmap_gen_params, 
                                 nodata, 
                                 transform, 
                                 datacube_path = envi_cube_dir + self.name + suffix, 
@@ -321,7 +323,7 @@ class GeoSpatialAbstractionHSI():
                 sub_ortho_cube = sub_ortho_cube.reshape((height, dw, n_bands))
 
                 # Form to Rasterio friendly
-                sub_ortho_cube = np.transpose(sub_ortho_cube, axes=[2, 0, 1])
+                #sub_ortho_cube = np.transpose(sub_ortho_cube, axes=[2, 0, 1])
 
                 memmap_array[:, :, i*delta_width:i*delta_width + dw] = sub_ortho_cube
             # Free memory
@@ -341,7 +343,7 @@ class GeoSpatialAbstractionHSI():
             ortho_datacube[mask == 1, :] = nodata
 
             # Form to Rasterio friendly
-            ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])
+            #ortho_datacube = np.transpose(ortho_datacube, axes=[2, 0, 1])
 
             # Write to memory map
             memmap_array[:] = ortho_datacube
@@ -540,7 +542,7 @@ class GeoSpatialAbstractionHSI():
         return transform, height, width, indexes, suffix
 
     @staticmethod
-    def write_datacube_ENVI(ortho_datacube, nodata, transform, datacube_path, wavelengths, fwhm, metadata, interleave, crs):
+    def write_datacube_ENVI(memmap_gen_params, nodata, transform, datacube_path, wavelengths, fwhm, metadata, interleave, crs):
         """_summary_
 
         :param ortho_datacube: _description_
@@ -559,9 +561,11 @@ class GeoSpatialAbstractionHSI():
         :type envi_hdr_dict: _type_
         """
 
-        nx = ortho_datacube.shape[1]
-        mx = ortho_datacube.shape[2]
-        k = ortho_datacube.shape[0]
+        nx = memmap_gen_params['height']
+        mx = memmap_gen_params['width']
+        k = memmap_gen_params['datacube'].shape[1] # is collapsed datacube
+
+        dtype_cube = memmap_gen_params['datacube'].dtype # is collapsed datacube
 
         crs_rasterio = CRS.from_string(crs)
 
@@ -590,7 +594,8 @@ class GeoSpatialAbstractionHSI():
 
         if writer_type == "rasterio":
             # Assuming ortho_datacube is a 3D NumPy array with shape (k, nx, mx)
-            with rasterio.open(data_file_path, 'w', driver='ENVI', height=nx, width=mx, count=k, crs=crs_rasterio, dtype=ortho_datacube.dtype, transform=transform, nodata=nodata) as dst:
+            with rasterio.open(data_file_path, 'w', driver='ENVI', height=nx, width=mx, count=k, crs=crs_rasterio, dtype=dtype_cube, transform=transform, nodata=nodata) as dst:
+                
                 # Create a ThreadPoolExecutor with as many threads as bands
                 with ThreadPoolExecutor(max_workers=k) as executor:
                     # Use executor.map to parallelize the band writing process
@@ -598,26 +603,6 @@ class GeoSpatialAbstractionHSI():
                 
             
             header.pop('band names')
-        elif writer_type == "gdal":
-            # Create the output raster dataset
-            driver = gdal.GetDriverByName('ENVI')
-            dst_ds = driver.Create(data_file_path, mx, nx, k, gdal.GDT_Float32)
-            dst_ds.SetProjection(crs)
-
-            gdal_transform = (transform[2], transform[0], transform[1], transform[5], transform[3], transform[4])
-            dst_ds.SetGeoTransform(gdal_transform)
-            
-            # Set nodata value for all bands
-            for i in range(k):
-                dst_ds.GetRasterBand(i + 1).SetNoDataValue(nodata)
-            
-            # Create a ThreadPoolExecutor with as many threads as bands
-            with ThreadPoolExecutor(max_workers=k) as executor:
-                # Use executor.map to parallelize the band writing process
-                executor.map(write_band_gdal, [(band_data, i, dst_ds) for i, band_data in enumerate(ortho_datacube)])
-
-            dst_ds.FlushCache()
-            dst_ds = None  # Close the dataset
 
             
         
@@ -627,12 +612,8 @@ class GeoSpatialAbstractionHSI():
             
             crs_gdal.ImportFromEPSG(int(crs.split(':')[1]))
 
-            crs_wkt = crs_gdal.ExportToWkt()
-
-            data_type = [i for i in dtype_dict if dtype_dict[i] == ortho_datacube.dtype][0]
-
             # Create dummy file to exploit builtin driver
-            with rasterio.open(data_file_path, 'w', driver='ENVI', height=1, width=1, count=1, crs=crs, dtype=ortho_datacube.dtype, transform=transform, nodata=nodata) as dst:
+            with rasterio.open(data_file_path, 'w', driver='ENVI', height=1, width=1, count=1, crs=crs, dtype=dtype_cube, transform=transform, nodata=nodata) as dst:
                 pass
             
             os.remove(data_file_path)
@@ -651,7 +632,7 @@ class GeoSpatialAbstractionHSI():
                 header[meta_key] = value
 
             # Reshape the ortho_datacube to (nx, mx, k)
-            ortho_datacube_reshaped = ortho_datacube.transpose(1, 2, 0)
+            #ortho_datacube_reshaped = ortho_datacube.transpose(1, 2, 0)
 
             # Create the output raster dataset
             # Create ENVI image without using a context manager
@@ -659,7 +640,9 @@ class GeoSpatialAbstractionHSI():
 
             mm = dst.open_memmap(writable=True)
 
-            mm[:] = ortho_datacube_reshaped
+            GeoSpatialAbstractionHSI.write_datacube_memmap(memmap_array=mm, **memmap_gen_params)
+
+            #mm[:] = ortho_datacube_reshaped
 
 
 

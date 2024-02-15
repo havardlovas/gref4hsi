@@ -69,7 +69,7 @@ prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DA
 custom_config = {'General':
                     {'mission_dir': DATA_DIR,
                     'model_export_type': 'geoid', # Ray trace onto geoid
-                    'max_ray_length': 120}, # Max distance in meters from spectral imager to seafloor
+                    'max_ray_length': 200}, # Max distance in meters from spectral imager to seafloor
 
                 'Coordinate Reference Systems':
                     {'proj_epsg' : 25832, # The projected CRS UTM 32, common on mainland norway
@@ -93,7 +93,8 @@ custom_config = {'General':
                     # (above) The georeferencing allows processing using norwegian geoid NN2000 and worldwide EGM2008. Also, use of seafloor terrain models are supported. '
                     # At the moment refractive ray tracing is not implemented, but it could be relatively easy by first ray tracing with geoid+tide, 
                     # and then ray tracing from water
-                    'tide_path' : 'D:/HyperspectralDataAll/HI/2022-08-31-060000-Remoy-Specim/Input/tidevann_nn2000_NMA.txt'}
+                    #'tide_path' : 'D:/HyperspectralDataAll/HI/2022-08-31-060000-Remoy-Specim/Input/tidevann_nn2000_NMA.txt'
+                    }
                     # Tide data can be downloaded from https://www.kartverket.no/til-sjos/se-havniva
                     # Preferably it is downloaded with reference "NN2000" to agree with DEM
                 
@@ -109,8 +110,8 @@ def main():
     # This function parses raw specim data including (spectral, radiometric, geometric) calibrations and nav data
     # into an h5 file. The nav data is written to "raw/nav/" subfolders, whereas hyperspectral data and calibration data 
     # written to "processed/hyperspectral/" and "processed/calibration/" subfolders
-    """specim_parsing_utils.main(config=config,
-                              config_specim=config_specim_preprocess)"""
+    specim_parsing_utils.main(config=config,
+                              config_specim=config_specim_preprocess)
     
     # Interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
     config = parsing_utils.export_pose(config_file_mission)
@@ -122,14 +123,12 @@ def main():
 
     
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    """visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
+    """visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')"""
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference.main(config_file_mission)"""
+    georeference.main(config_file_mission)
 
     orthorectification.main(config_file_mission)
-
-    #print('')
 
 
 if __name__ == "__main__":
