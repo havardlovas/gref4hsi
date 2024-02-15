@@ -39,8 +39,8 @@ from scipy.spatial.transform import Rotation as R
 
 def get_args():
     parser = argparse.ArgumentParser(description='Process .h5 files to extract RGB data and IMU data.')
-    parser.add_argument('--folder_path', type=str, default="/media/leo/NESP_1/NTNU/UHI_Data/Slettvik_29092023/Transect2", help='Path to the folder containing HDF5 files.')
-    parser.add_argument('--save_path', type=str, default="/media/leo/NESP_1/NTNU/UHI_Data/Slettvik_29092023/Transect2/Extracted_RGB/", help='Path to the folder where extracted RGB images and IMU data will be saved.')
+    parser.add_argument('--folder_path', type=str, default="/media/leo/NESP_1/NTNU/UHI_Data/Ao2022_UHI/UHI_original/ice-station-10-marinal-ice-zone/Transect_3/", help='Path to the folder containing HDF5 files.')
+    parser.add_argument('--save_path', type=str, default="/media/leo/NESP_1/NTNU/UHI_Data/Ao2022_UHI/UHI_original/ice-station-10-marinal-ice-zone/Transect_3/Extracted_RGB/", help='Path to the folder where extracted RGB images and IMU data will be saved.')
     parser.add_argument('--save_name', type=str, default="", help='Base name for saved files. If not given the h5 filename of the first transect is used')
     return parser.parse_args()
 
@@ -130,7 +130,7 @@ def main(folder_path, save_path, save_name=""):
     print("All .h5 files have been processed.")
     print("Now the three datasets are interpolated according to the RGB dataset.")
 
-    interpolate_csv(df_rgb, df_imu, df_alti)
+    interpolate_csv(df_rgb, df_imu, df_alti, save_path)
 
 
 def interpolate_csv(df_rgb, df_imu, df_alti, save_path):
@@ -166,7 +166,7 @@ def interpolate_csv(df_rgb, df_imu, df_alti, save_path):
     """
 
     # Linear Interpolate Altimeter to rgb_timestamps
-    print(f"Reducing timestamps from IMU data from {len(df_alti.index)} to {len(df_rgb.index)}")
+    print(f"Reducing timestamps from Alti data from {len(df_alti.index)} to {len(df_rgb.index)}")
     interp_alti_np = np.interp(df_rgb['timestamp'].tolist(), df_alti['TimestampMeasured'].tolist(), df_alti['Altitude'].tolist())
     interp_alti_df = pd.DataFrame(interp_alti_np, columns=['Altimeter'])
     # Combine all interpolations
@@ -177,11 +177,13 @@ def interpolate_csv(df_rgb, df_imu, df_alti, save_path):
 
 if __name__ == '__main__':
     args = get_args()
-    #main(args.folder_path, args.save_path, args.save_name)
-
+    main(args.folder_path, args.save_path, args.save_name)
+    """
     # For Testing purposes
     df_rgb = pd.read_csv("/media/leo/NESP_1/NTNU/UHI_Data/Slettvik_29092023/Transect2/Extracted_RGB/rgb_data.csv")
     df_imu = pd.read_csv("/media/leo/NESP_1/NTNU/UHI_Data/Slettvik_29092023/Transect2/Extracted_RGB/imu_data.csv")
     df_alti = pd.read_csv("/media/leo/NESP_1/NTNU/UHI_Data/Slettvik_29092023/Transect2/Extracted_RGB/altimeter_data.csv")
     save_path = "/media/leo/NESP_1/NTNU/UHI_Data/Slettvik_29092023/Transect2/Extracted_RGB/"
     interpolate_csv(df_rgb, df_imu, df_alti, save_path)
+    """
+    
