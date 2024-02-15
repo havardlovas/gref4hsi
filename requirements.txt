@@ -21,3 +21,5 @@ pykdtree
 trimesh
 rtree
 pyembree
+sphinx
+ipykernel

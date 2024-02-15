@@ -4,9 +4,11 @@ import pandas as pd
 import numpy as np
 from scipy.spatial.transform import Rotation
 import open3d as o3d
+import pymap3d as pm
 # A simple visualization of various types of data
+from utils.geometry_utils import rotation_matrix_ecef2ned, rotation_matrix_ecef2enu
 
-def show_mesh_camera(config):
+def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'ECEF'):
     """
     # Reads the mesh file and pose info, and plots the trajectory next to the mesh.
 
@@ -17,21 +19,25 @@ def show_mesh_camera(config):
 
 
     # Todo: encode show mesh camera to use h5-embedded data? Or is this a loss of performance?
-    mesh_path = config['Absolute Paths']['modelPath']
-    texture_path = config['Absolute Paths']['texPath']
-    pose_path = config['Absolute Paths']['posePath']
+    mesh_path = config['Absolute Paths']['model_path']
+    try:
+        texture_path = config['Absolute Paths']['tex_path']
+    except KeyError:
+        texture_path = None
+        
+    pose_path = config['Absolute Paths']['pose_path']
 
     # Offsets used for plotting
-    offsetX = float(config['General']['offsetX'])
-    offsetY = float(config['General']['offsetY'])
-    offsetZ = float(config['General']['offsetZ'])
+    offset_x = float(config['General']['offset_x'])
+    offset_y = float(config['General']['offset_y'])
+    offset_z = float(config['General']['offset_z'])
 
 
     pose = pd.read_csv(
         pose_path, sep=',',
         header=0)
 
-    points_cam = np.concatenate( (pose[" X"].values.reshape((-1,1)) - offsetX, pose[" Y"].values.reshape((-1,1)) - offsetY, pose[" Z"].values.reshape((-1,1)) - offsetZ), axis = 1)
+    points_cam_ecef = np.concatenate( (pose[" X"].values.reshape((-1,1)) - offset_x, pose[" Y"].values.reshape((-1,1)) - offset_y, pose[" Z"].values.reshape((-1,1)) - offset_z), axis = 1)
     use_local = False
     if use_local == True:
         eul_cam = np.concatenate((pose[" Yaw"].values.reshape((-1, 1)),
@@ -41,43 +47,102 @@ def show_mesh_camera(config):
         eul_cam = np.concatenate( (pose[" RotZ"].values.reshape((-1,1)), pose[" RotY"].values.reshape((-1,1)), pose[" RotX"].values.reshape((-1,1))), axis = 1)
 
 
-    r_scipy = Rotation.from_euler("ZYX", eul_cam, degrees=True)
-    rotMats = r_scipy.as_matrix()
+    R_body_to_ecef = Rotation.from_euler("ZYX", eul_cam, degrees=True)
+    
+
+    # Read the mesh
+    mesh = pv.read(mesh_path)
+    if ref_frame == 'NED':
+        x = offset_x
+        y = offset_y
+        z = offset_z
+        
+        lat0, lon0, hei0 = pm.ecef2geodetic(x, y, z, deg=True)
+        R_ecef_to_ned = Rotation.from_matrix(rotation_matrix_ecef2ned(lon=lon0, lat=lat0))
+
+        R_body_to_ned = R_ecef_to_ned*R_body_to_ecef
+        rotMats = R_body_to_ned.as_matrix()
+
+        points_mesh_ecef = mesh.points
+
+        # Next part is to make a NED
+        x_cam, y_cam, z_cam = pm.ecef2ned(x = points_cam_ecef[:,0] + x, y = points_cam_ecef[:,1] + y, z = points_cam_ecef[:,2] + z, lon0=lon0, lat0=lat0, h0=hei0)
+
+        points_cam = np.concatenate((x_cam.reshape((-1,1)), y_cam.reshape((-1,1)), z_cam.reshape((-1,1))), axis = 1)
+
+        x_mesh, y_mesh, z_mesh = pm.ecef2ned(x = points_mesh_ecef[:,0] + x, y = points_mesh_ecef[:,1] + y, z = points_mesh_ecef[:,2] + z, lon0=lon0, lat0=lat0, h0=hei0)
+
+        points_mesh = np.concatenate((x_mesh.reshape((-1,1)), y_mesh.reshape((-1,1)), z_mesh.reshape((-1,1))), axis = 1)
+
+        mesh.points = points_mesh
+
+
+    elif ref_frame == 'ENU':
+        x = offset_x
+        y = offset_y
+        z = offset_z
+        lat0, lon0, hei0 = pm.ecef2geodetic(x, y, z, deg=True)
+        R_ecef_to_enu = Rotation.from_matrix(rotation_matrix_ecef2enu(lon=lon0, lat=lat0))
+
+        R_body_to_enu = R_ecef_to_enu*R_body_to_ecef
+        rotMats = R_body_to_enu.as_matrix()
+
+        points_mesh_ecef = mesh.points
+
+        # Next part is to make a NED
+        x_cam, y_cam, z_cam = pm.ecef2enu(x = points_cam_ecef[:,0] + x, y = points_cam_ecef[:,1] + y, z = points_cam_ecef[:,2] + z, lon0=lon0, lat0=lat0, h0=hei0)
+
+        points_cam = np.concatenate((x_cam.reshape((-1,1)), y_cam.reshape((-1,1)), z_cam.reshape((-1,1))), axis = 1)
+
+        x_mesh, y_mesh, z_mesh = pm.ecef2enu(x = points_mesh_ecef[:,0] + x, y = points_mesh_ecef[:,1] + y, z = points_mesh_ecef[:,2] + z, lon0=lon0, lat0=lat0, h0=hei0)
+
+        points_mesh = np.concatenate((x_mesh.reshape((-1,1)), y_mesh.reshape((-1,1)), z_mesh.reshape((-1,1))), axis = 1)
+        mesh.points = points_mesh
+    
+    else:
+        rotMats = R_body_to_ecef.as_matrix()
+        points_cam = points_cam_ecef
+
+
+    
 
     #cam_rot = Rotation.from_euler("ZYX", np.array([0, 0, 0]), degrees=True).as_matrix()
 
     # Compose the two
     #rotMats = rotMats*cam_rot
     p = BackgroundPlotter(window_size=(600, 400))
-    mesh = pv.read(mesh_path)
-    if texture_path != 'NONE':
-        tex = pv.read_texture(texture_path)
-        p.add_mesh(mesh, texture=tex)
-    else:
-        p.add_mesh(mesh)
-    p.add_points(points_cam, render_points_as_spheres=True,
-                      point_size=1)
-    directionX = rotMats[:, :, 0]
-    directionY = rotMats[:, :, 1]
-    directionZ = rotMats[:, :, 2]
-    step = 10
-    p.add_arrows(points_cam[::step], directionX[::step], mag = 0.25, color= 'red')
-    p.add_arrows(points_cam[::step], directionY[::step], mag=0.25, color= 'green')
-    p.add_arrows(points_cam[::step], directionZ[::step], mag=0.25, color= 'blue')
+    
+    if show_mesh:
+        if texture_path != None:
+            tex = pv.read_texture(texture_path)
+            p.add_mesh(mesh, texture=tex)
+        else:
+            p.add_mesh(mesh)
+
+    if show_pose:
+        p.add_points(points_cam, render_points_as_spheres=True,
+                        point_size=1)
+        directionX = rotMats[:, :, 0]
+        directionY = rotMats[:, :, 1]
+        directionZ = rotMats[:, :, 2]
+        step = 10
+        scale = np.linalg.norm(np.max(points_cam, axis = 0)-np.min(points_cam, axis = 0), axis=0)
+        p.add_arrows(points_cam[::step], directionX[::step], mag = 0.1*scale, color = 'red')
+        p.add_arrows(points_cam[::step], directionY[::step], mag=0.1*scale, color= 'green')
+        p.add_arrows(points_cam[::step], directionZ[::step], mag=0.1*scale, color= 'blue')
     p.show()
     p.app.exec_()
 
 def show_camera_geometry(CameraGeometry, config):
-    mesh_path = config['General']['modelPath']
-    texture_path = config['General']['texPath']
+    mesh_path = config['General']['model_path']
+    texture_path = config['General']['tex_path']
 
 
 
 
-    rotMats = CameraGeometry.RotationHSI.as_matrix()
+    rotMats = CameraGeometry.rotation_hsi.as_matrix()
 
-    points_cam = CameraGeometry.PositionHSI
-
+    points_cam = CameraGeometry.position_ecef
 
     mesh = pv.read(mesh_path)
     tex = pv.read_texture(texture_path)
@@ -107,16 +172,20 @@ def show_camera_geometry(CameraGeometry, config):
     p.app.exec_()
 
 def show_projected_hsi_points(HSICameraGeometry, config, transect_string):
-    mesh_path = config['Absolute Paths']['modelPath']
-    texture_path = config['Absolute Paths']['texPath']
-    point_cloud_path = config['Absolute Paths']['rgbPointCloudPath'] + transect_string + '.ply'
+    mesh_path = config['Absolute Paths']['model_path']
+    
+    point_cloud_path = config['Absolute Paths']['rgb_point_cloud_folder'] + transect_string + '.ply'
 
-    rotMats = HSICameraGeometry.RotationHSI.as_matrix()
-    points_cam = HSICameraGeometry.PositionHSI
+    rotMats = HSICameraGeometry.rotation_hsi.as_matrix()
+    points_cam = HSICameraGeometry.position_ecef
 
     mesh = pv.read(mesh_path)
-    tex = pv.read_texture(texture_path)
 
+    try:
+        texture_path = config['Absolute Paths']['tex_path']
+        tex = pv.read_texture(texture_path)
+    except:
+        pass
     p = BackgroundPlotter(window_size=(600, 400))
 
     p.add_mesh(mesh)
