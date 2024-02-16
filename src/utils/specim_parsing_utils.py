@@ -22,7 +22,7 @@ from utils.geometry_utils import CalibHSI
 from scipy.spatial.transform import Rotation as RotLib
 
 from utils.geometry_utils import CalibHSI
-from scripts.config_utils import prepend_data_dir_to_relative_paths
+from utils.config_utils import prepend_data_dir_to_relative_paths
 
 ACTIVE_SENSOR_SPATIAL_PIXELS = 1024 # Constant for AFX10
 ACTIVE_SENSOR_SPECTRAL_PIXELS = 448 # Constant for AFX10
@@ -306,9 +306,11 @@ def main(config, config_specim):
     dtype = config_specim.dtype_datacube
     transect_chunk_size = config_specim.lines_per_chunk
     cal_dir = config_specim.cal_dir
-    mission_name = config_specim.mission_name
-    mission_dir = config_specim.specim_raw_missions_dir + mission_name + '/'
-    out_dir = config_specim.reformatted_missions_dir + mission_name + '/'
+   
+    mission_dir = config_specim.specim_raw_mission_dir
+
+    mission_name = mission_dir.split('/')[-2]
+    out_dir = config_specim.reformatted_missions_dir
     config_file_path = out_dir + config_specim.config_file_name
 
     prepend_data_dir_to_relative_paths(config_path=config_file_path, DATA_DIR=out_dir)

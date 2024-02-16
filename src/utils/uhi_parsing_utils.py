@@ -25,7 +25,7 @@ from rasterio.transform import from_origin, Affine
 # We need to convert the altimeter data to a point cloud
 from scipy.spatial.transform import Rotation as RotLib
 
-from scripts.config_utils import prepend_data_dir_to_relative_paths
+from utils.config_utils import prepend_data_dir_to_relative_paths
 from utils.specim_parsing_utils import Specim
 
 

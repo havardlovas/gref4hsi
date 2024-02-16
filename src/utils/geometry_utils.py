@@ -1232,8 +1232,8 @@ def crop_geoid_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_2
 
         
 
-        # Crops the DEM to the appropriate bounds and writes a new file (Copies CRS info from Geoid)
-        crop_dem_from_bounds(minx, miny, maxx, maxy, dem_path_source=geoid_path, dem_path_target=path_dem)
+    # Crops the DEM to the appropriate bounds and writes a new file (Copies CRS info from Geoid)
+    crop_dem_from_bounds(minx, miny, maxx, maxy, dem_path_source=geoid_path, dem_path_target=path_dem)
      
 
 

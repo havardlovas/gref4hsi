@@ -827,8 +827,18 @@ def reformat_h5_embedded_data_h5(config, config_file):
     df = pd.DataFrame(total_pose, columns=headers)
 
     pose_path = config['Absolute Paths']['pose_path']
-    # Save the DataFrame as a CSV file
-    df.to_csv(pose_path, index=False)
+
+    try:
+        # Save the DataFrame as a CSV file
+        df.to_csv(pose_path, index=False)
+    except:
+        # Extract directory
+        directory = os.path.dirname(pose_path)
+
+        # Check if directory doesn't exist and create it
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory)
+
 
     config.set('General', 'offset_x', str(pos0[0]))
     config.set('General', 'offset_y', str(pos0[1]))

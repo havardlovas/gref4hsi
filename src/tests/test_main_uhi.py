@@ -7,7 +7,7 @@ import numpy as np
 from utils import parsing_utils, uhi_parsing_utils
 from scripts import georeference, orthorectification
 from scripts import visualize
-from scripts.config_utils import prepend_data_dir_to_relative_paths, customize_config
+from utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 
 DATA_DIR = "D:/HyperspectralDataAll/UHI/2020-07-01-14-34-57-ArcticSeaIce-Ben-Lange/"

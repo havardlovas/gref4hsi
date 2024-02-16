@@ -325,7 +325,7 @@ class GeoSpatialAbstractionHSI():
                 # Form to Rasterio friendly
                 #sub_ortho_cube = np.transpose(sub_ortho_cube, axes=[2, 0, 1])
 
-                memmap_array[:, :, i*delta_width:i*delta_width + dw] = sub_ortho_cube
+                memmap_array[:, i*delta_width:i*delta_width + dw, :] = sub_ortho_cube
             # Free memory
             del datacube
             del sub_ortho_cube

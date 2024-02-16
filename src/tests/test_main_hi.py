@@ -8,7 +8,7 @@ from scripts import georeference
 from scripts import orthorectification
 from utils import parsing_utils
 from scripts import visualize
-from scripts.config_utils import prepend_data_dir_to_relative_paths
+from utils.config_utils import prepend_data_dir_to_relative_paths
 
 """
 This script is meant to be used for testing the processing pipeline of airborne HI data.
