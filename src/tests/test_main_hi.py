@@ -13,8 +13,10 @@ from scripts.modulate_config import prepend_data_dir_to_relative_paths
 """
 This script is meant to be used for testing the processing pipeline of airborne HI data.
 """ 
+
+#DATA_DIR    = 'D:/Ocean Color Colab/Processing Step4/Flight_1/'
+DATA_DIR    = 'D:/Ocean Color Colab/Processing Step4/Flight_5/'
 #DATA_DIR    = 'D:/Ocean Color Colab/Processing Step4/Flight_8/'
-DATA_DIR    = 'D:/Ocean Color Colab/Processing Step4/Flight_1/'
 config_file = DATA_DIR + 'configuration.ini'
 # Set the data directory for the mission (locally where the data is stored)
 

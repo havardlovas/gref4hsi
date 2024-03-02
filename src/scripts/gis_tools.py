@@ -307,14 +307,13 @@ class GeoSpatialAbstractionHSI():
     def resample_ancillary(self, h5_filename, anc_dir, anc_dict, interleave = 'bil'):
 
         band_counter = 0
-        band_names = []
+        band_names   = []
 
         # Define one hyperspectral data to 
         with h5py.File(h5_filename, 'r', libver='latest') as f:
             for attribute_name, h5_hierarchy_item_path in anc_dict.items():
                 if attribute_name != 'folder':
                     data = f[h5_hierarchy_item_path][()]
-
 
                     if data.ndim == 2:
                         if data.shape[1]  != self.n_pixels:
@@ -581,7 +580,6 @@ class GeoSpatialAbstractionHSI():
             with ThreadPoolExecutor(max_workers=k) as executor:
                 # Use executor.map to parallelize the band writing process
                 executor.map(write_band, [(band_data, i, dst) for i, band_data in enumerate(anc_data)])
-            
         
         header = sp.io.envi.read_envi_header(anc_path + '.hdr') # Open for modif
         #header['interleave'] = interleave
@@ -744,14 +742,12 @@ class GeoSpatialAbstractionHSI():
                         dst_crs=dst_crs,
                         resampling=Resampling.cubic)
 
-
     def compute_sift_difference(self, gray1, gray2):
         gray1 = (gray1 - np.min(gray1)) / (np.max(gray1) - np.min(gray1))
         gray2 = (gray2 - np.min(gray2)) / (np.max(gray2) - np.min(gray2))
 
         gray1 = (gray1 * 255).astype(np.uint8)
         gray2 = (gray2 * 255).astype(np.uint8)
-
 
         # Find the keypoints and descriptors with SIFT
         sift = cv.SIFT_create()
@@ -824,14 +820,9 @@ class GeoSpatialAbstractionHSI():
 
         #plt.imshow(gray1)
 
-
-
-
-
         #plt.scatter(uv_vec[:,0][np.abs(diff_u) < 100], uv_vec[:,1][np.abs(diff_u) < 100], c = diff_u[np.abs(diff_u) < 100] - np.median(diff_u[np.abs(diff_u) < 100]))
         #plt.colorbar()
         #plt.show()
-
 
         #plt.hist(diff_u[np.abs(diff) < 100], 50)
         #plt.title('MAD u: ' + str(np.round(MAD_u,2)))
@@ -844,8 +835,6 @@ class GeoSpatialAbstractionHSI():
         plt.show()
         #
         self.diff = diff
-
-
 
     def map_pixels_back_to_datacube(self, w_datacube):
         """The projected formats can be transformed back with four integer transforms and interpolated accordingly"""
@@ -882,16 +871,11 @@ class GeoSpatialAbstractionHSI():
             transformer = Transformer.from_crs(proj, geocsc)
             self.features_points = np.zeros((xp.shape[0], 3))
 
-
-
             (xECEF, yECEF, zECEF) = transformer.transform(xx=xp, yy=yp, zz=zp)
 
             self.features_points[:, 0] = xECEF - self.offX
             self.features_points[:, 1] = yECEF - self.offY
             self.features_points[:, 2] = zECEF - self.offZ
-
-
-
 
         #
 
@@ -924,12 +908,3 @@ class GeoSpatialAbstractionHSI():
 
         #self.x1_x_rgb = v_rgb - np.floor(v_rgb)
         #self.y1_y_rgb = u_rgb - np.floor(u_rgb)
-
-
-
-
-
-
-
-
-
