@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 import os
 import sys
 import glob
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
@@ -309,7 +311,7 @@ def main(config, config_specim):
    
     mission_dir = config_specim.specim_raw_mission_dir
 
-    mission_name = mission_dir.split('/')[-2]
+    mission_name = Path(mission_dir).name
     out_dir = config_specim.reformatted_missions_dir
     config_file_path = out_dir + config_specim.config_file_name
 
@@ -345,7 +347,7 @@ def main(config, config_specim):
     metadata_obj.interleave = spectral_image_obj.metadata['interleave']
     metadata_obj.data_type = spectral_image_obj.metadata['data type']
     
-    # Derived from knowledge of the sensor
+    # Derived from knowledge of the sensor (sensor constants)
     metadata_obj.binning_spatial = int(ACTIVE_SENSOR_SPATIAL_PIXELS/metadata_obj.n_pix)
     metadata_obj.binning_spectral = int(ACTIVE_SENSOR_SPECTRAL_PIXELS/metadata_obj.n_bands)
 
@@ -413,7 +415,7 @@ def main(config, config_specim):
 
     # Vector from origin of HSI to body origin, expressed in body
     # User set
-    t_hsi_body = config_specim.translation_hsi_to_body
+    t_hsi_body = config_specim.translation_body_to_hsi
     param_dict['tz'] = t_hsi_body[0]
     param_dict['ty'] = t_hsi_body[1]
     param_dict['tz'] = t_hsi_body[2]
@@ -511,7 +513,7 @@ def main(config, config_specim):
         
         df_start_stop = pd.DataFrame(start_stop_data)
 
-        df_start_stop.to_csv(path_or_buf=START_STOP_DIR + '/' + mission_name + '.txt', sep=' ')
+        df_start_stop.to_csv(path_or_buf = START_STOP_DIR + '/' + 'start_stop_lines.txt', sep=' ')
 
 
 

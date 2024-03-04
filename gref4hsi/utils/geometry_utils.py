@@ -1,5 +1,6 @@
 import numpy as np
 import numpy.matlib
+from osgeo import gdal, osr
 import rasterio
 from scipy.spatial.transform import Rotation as RotLib
 from scipy.spatial.transform import Slerp
@@ -11,7 +12,6 @@ import pymap3d as pm
 import ephem
 import pandas as pd
 from scipy.interpolate import interp1d
-from osgeo import gdal, osr
 import pyvista as pv
 from shapely.geometry import Polygon, mapping, MultiPoint
 from rasterio.transform import from_origin

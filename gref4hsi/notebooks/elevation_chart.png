@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Høydedata API - Swagger UI</title>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.46.0/swagger-ui.css" rel="stylesheet" type="text/css">
+        <style>
+            html {
+                box-sizing: border-box;
+                overflow: -moz-scrollbars-vertical;
+                overflow-y: scroll;
+            }
+            *,
+            *:before,
+            *:after {
+                box-sizing: inherit;
+            }
+            body {
+                background-color: #fafafa;
+                margin: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="swagger-ui"></div>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.46.0/swagger-ui-bundle.js"></script>
+        <script>
+            window.onload = function() {
+                const ui = SwaggerUIBundle({
+                    dom_id: '#swagger-ui',
+                    deepLinking: true,
+                    layout: "BaseLayout",
+                    plugins: [
+                        SwaggerUIBundle.plugins.DownloadUrl
+                    ],
+                    validatorUrl: "https://validator.swagger.io/validator",
+                    url: "openapi.json",
+                })
+                window.ui = ui
+            }
+        </script>
+    </body>
+</html>

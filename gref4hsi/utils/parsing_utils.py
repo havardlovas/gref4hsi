@@ -836,8 +836,10 @@ def reformat_h5_embedded_data_h5(config, config_file):
         directory = os.path.dirname(pose_path)
 
         # Check if directory doesn't exist and create it
-        if directory and not os.path.exists(directory):
+        if not os.path.exists(directory):
             os.makedirs(directory)
+        
+        df.to_csv(pose_path, index=False)
 
 
     config.set('General', 'offset_x', str(pos0[0]))

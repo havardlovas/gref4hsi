@@ -88,6 +88,11 @@ class GeoSpatialAbstractionHSI():
 
 
     def footprint_to_shape_file(self, footprint_dir):
+        """Uses the georeferenced data points (in projected form) to describe the footprint as a shape file
+
+        :param footprint_dir: Where to put the shape files describing the footprint
+        :type footprint_dir: string
+        """
         self.edge_start = self.points_proj[0, :, 0:2].reshape((-1,2))
         self.edge_end = self.points_proj[-1, :, 0:2].reshape((-1,2))
         self.side_1 = self.points_proj[:, 0, 0:2].reshape((-1,2))
@@ -103,8 +108,8 @@ class GeoSpatialAbstractionHSI():
 
         ), axis = 0)
 
-
-        self.footprint_shp = Polygon(self.hull_line)
+        # The swiped ground area is defined by the convex hull
+        self.footprint_shp = Polygon(self.hull_line).convex_hull
 
         gdf = gpd.GeoDataFrame(geometry=[self.footprint_shp], crs=self.crs)
 

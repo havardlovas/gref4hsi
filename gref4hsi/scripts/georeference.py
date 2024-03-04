@@ -58,13 +58,13 @@ def cal_file_to_rays(filename_cal, config):
 
         p_dir = np.zeros((len(x_norm), 3))
 
-        # Rays are defined in the UHI frame with positive z down
+        # Rays are defined in the HI frame with positive z down
         p_dir[:, 0] = x_norm
         p_dir[:, 2] = 1
 
         rot_hsi_ref_eul = np.array([rot_z, rot_y, rot_x])
 
-        rot_hsi_ref_obj = RotLib.from_euler(seq = 'ZYX',angles = rot_hsi_ref_eul, degrees=False)
+        rot_hsi_ref_obj = RotLib.from_euler(seq = 'ZYX', angles = rot_hsi_ref_eul, degrees=False)
 
         try:
             lever_arm_unit = config['General']['lever_arm_unit']
@@ -72,12 +72,13 @@ def cal_file_to_rays(filename_cal, config):
              # Defaults to meter if not set
              lever_arm_unit = 'm'
 
+        # Handle legacy
         if lever_arm_unit == 'mm':
-            translation_hsi_ref = np.array([trans_x, trans_y, trans_z]) / 1000 # These are millimetres
+            translation_ref_hsi = np.array([trans_x, trans_y, trans_z]) / 1000 # These are millimetres
         elif lever_arm_unit == 'm':
-            translation_hsi_ref = np.array([trans_x, trans_y, trans_z])
+            translation_ref_hsi = np.array([trans_x, trans_y, trans_z])
 
-        intrinsic_geometry_dict = {'translation_hsi_ref': translation_hsi_ref,
+        intrinsic_geometry_dict = {'translation_ref_hsi': translation_ref_hsi,
                                    'rot_hsi_ref_obj': rot_hsi_ref_obj,
                                    'ray_directions_local': p_dir}
         
@@ -86,16 +87,15 @@ def cal_file_to_rays(filename_cal, config):
         return intrinsic_geometry_dict
 
 def define_hsi_ray_geometry(pos_ref_ecef, quat_ref_ecef, time_pose, pos0, intrinsic_geometry_dict):
-        # Instantiate a camera geometry object from the h5 pose data
+        """Instantiate a camera geometry object from the h5 pose data"""
+
 
         pos = pos_ref_ecef # Reference positions in ECEF offset by pos0
         rot_obj = RotLib.from_quat(quat_ref_ecef) # Reference orientations wrt ECEF
         
         ray_directions_local = intrinsic_geometry_dict['ray_directions_local']
-        translation_hsi_ref = intrinsic_geometry_dict['translation_hsi_ref']
+        translation_ref_hsi = intrinsic_geometry_dict['translation_ref_hsi']
         rot_hsi_ref_obj = intrinsic_geometry_dict['rot_hsi_ref_obj']
-
-        translation_ref_hsi =- translation_hsi_ref
 
         hsi_geometry = CameraGeometry(pos0=pos0, pos=pos, rot=rot_obj, time=time_pose, is_interpolated=True, use_absolute_position=True)
         

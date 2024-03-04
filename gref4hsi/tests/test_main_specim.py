@@ -5,9 +5,10 @@ import os
 import argparse
 from collections import namedtuple
 
-module_path = 'C:/Users/haavasl/VSCodeProjects/hyperspectral_toolchain/src/'
+# This is very hard coded, but not necessary if Python does not know where to look
+"""module_path = 'C:/Users/haavasl/VSCodeProjects/hyperspectral_toolchain/gref4hsi/'
 if module_path not in sys.path:
-    sys.path.append(module_path)
+    sys.path.append(module_path)"""
 
 # Local resources
 from scripts import georeference
@@ -28,7 +29,7 @@ parser = argparse.ArgumentParser('georeference and rectify images')
 
 parser.add_argument('-s', '--specim_mission_folder',
                     type=str, 
-                    default= 'D:/Specim/Missions/2022-08-31-Remøy/2022-08-31_0800_HSI/',
+                    default= r"D:\Specim\Missions\2024-02-19-Sletvik\slettvik_hopavaagen_202402191253_ntnu_hyperspectral_74m/",
                     help='folder storing the hyperspectral data for the specific mission')
 
 parser.add_argument('-e', '--epsg_code', 
@@ -38,7 +39,7 @@ parser.add_argument('-e', '--epsg_code',
 
 parser.add_argument('-r', '--resolution_orthomosaic', 
                     type=float,
-                    default=0.1, 
+                    default=1, 
                     help='Resolution of the final processed orthomosaic in meters')
 
 parser.add_argument('-cal_dir', '--calibration_directory', 
@@ -46,7 +47,7 @@ parser.add_argument('-cal_dir', '--calibration_directory',
                     default="D:/Specim/Lab_Calibrations/", 
                     help='Directory holding all spectral/radiometric/geometric calibrations for all binning values' )
 
-parser.add_argument('-c', '--config_file', 
+parser.add_argument('-c', '--config_file_yaml', 
                     default="",
                     help='File that contains the configuration \
                           parameters for the processing. \
@@ -55,14 +56,14 @@ parser.add_argument('-c', '--config_file',
 
 parser.add_argument('-t', '--terrain_type', 
                     default="geoid", type=str,
-                    help ='If terrain DEM is known, select dem_file, and if not select geoid.')
+                    help ='If terrain DEM is known, select "dem_file", and if not select "geoid".')
 
-parser.add_argument('-geoid', '--geoid_file', 
+parser.add_argument('-geoid', '--geoid_path', 
                     default="C:/Users/haavasl/VSCodeProjects/hyperspectral_toolchain/data/world/geoids/no_kv_HREF2018A_NN2000_EUREF89.tif", 
                     type=str,
                     help='If terrain DEM is not available.')
 
-parser.add_argument('-d', '--dem_file', 
+parser.add_argument('-d', '--dem_path', 
                     default="D:/HyperspectralDataAll/HI/2022-08-31-060000-Remoy-Specim/Input/GIS/DEM_downsampled.tif", 
                     type=str,
                     help='A digital terrain model, if available. If none, the geoid will be used.')
@@ -80,11 +81,11 @@ SPECIM_MISSION_FOLDER = args.specim_mission_folder
 EPSG_CODE = args.epsg_code
 RESOLUTION_ORTHOMOSAIC = args.resolution_orthomosaic
 CALIBRATION_DIRECTORY = args.calibration_directory
-CONFIG_FILE = args.config_file
+CONFIG_FILE = args.config_file_yaml
 ENABLE_VISUALIZE = args.enable_visualize
 TERRAIN_TYPE = args.terrain_type
-DEM_FILE = args.dem_file
-GEOID_FILE = args.geoid_file
+DEM_PATH = args.dem_path
+GEOID_PATH = args.geoid_path
 
 
 
@@ -97,24 +98,18 @@ SettingsPreprocess = namedtuple('SettingsPreprocessing', ['dtype_datacube',
                                                                         'cal_dir',
                                                                         'reformatted_missions_dir',
                                                                         'rotation_matrix_hsi_to_body',
-                                                                        'translation_hsi_to_body',
+                                                                        'translation_body_to_hsi',
                                                                         'config_file_name'])
 
-config_specim_preprocess = SettingsPreprocess(dtype_datacube = np.float32, 
-                            # The data type for the datacube
-                            lines_per_chunk= 2000, 
-                            # Raw datacube is chunked into this many lines. GB_per_chunk = lines_per_chunk*n_pixels*n_bands*4 bytes
-                            specim_raw_mission_dir = SPECIM_MISSION_FOLDER,
-                            # Folder containing several mission
-                            cal_dir = CALIBRATION_DIRECTORY, 
-                            # Calibration directory holding all calibrations at all binning levels
-                            reformatted_missions_dir = SPECIM_MISSION_FOLDER + 'processed/',
-                            # The fill value for empty cells (select values not occcuring in cube or ancillary data)
+config_specim_preprocess = SettingsPreprocess(dtype_datacube = np.float32, # The data type for the datacube
+                            lines_per_chunk= 2000,  # Raw datacube is chunked into this many lines. GB_per_chunk = lines_per_chunk*n_pixels*n_bands*4 bytes
+                            specim_raw_mission_dir = SPECIM_MISSION_FOLDER, # Folder containing several mission
+                            cal_dir = CALIBRATION_DIRECTORY,  # Calibration directory holding all calibrations at all binning levels
+                            reformatted_missions_dir = SPECIM_MISSION_FOLDER + 'processed/', # The fill value for empty cells (select values not occcuring in cube or ancillary data)
                             rotation_matrix_hsi_to_body = np.array([[0, 1, 0],
                                                                     [-1, 0, 0],
-                                                                    [0, 0, 1]]),
-                            # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.
-                            translation_hsi_to_body = np.array([0, 0, 0]),
+                                                                    [0, 0, 1]]), # Rotation matrix R rotating so that vec_body = R*vec_hsi.
+                            translation_body_to_hsi = np.array([0, 0, 0]), # Translation t so that vec_body_to_object = vec_hsi_to_object + t
                             # For large files, RAM issues could be a concern. For rectified files exeeding this size, data is written chunk-wize to a memory map.
                             config_file_name = 'configuration.ini')
 
@@ -126,7 +121,6 @@ config_file_mission = DATA_DIR + 'configuration.ini'
 
 
 # Read config from a template (relative path):
-
 if CONFIG_FILE != "":
     config_path_template = CONFIG_FILE
 else:
@@ -149,7 +143,7 @@ custom_config = {'General':
                     'pos_epsg_orig' : 4978}, # The CRS of the positioning data we deliver to the georeferencing
 
                 'Orthorectification':
-                    {'resample_rgb_only': False, # True can be good choice for speed during DEV
+                    {'resample_rgb_only': True, # True can be good choice for speed during DEV
                     'resolutionhyperspectralmosaic': RESOLUTION_ORTHOMOSAIC, # Resolution in m
                     'raster_transform_method': 'north_east'}, # North-east oriented rasters.
                 
@@ -158,9 +152,9 @@ custom_config = {'General':
                     'is_global_rot' : False, # The vehicles orientations from NAV system are Yaw, Pitch, Roll
                     'eul_is_degrees' : True},
                 'Absolute Paths': {
-                    'geoid_path' : GEOID_FILE,
+                    'geoid_path' : GEOID_PATH,
                     #'geoid_path' : 'data/world/geoids/egm08_25.gtx',
-                    'dem_path' : DEM_FILE,
+                    'dem_path' : DEM_PATH,
                     # (above) The georeferencing allows processing using norwegian geoid NN2000 and worldwide EGM2008. Also, use of seafloor terrain models are supported. '
                     # At the moment refractive ray tracing is not implemented, but it could be relatively easy by first ray tracing with geoid+tide, 
                     # and then ray tracing from water
@@ -172,10 +166,10 @@ custom_config = {'General':
 }
 
 if TERRAIN_TYPE == 'geoid':
-    custom_config['Absolute Paths']['geoid_path'] = GEOID_FILE
+    custom_config['Absolute Paths']['geoid_path'] = GEOID_PATH
     #'geoid_path' : 'data/world/geoids/egm08_25.gtx'
 elif TERRAIN_TYPE == 'dem_file':
-    custom_config['Absolute Paths']['dem_path'] = DEM_FILE
+    custom_config['Absolute Paths']['dem_path'] = DEM_PATH
 
 # Customizes the config file according to settings
 customize_config(config_path=config_file_mission, dict_custom=custom_config)
