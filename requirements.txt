@@ -20,6 +20,8 @@ xmltodict
 pykdtree
 trimesh
 rtree
-pyembree
+embreex
 sphinx
 ipykernel
+ephem
+PyQt5
