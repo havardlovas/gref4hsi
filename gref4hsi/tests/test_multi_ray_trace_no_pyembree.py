@@ -44,7 +44,6 @@ data_mesh = trimesh.Trimesh(vertices=data.points, faces=faces)
 
 ray_mesh_intersector = trimesh.ray.ray_pyembree.RayMeshIntersector(geometry=data_mesh)
 
-print(ray_mesh_intersector.mesh.triangles)
 # Perform ray tracing using trimesh.ray.intersects_id
 cell_inds, pt_inds, points = ray_mesh_intersector.intersects_id(ray_origins=origins,  
                                                                 ray_directions=normals, 

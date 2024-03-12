@@ -8,12 +8,10 @@ from os import path
 
 # Third party libraries
 import numpy as np
-import Metashape as MS
 import pandas as pd
 from scipy.spatial.transform import Rotation as RotLib
 from scipy.spatial.transform import Rotation
 import h5py
-from Metashape import Vector as vec
 from scipy.spatial.transform import Rotation as RotLib
 import pandas as pd
 import pymap3d as pm

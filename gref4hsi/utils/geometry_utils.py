@@ -259,7 +259,30 @@ class CameraGeometry():
         
         start_time = time.time()
 
-        points, rays, cells = mesh.multi_ray_trace(origins=start, directions=dir, first_point=True)
+
+        
+        try:
+            # This will only work if exact Python version is rigght and you have PyEmbree
+            points, rays, cells = mesh.multi_ray_trace(origins=start, directions=dir, first_point=True)
+        except ImportError:
+            # If you instead use embreex, python>3.6 will do
+            import trimesh
+            
+            # If the faces are 
+            faces = mesh.regular_faces
+
+            # Convert PolyData to trimesh.Trimesh
+            tri_mesh = trimesh.Trimesh(vertices=mesh.points, faces=faces)
+
+            # Define an intersector object
+            ray_mesh_intersector = trimesh.ray.ray_pyembree.RayMeshIntersector(geometry=tri_mesh)
+
+            # Intersect data
+            cells, rays, points = ray_mesh_intersector.intersects_id(ray_origins=start,  
+                                                                ray_directions=dir, 
+                                                                multiple_hits=False,
+                                                                return_locations=True)
+
 
         stop_time = time.time()
 

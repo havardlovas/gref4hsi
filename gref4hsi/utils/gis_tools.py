@@ -218,7 +218,7 @@ class GeoSpatialAbstractionHSI():
         
         # The raster can be rotated optimally (which saves loads of memory) for transects that are long compared to width. 
         # However, north-east oriented rasters is more supported by image visualization
-        transform, height, width, indexes, suffix = GeoSpatialAbstractionHSI.cube_to_raster_grid(coords, raster_transform_method, resolution = self.res)
+        transform, height, width, indexes, suffix, mask_nn = GeoSpatialAbstractionHSI.cube_to_raster_grid(coords, raster_transform_method, resolution = self.res)
 
         # Make accessible as attribute because it can be to write ancillary data
         self.indexes = indexes.copy()
@@ -227,10 +227,11 @@ class GeoSpatialAbstractionHSI():
         self.height = height
         self.suffix = suffix
 
-        # Create raster mask from the polygon describing the footprint
-        geoms = [mapping(self.footprint_shp)]
-        mask = geometry_mask(geoms, out_shape=(height, width), transform=transform)
+        # Create raster mask from the polygon describing the footprint (currently not used for anything)
+        #geoms = [mapping(self.footprint_shp)]
+        #mask = geometry_mask(geoms, out_shape=(height, width), transform=transform)
 
+        mask = mask_nn.reshape((height, width))
         self.mask = mask
 
         # Build datacube
@@ -275,7 +276,7 @@ class GeoSpatialAbstractionHSI():
         # Reshape image
         ortho_rgb = ortho_rgb.reshape((height, width, 3))
     
-        # Mask
+        # Mask RGB
         ortho_rgb[mask == 1, :] = nodata
 
         # Arange datacube or composite in rasterio-friendly structure
@@ -474,6 +475,7 @@ class GeoSpatialAbstractionHSI():
 
             suffix = '_rotated'
 
+        # ul means upper left, ll means lower left and so on
         x_ul = x[idx_ul]
         y_ul = y[idx_ul]
 
@@ -543,8 +545,11 @@ class GeoSpatialAbstractionHSI():
 
         # Calculate the nearest neighbors. Here we only use one neighbor, but other approaches could be employed
         dist, indexes = tree.kneighbors(xy, 1)
+
+        # We can mask the data by allowing interpolation with a radius of the resolution
+        mask_nn = dist > resolution
         
-        return transform, height, width, indexes, suffix
+        return transform, height, width, indexes, suffix, mask_nn
 
     @staticmethod
     def write_datacube_ENVI(memmap_gen_params, nodata, transform, datacube_path, wavelengths, fwhm, metadata, interleave, crs):
