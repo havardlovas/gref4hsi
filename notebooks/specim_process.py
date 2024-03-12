@@ -6,11 +6,6 @@ import argparse
 from collections import namedtuple
 import pathlib
 
-# This is very hard coded, but not necessary if Python does not know where to look
-module_path = '/home/haavasl/VsCodeProjects/gref4hsi/gref4hsi/'
-if module_path not in sys.path:
-    sys.path.append(module_path)
-
 # Local resources
 from gref4hsi.scripts import georeference
 from gref4hsi.scripts import orthorectification
@@ -20,6 +15,7 @@ from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, cust
 
 
 import numpy as np
+import yaml
 """
 This script is meant to be used for testing the processing pipeline of airborne HI data from the Specim AFX10 instrument.
 """
@@ -27,17 +23,38 @@ This script is meant to be used for testing the processing pipeline of airborne 
 
 
 
-def main(config_yaml, specim_mission_folder):
+def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, lab_calibration_path):
+    
+    with open(config_yaml, 'r') as file:  # Replace 'config.yml' with your actual filename
+        config_data = yaml.safe_load(file)
+    
     
     # assigning the arguments to variables for simple backwards compatibility
     SPECIM_MISSION_FOLDER = specim_mission_folder
-    EPSG_CODE = args.epsg_code
-    RESOLUTION_ORTHOMOSAIC = args.resolution_orthomosaic
-    CALIBRATION_DIRECTORY = '~/shared-seabee-ns9879k/ntnu/specim_processing_data/Lab_Calibrations'
-    CONFIG_FILE = args.config_file_yaml
-    TERRAIN_TYPE = args.terrain_type
-    DEM_PATH = args.dem_path
-    GEOID_PATH = args.geoid_path
+    EPSG_CODE = config_data['mission_epsg']
+    RESOLUTION_ORTHOMOSAIC = config_data['resolution_orthomosaic']
+    CALIBRATION_DIRECTORY = lab_calibration_path
+    
+    
+    dem_fold = os.path.join(specim_mission_folder, "dem")
+
+    if not os.path.exists(dem_fold):
+        print('DEM folder does not exist so Geoid is used as terrain instead')
+        TERRAIN_TYPE = "geoid"
+    else:
+        if not os.listdir(dem_fold):
+            print(f"The folder '{dem_fold}' is empty so Geoid is used as terrain instead.")
+            TERRAIN_TYPE = "geoid"
+        else:
+            # Find the *.tif file using glob
+            files = [f for f in os.listdir(directory) if f not in ('.', '..')]
+            DEM_PATH = files[0]
+            print(f"The file '{dem_path}' is used as terrain.")
+            TERRAIN_TYPE = "dem_file"
+            
+    
+    
+    GEOID_PATH = geoid_path
 
     # Settings associated with preprocessing of data from Specim Proprietary data to pipeline-compatible data
     SettingsPreprocess = namedtuple('SettingsPreprocessing', ['dtype_datacube', 
@@ -69,11 +86,8 @@ def main(config_yaml, specim_mission_folder):
 
 
     # Read config from a template (relative path):
-    config_path_template = '~/shared-seabee-ns9879k/ntnu/specim_processing_data/configuration_specim.ini'
-
-
     # Set the data directory for the mission, and create empty folder structure
-    prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DATA_DIR)
+    prepend_data_dir_to_relative_paths(config_path=config_template_path, DATA_DIR=DATA_DIR)
 
     # Non-default settings
     custom_config = {'General':
@@ -99,7 +113,6 @@ def main(config_yaml, specim_mission_folder):
                     'Absolute Paths': {
                         'geoid_path' : GEOID_PATH,
                         #'geoid_path' : 'data/world/geoids/egm08_25.gtx',
-                        'dem_path' : DEM_PATH,
                         # (above) The georeferencing allows processing using norwegian geoid NN2000 and worldwide EGM2008. Also, use of seafloor terrain models are supported. '
                         # At the moment refractive ray tracing is not implemented, but it could be relatively easy by first ray tracing with geoid+tide, 
                         # and then ray tracing from water
