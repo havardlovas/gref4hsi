@@ -2,7 +2,6 @@ opencv-python
 dill
 geopandas
 h5py
-lmfit
 matplotlib
 numpy
 open3d
@@ -20,6 +19,7 @@ xmltodict
 pykdtree
 trimesh
 rtree
+embreex
 pyembree
 sphinx
 ipykernel
