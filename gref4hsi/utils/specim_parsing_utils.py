@@ -1,30 +1,24 @@
 """This script reads Specim data from default captures and reformats data to compatibility with pipeline"""
-
+# Python builtins
 from datetime import datetime, timedelta
 import os
-import sys
 import glob
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+# Third party libraries
 import numpy as np
 from pathlib import Path
-import spectral as sp
 from spectral import envi
-import configparser
 import pandas as pd
 import h5py
 import pymap3d as pm
 from scipy.interpolate import interp1d
-
-import pandas as pd
-import numpy as np
 from scipy.optimize import least_squares
-from utils.geometry_utils import CalibHSI
 from scipy.spatial.transform import Rotation as RotLib
 
-from utils.geometry_utils import CalibHSI
-from utils.config_utils import prepend_data_dir_to_relative_paths
+# Library dependencies
+from gref4hsi.utils.geometry_utils import CalibHSI
+from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths
 
 ACTIVE_SENSOR_SPATIAL_PIXELS = 1024 # Constant for AFX10
 ACTIVE_SENSOR_SPECTRAL_PIXELS = 448 # Constant for AFX10
@@ -78,19 +72,12 @@ class Specim():
 
         res = least_squares(optimize_func, param_0, args = (x_true, n_pix), x_scale = 'jac')
 
-        #print(res.x)# Print the found camera model.
-
         param = res.x
-
-        
-
         f = param[0]  # The focal length of the lens
         k1 = param[1]  # The 1st Radial distortion
         k2 = param[2]  # The 2nd Radial distortion
         k3 = param[3]  # The tangential distortion
-        c_x = param[4] # The
-        """rotation_x, rotation_y, rotation_z, translation_x, translation_y, translation_z, c_x, focal_length,
-        distortion_coeff_1, distortion_coeff_2, distortion_coeff_3"""
+        c_x = param[4] # The 
 
         # initialized to 0
         rotation_x = 0

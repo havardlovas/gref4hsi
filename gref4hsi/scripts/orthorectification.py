@@ -7,9 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Local resources:
-from utils.geometry_utils import CameraGeometry, FeatureCalibrationObject, CalibHSI
-from utils.gis_tools import GeoSpatialAbstractionHSI
-from utils.parsing_utils import Hyperspectral
+from gref4hsi.utils.gis_tools import GeoSpatialAbstractionHSI
+from gref4hsi.utils.parsing_utils import Hyperspectral
 
 
 

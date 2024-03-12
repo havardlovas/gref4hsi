@@ -1,3 +1,4 @@
+# Python standard lib
 import os
 from concurrent.futures import ThreadPoolExecutor
 
@@ -6,9 +7,7 @@ import cv2 as cv
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
-import pyproj
 from pyproj import CRS, Transformer
-import pyvista as pv
 import rasterio
 from rasterio.features import geometry_mask
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -17,15 +16,11 @@ from shapely.geometry import Polygon, mapping, MultiPoint
 from sklearn.neighbors import NearestNeighbors
 from spectral import envi
 import spectral as sp
-import spectral.io.envi
 import h5py
 
+# Lib modules
+from gref4hsi.scripts.colours import Image as Imcol
 
-# Local module
-from scripts.colours import Image as Imcol
-from utils.parsing_utils import Hyperspectral
-
-GRAVITY = 9.81 # m/s^2
 # ENVI datatype conversion dictionary
 dtype_dict = {1:np.uint8,
              2:np.int16,

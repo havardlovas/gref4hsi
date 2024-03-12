@@ -1,32 +1,24 @@
 # Python Built-ins
 import os
-import sys
 import glob
 from datetime import datetime, timedelta, timezone
-import configparser
 from pyproj import CRS, Transformer
 
+# Third party libraries
 from scipy.interpolate import griddata
 import scipy.io as spio
 from scipy.interpolate import interp1d
-import spectral as sp
-import matplotlib.pyplot as plt
 import h5py
 import numpy as np
 import pandas as pd
 import pymap3d as pm
-from utils.geometry_utils import CalibHSI
-
-from pyvistaqt import BackgroundPlotter
-import numpy as np
-from pykrige.ok import OrdinaryKriging
 import rasterio
-from rasterio.transform import from_origin, Affine
-# We need to convert the altimeter data to a point cloud
+from rasterio.transform import Affine
 from scipy.spatial.transform import Rotation as RotLib
 
-from utils.config_utils import prepend_data_dir_to_relative_paths
-from utils.specim_parsing_utils import Specim
+# Lib specific utilites
+from gref4hsi.utils.specim_parsing_utils import Specim
+from gref4hsi.utils.geometry_utils import CalibHSI
 
 
 """Reader for the h5 file format in UHI context. The user provides h5 hierarchy paths as values and keys are the names given to the attributes """
@@ -634,7 +626,7 @@ def uhi_beast(config, config_uhi):
     time_offset = config_uhi.time_offset_sec
     lon0, lat0, alt0 = config_uhi.lon_lat_alt_origin
 
-    from utils.photogrammetry_utils import Photogrammetry
+    from gref4hsi.utils.photogrammetry_utils import Photogrammetry
     agisoft_object = Photogrammetry(project_folder = MISSION_PATH, software_type='agisoft')
 
     for h5_index in range(number_of_h5_files):

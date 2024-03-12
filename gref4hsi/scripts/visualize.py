@@ -6,7 +6,7 @@ from scipy.spatial.transform import Rotation
 import open3d as o3d
 import pymap3d as pm
 # A simple visualization of various types of data
-from utils.geometry_utils import rotation_matrix_ecef2ned, rotation_matrix_ecef2enu
+from gref4hsi.utils.geometry_utils import rotation_matrix_ecef2ned, rotation_matrix_ecef2enu
 
 def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'ECEF'):
     """

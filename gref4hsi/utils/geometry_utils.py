@@ -1,5 +1,5 @@
+# Third party
 import numpy as np
-import numpy.matlib
 from osgeo import gdal, osr
 import rasterio
 from scipy.spatial.transform import Rotation as RotLib
@@ -18,14 +18,13 @@ from rasterio.transform import from_origin
 from rasterio.windows import from_bounds
 from rasterio.windows import Window
 
+# Python standard lib
 import os
 import time
 from datetime import datetime
 from dateutil import parser
 
-# A file were we define geometry and geometric transforms.
-
-# Perhaps a class with one "__init__.py
+# A file were we define geometry and geometric transforms
 class CalibHSI:
     def __init__(self, file_name_cal_xml, config, mode = 'r', param_dict = None):
         """

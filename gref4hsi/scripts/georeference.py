@@ -9,10 +9,10 @@ import numpy as np
 import pyvista as pv
 import h5py
 
-# Local resources:
-from utils.geometry_utils import CameraGeometry, CalibHSI
-from utils.parsing_utils import Hyperspectral
-from scripts import visualize
+# Lib resources:
+from gref4hsi.utils.geometry_utils import CameraGeometry, CalibHSI
+from gref4hsi.utils.parsing_utils import Hyperspectral
+from gref4hsi.scripts import visualize
 
 
 def cal_file_to_rays(filename_cal, config):
