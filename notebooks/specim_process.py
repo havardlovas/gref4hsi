@@ -17,7 +17,7 @@ from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, cust
 import numpy as np
 import yaml
 """
-This script is meant to be used for testing the processing pipeline of airborne HI data from the Specim AFX10 instrument.
+This script is meant to be used for the processing pipeline of airborne HI data from the Specim AFX10 instrument.
 """
 
 
@@ -25,7 +25,8 @@ This script is meant to be used for testing the processing pipeline of airborne 
 
 def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, lab_calibration_path):
     
-    with open(config_yaml, 'r') as file:  # Replace 'config.yml' with your actual filename
+    # Read flight-specific yaml file
+    with open(config_yaml, 'r') as file:  
         config_data = yaml.safe_load(file)
     
     
@@ -70,7 +71,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                                 lines_per_chunk= 2000,  # Raw datacube is chunked into this many lines. GB_per_chunk = lines_per_chunk*n_pixels*n_bands*4 bytes
                                 specim_raw_mission_dir = SPECIM_MISSION_FOLDER, # Folder containing several mission
                                 cal_dir = CALIBRATION_DIRECTORY,  # Calibration directory holding all calibrations at all binning levels
-                                reformatted_missions_dir = SPECIM_MISSION_FOLDER + 'processed/', # The fill value for empty cells (select values not occcuring in cube or ancillary data)
+                                reformatted_missions_dir = os.path.join(SPECIM_MISSION_FOLDER, 'processed'), # The fill value for empty cells (select values not occcuring in cube or ancillary data)
                                 rotation_matrix_hsi_to_body = np.array([[0, 1, 0],
                                                                         [-1, 0, 0],
                                                                         [0, 0, 1]]), # Rotation matrix R rotating so that vec_body = R*vec_hsi.
@@ -82,7 +83,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
     # Where to place the config
     DATA_DIR = config_specim_preprocess.reformatted_missions_dir
-    config_file_mission = DATA_DIR + 'configuration.ini'
+    config_file_mission = os.path.join(DATA_DIR, 'configuration.ini')
 
 
     # Read config from a template (relative path):
@@ -102,7 +103,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         'pos_epsg_orig' : 4978}, # The CRS of the positioning data we deliver to the georeferencing
 
                     'Orthorectification':
-                        {'resample_rgb_only': True, # True can be good choice for speed during DEV
+                        {'resample_rgb_only': False, # True can be good choice for speed during DEV
                         'resolutionhyperspectralmosaic': RESOLUTION_ORTHOMOSAIC, # Resolution in m
                         'raster_transform_method': 'north_east'}, # North-east oriented rasters.
                     
