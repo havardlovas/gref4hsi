@@ -289,9 +289,7 @@ def add_byte_order_to_envi_header(header_file_path, byte_order_value):
 
 def main(config, config_specim):
     
-    # Every 1000 lines take up 0.85 GB at 8 Byte float. Therefore it could make sense to partition things that are larger than 2000 lines (sub GB for 32 float/4 byte)
-    #dtype = np.float32
-    #transect_chunk_size = 2000 # The number of lines
+    # Script that calibrates data and reforms to h5 file format.
     dtype = config_specim.dtype_datacube
     transect_chunk_size = config_specim.lines_per_chunk
     cal_dir = config_specim.cal_dir
@@ -300,7 +298,7 @@ def main(config, config_specim):
 
     mission_name = Path(mission_dir).name
     out_dir = config_specim.reformatted_missions_dir
-    config_file_path = out_dir + config_specim.config_file_name
+    config_file_path = os.path.join(out_dir, config_specim.config_file_name)
 
     prepend_data_dir_to_relative_paths(config_path=config_file_path, DATA_DIR=out_dir)
 
@@ -308,13 +306,18 @@ def main(config, config_specim):
 
     # Patterns for searching data cube files
     PATTERN_ENVI = '*.hdr'
-    capture_dir = mission_dir + '/capture/'
+
+    # Expects the captured data to reside in capture subfolder
+    capture_dir = os.path.join(mission_dir, 'capture')
+
+    # Path for searching (avoid explicit )
     search_path_envi = os.path.normpath(os.path.join(capture_dir, PATTERN_ENVI))
     envi_hdr_file_path = glob.glob(search_path_envi)[0]
 
+    # Read out data
     spectral_image_obj = envi.open(envi_hdr_file_path)
 
-    # Read all meta data from raw file 
+    # Read all meta data from header file (currently hard coded, but could be avoided I guess)
     class Metadata:
         pass
 
@@ -334,7 +337,7 @@ def main(config, config_specim):
     metadata_obj.interleave = spectral_image_obj.metadata['interleave']
     metadata_obj.data_type = spectral_image_obj.metadata['data type']
     
-    # Derived from knowledge of the sensor (sensor constants)
+    # Derived from knowledge of the sensor (sensor constants that could differ for other sensors)
     metadata_obj.binning_spatial = int(ACTIVE_SENSOR_SPATIAL_PIXELS/metadata_obj.n_pix)
     metadata_obj.binning_spectral = int(ACTIVE_SENSOR_SPECTRAL_PIXELS/metadata_obj.n_bands)
 
@@ -441,6 +444,7 @@ def main(config, config_specim):
     search_path_envi_cal = os.path.normpath(os.path.join(cal_dir, PATTERN_ENVI_CAL))
     ENVI_CAL_HDR_FILE_PATH = glob.glob(search_path_envi_cal)[0]
 
+    # For allowing spectral module to read
     RAD_CAL_BYTE_ORDER = 0
 
     add_byte_order_to_envi_header(header_file_path=ENVI_CAL_HDR_FILE_PATH, byte_order_value=RAD_CAL_BYTE_ORDER)
@@ -454,6 +458,7 @@ def main(config, config_specim):
     cal_n_bands = int(radiometric_image_obj.metadata['bands'])
     cal_n_pix = int(radiometric_image_obj.metadata['samples'])
 
+    # For calibration
     radiometric_frame = radiometric_image_obj[:,:,:].reshape((cal_n_pix, cal_n_bands))
 
     specim_object.radiometric_frame = radiometric_frame

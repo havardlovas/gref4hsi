@@ -33,7 +33,7 @@ def prepend_data_dir_to_relative_paths(config_path, DATA_DIR, mkdirs = True):
     # Iterate through the key-value pairs in 'Relative Paths'
     for key, relative_path in config['Relative Paths'].items():
         # Copy the key-value pair to 'Absolute Paths' section
-        absolute_path = DATA_DIR + relative_path
+        absolute_path = os.path.join(DATA_DIR, relative_path)
         config.set('Absolute Paths', key, absolute_path)
 
         # Only directories end with separators
@@ -48,7 +48,10 @@ def prepend_data_dir_to_relative_paths(config_path, DATA_DIR, mkdirs = True):
                 os.makedirs(absolute_path, exist_ok=True)
 
     # Save the updated configuration to the file
-    with open(DATA_DIR + 'configuration.ini', 'w') as configfile:
+    
+    config_path_write = os.path.join(DATA_DIR, 'configuration.ini')
+    print(f'The config file is written to path {config_path_write}')
+    with open(config_path_write, 'w') as configfile:
         config.write(configfile)
 
 def customize_config(config_path, dict_custom):
@@ -61,6 +64,8 @@ def customize_config(config_path, dict_custom):
     """
     config = configparser.ConfigParser()
     config.read(config_path)
+
+    
 
     # dict_custom like config is a two-level nested dictionary
     for key_section, section_dict in dict_custom.items():

@@ -27,7 +27,7 @@ This script is meant to be used for testing the processing pipeline of airborne 
 
 
 
-def main(config_yaml, specim_mission_folder):
+def main(specim_mission_folder):
     
     # assigning the arguments to variables for simple backwards compatibility
     SPECIM_MISSION_FOLDER = specim_mission_folder

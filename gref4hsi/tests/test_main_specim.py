@@ -12,10 +12,10 @@ if module_path not in sys.path:
     sys.path.append(module_path)
 
 # Local resources
-from scripts import georeference
-from scripts import orthorectification
-from utils import parsing_utils, specim_parsing_utils
-from scripts import visualize
+from gref4hsi.scripts import georeference
+from gref4hsi.scripts import orthorectification
+from gref4hsi.utils import parsing_utils, specim_parsing_utils
+from gref4hsi.scripts import visualize
 from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 
@@ -33,7 +33,7 @@ def main():
 
     parser.add_argument('-s', '--specim_mission_folder',
                         type=str, 
-                        default= r"/media/haavasl/Expansion/Specim/Missions/2024-02-19-Sletvik/slettvik_hopavaagen_202402191253_ntnu_hyperspectral_74m/",
+                        default= r"/media/haavasl/Expansion/Specim/Missions/2024-02-19-Sletvik/slettvik_hopavaagen_202402191253_ntnu_hyperspectral_74m",
                         help='folder storing the hyperspectral data for the specific mission')
 
     parser.add_argument('-e', '--epsg_code', 
@@ -105,7 +105,7 @@ def main():
                                 lines_per_chunk= 2000,  # Raw datacube is chunked into this many lines. GB_per_chunk = lines_per_chunk*n_pixels*n_bands*4 bytes
                                 specim_raw_mission_dir = SPECIM_MISSION_FOLDER, # Folder containing several mission
                                 cal_dir = CALIBRATION_DIRECTORY,  # Calibration directory holding all calibrations at all binning levels
-                                reformatted_missions_dir = SPECIM_MISSION_FOLDER + 'processed/', # The fill value for empty cells (select values not occcuring in cube or ancillary data)
+                                reformatted_missions_dir = os.path.join(SPECIM_MISSION_FOLDER, 'processed'), # The fill value for empty cells (select values not occcuring in cube or ancillary data)
                                 rotation_matrix_hsi_to_body = np.array([[0, 1, 0],
                                                                         [-1, 0, 0],
                                                                         [0, 0, 1]]), # Rotation matrix R rotating so that vec_body = R*vec_hsi.
@@ -117,7 +117,7 @@ def main():
 
     # Where to place the config
     DATA_DIR = config_specim_preprocess.reformatted_missions_dir
-    config_file_mission = DATA_DIR + 'configuration.ini'
+    config_file_mission = os.path.join(DATA_DIR, 'configuration.ini')
 
 
     # Read config from a template (relative path):
@@ -181,8 +181,8 @@ def main():
     # This function parses raw specim data including (spectral, radiometric, geometric) calibrations and nav data
     # into an h5 file. The nav data is written to "raw/nav/" subfolders, whereas hyperspectral data and calibration data 
     # written to "processed/hyperspectral/" and "processed/calibration/" subfolders
-    """specim_parsing_utils.main(config=config,
-                              config_specim=config_specim_preprocess)"""
+    specim_parsing_utils.main(config=config,
+                              config_specim=config_specim_preprocess)
     
     # Interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
     config = parsing_utils.export_pose(config_file_mission)
