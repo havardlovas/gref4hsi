@@ -50,7 +50,7 @@ def prepend_data_dir_to_relative_paths(config_path, DATA_DIR, mkdirs = True):
     # Save the updated configuration to the file
     
     config_path_write = os.path.join(DATA_DIR, 'configuration.ini')
-    print(f'The config file is written to path {config_path_write}')
+    
     with open(config_path_write, 'w') as configfile:
         config.write(configfile)
 

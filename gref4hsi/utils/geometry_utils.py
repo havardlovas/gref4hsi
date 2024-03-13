@@ -1,11 +1,10 @@
 # Third party
 import numpy as np
-
+import numpy.matlib
 from osgeo import gdal, osr
 import rasterio
 from scipy.spatial.transform import Rotation as RotLib
 from scipy.spatial.transform import Slerp
-from scipy.interpolate import interp1d
 import open3d as o3d
 import xmltodict
 from pyproj import CRS, Transformer
@@ -88,7 +87,6 @@ class CameraGeometry():
             self.position_nav = pos
         else:
             self.position_nav = pos - np.transpose(pos0) # Camera pos
-
 
 
         self.rotation_nav = rot
@@ -255,7 +253,7 @@ class CameraGeometry():
 
         dir = (self.rayDirectionsGlobal * max_ray_length).reshape((-1,3))
 
-        print('Starting Ray Tracing')
+        
         
         start_time = time.time()
 
@@ -285,8 +283,6 @@ class CameraGeometry():
 
 
         stop_time = time.time()
-
-        print('Ray traced {0} rays on a mesh with {1} cells in {2} seconds'.format(dir.shape[0], mesh.cell_normals.shape[0], stop_time - start_time))
 
         normals = mesh.cell_normals[cells,:]
 
@@ -318,7 +314,7 @@ class CameraGeometry():
             # Calculate a depth map (the z-component, 1D scanline)
             self.depth_map[i, :] = self.points_hsi_crs[i, :, 2]/self.rayDirectionsLocal[:, 2]
 
-        print('Finished ray tracing')
+        
 
         self.unix_time_grid = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), self.time.reshape((-1,1)))
         self.unix_time = self.unix_time_grid.reshape((-1, 1)) # Vector-form
@@ -342,10 +338,6 @@ class CameraGeometry():
         a = np.transpose(dir_hat).dot(B.dot(dir_hat))
         b = 2*np.transpose(p0).dot(B.dot(dir_hat))
         c = np.transpose(p0).dot(B.dot(p0)) - 1
-
-        print(a)
-        print(b)
-        print(c)
 
         p = np.zeros(3)
         p[0] = a
@@ -1116,7 +1108,6 @@ def dem_2_mesh(path_dem, model_path, config):
                 proj = ds.GetProjection()
                 is_projected = False
 
-            print(f"DEM projected EPSG Code: {epsg_proj}")
 
             # Automatically set
             
@@ -1141,7 +1132,7 @@ def dem_2_mesh(path_dem, model_path, config):
             ds = None
             band = None
     
-    print("DEM-Mesh conversion completed.")
+
     points = np.loadtxt(output_xyz)
 
     # Create a pyvista point cloud object

@@ -255,7 +255,7 @@ A similar write process could be applied to metadata."""
 def specim_object_2_h5_file(h5_filename, h5_tree_dict, specim_object):
     with h5py.File(h5_filename, 'w', libver='latest') as f:
         for attribute_name, h5_hierarchy_item_path in h5_tree_dict.items():
-            print(attribute_name)
+            #print(attribute_name)
             dset = f.create_dataset(name=h5_hierarchy_item_path, 
                                             data = getattr(specim_object, attribute_name))            
 
