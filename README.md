@@ -34,12 +34,12 @@ To run the code you will most likely need to re-format your raw acquired hypersp
 ```
 
 
-You minimally need the following to successfully run georeferencing: a configuration file ("*.ini"), a terrain model, a camera model ("*.xml") and h5/hdf file (datacube + navigation data).
+You minimally need the following to successfully run georeferencing: a configuration file ("\*.ini"), a terrain model, a camera model ("\*.xml") and h5/hdf file (datacube + navigation data).
 
-### Configuration file ("*.ini"). 
+### Configuration file ("\*.ini"). 
 It is recommended to just go with the template and maybe change a few minor things, depending on need. A template is given in the Github repo under data/config_examples/configuration_template.ini. The file contains comments describing the entries. Take a careful look at all comments containing "Change" as these are relevant to adjust. 
 
-### Calibration file ("*.xml")
+### Calibration file ("\*.xml")
 The *.xml file is our chosen camera model file and looks like this:
 ```
 <?xml version="1.0" encoding="utf-8"?>
@@ -102,7 +102,7 @@ from gref4hsi.specim_parsing_utils import Specim
 # FOV array from manufacturer describing the view angle of each pixel
 fov = np.array([-19.1, -19.0 .... 19.0, 19.1]) # Length as number of pixels
 
-# Use static method to convert fov to parameters (with boresights and lever arms to zero)
+# Use static method to convert fov to parameters dictionary equivalent to xml file (with boresights and lever arms to zero)
 param_dict = Specim.fov_2_param(fov = specim_object.view_angles)
 
 # Write to an *.xml file
@@ -161,10 +161,10 @@ My recommended approach would be that you create your own modified xxx_parsing_u
 The last thing worth mentioning is the navigation data. The aforementioned specim_parsing_utils.py parses navigation data from messages, e.g.
 
 Positions from 
-"$GPGGA,125301.00,6335.47830829,N,00932.34206055,E,2,07,1.7,18.434,M,41.216,M,4.0,0123*79"
+"$GPGGA,125301.00,6335.47830829,N,00932.34206055,E,2,07,1.7,18.434,M,41.216,M,4.0,0123\*79"
 
-Orientations from messages like
-"$PASHR,125648.280,322.905,T,0.621,-0.114,,0.034,0.034,0.450,2,3*1B"
+Orientations/attitude from messages like
+"$PASHR,125648.280,322.905,T,0.621,-0.114,,0.034,0.034,0.450,2,3\*1B"
 
 The above data log is read with the method (in the case you have a similar navigation format)
 
@@ -188,6 +188,7 @@ specim_object.position_ecef = np.concatenate((x,y,z), axis = 1)
 ```
 
 Then the "specim_object_2_h5_file" puts the data into the right place.
+
 ## Running the processing
 Once the above has been defined the processing can be run with a few lines of code (taken from gref4hsi/tests/test_main_specim.py):
 ```
@@ -199,7 +200,7 @@ from gref4hsi.scripts import visualize
 
 # This function parses raw specim data including (spectral, radiometric, geometric) calibrations and nav data
 # into an h5 file. The nav data is written to "raw/nav/" subfolders, whereas hyperspectral data and calibration data 
-# written to "processed/hyperspectral/" and "processed/calibration/" subfolders. The camera model *.xml file is also generated.
+# written to "processed/hyperspectral/" and "processed/calibration/" subfolders. The camera model \*.xml file is also generated.
 # The script must be adapted to other 
 specim_parsing_utils.main(config=config,
                           config_specim=config_specim_preprocess)
