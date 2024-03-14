@@ -233,7 +233,7 @@ class CameraGeometry():
 
         for i in range(n):
             self.rayDirectionsGlobal[i, :, :] = self.rotation_hsi[i].apply(dir_local)
-    def intersectWithMesh(self, mesh, max_ray_length):
+    def intersect_with_mesh(self, mesh, max_ray_length):
         """Intersects the rays of the camera with the 3D triangular mesh
 
         :param mesh: A mesh object read via the pyvista library
@@ -560,7 +560,7 @@ class CameraGeometry():
             else: # A Good place to write parsers for other formats
                 TypeError
         
-    def writeRGBPointCloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
+    def write_rgb_point_cloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
         wl_red = float(config['General']['red_wave_length'])
         wl_green = float(config['General']['green_wave_length'])
         wl_blue = float(config['General']['blue_wave_length'])

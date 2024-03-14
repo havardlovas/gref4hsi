@@ -11,6 +11,7 @@ from scipy.special import expi
 from scipy.special import erf
 from scipy.special import erfi
 from scipy.optimize import fsolve
+import matplotlib.pyplot as plt
 
 def fresnel(theta_i, n_i, n_t, is_transmittance, method):
     # This is used for computing the transmittance at the interfaces
@@ -45,17 +46,16 @@ def fresnel(theta_i, n_i, n_t, is_transmittance, method):
 
 
 def solid_angle_ratio(theta_w, n_w):
-    theta_a = np.arcsin((n_w / 1) * np.sin(theta_w)) # Snells law with n_a = 1
+    """Computes the in-air angle corresponding to an in-water angle using Snell's law"""
+    n_a = 1 # Approximate n_a = 1
+    theta_a = np.arcsin((n_w / n_a) * np.sin(theta_w)) # Snells law
+    return theta_a
 
 def immersion_factor(theta_w, n_w, n_g, pixel_nr):
+    """Calculates the immersion factor for imager with planar glass port in underwater hyperspectral imaging"""
     n_a = 1
 
     theta_a = np.arcsin((n_w / n_a) * np.sin(theta_w))
-
-    import matplotlib.pyplot as plt
-
-    #plt.hist(theta_w.reshape(-1))
-    #plt.show()
 
     t_ag = fresnel(theta_i=theta_a, n_i = n_a, n_t = n_g, is_transmittance=1, method=1)
 
@@ -99,15 +99,10 @@ def beam_pattern(dir_s0, dir, sigma, I_0, I_hat):
     return Intensity/I_0, Intensity_Spectral
 
 def compute_gamma(dir, normals):
+    """Compute the angle between a normal vector and an incoming ray"""
     dot_prod = np.einsum('ij, ij -> i', normals, -dir)
     len_vec = np.linalg.norm(dir, axis = 1) * np.linalg.norm(normals, axis = 1)
     gamma = np.arccos(dot_prod/len_vec)
-
-    gamma[gamma > 80*np.pi/180] = 80*np.pi/180
-
-    #import matplotlib.pyplot as plt
-    #plt.hist(gamma * 180 / np.pi, 50)
-    #plt.show()
     return gamma.reshape((-1, 1))
 
 def compute_n_g(wlen):
@@ -168,8 +163,6 @@ def compute_backscatter(B_p, b, b_w, b_p, d_pix, pos_seabed, p_si, dir_s0, sigma
     len_vec = np.linalg.norm(d_pix, axis=1) * np.linalg.norm(r_si_b, axis=2)
     psi = np.pi - np.arccos(dot_prod / len_vec)
 
-
-
     beta_p_interp = fournier_forand(B_p)  # Assumed constant backscatter fraction across wl. Is a log-log interpolator
 
     beta_p = np.exp( beta_p_interp(np.log(psi)) ).reshape((r_si_b.shape[0], r_si_b.shape[1], 1)) # Due to the interpolation in log-log domain. t by m
@@ -205,7 +198,8 @@ def compute_backscatter(B_p, b, b_w, b_p, d_pix, pos_seabed, p_si, dir_s0, sigma
 
 
 def compute_light_source_integral(sigma):
-    # Computes the relation between spectral radiant flux P [W] and peak intensity I_0 [W/sr]
+    """Computes the relation between spectral radiant flux P [W] and peak intensity I_0 [W/sr] for a directionally gaussian beam
+    with sigma standard decviation"""
     constant = np.exp(-0.5 * sigma ** 2) * sigma
 
     term1 = -0.626657j * erf(0 + 0.707107j * sigma)
@@ -216,6 +210,7 @@ def compute_light_source_integral(sigma):
     return np.real(constant * (term1 + term2 + term3 + term4))*2*np.pi
 
 def fournier_forand(B_p):
+    """Calculates the phase function values for a given backscatter fraction"""
 
     # Partition data into equal 100 bins from 10 degrees to 100:
     logPsi = np.linspace(np.log(10*np.pi/180), np.log(180*np.pi/180), 100)
@@ -274,8 +269,8 @@ def eq_backscatter_param(mu, B_p_true):
 
 
 
-
 def compute_beta_w(psi):
+    """The scattering phase function of pure water"""
     # Psi is an array of scattering angles
     # Analytical Formula from Ocean Optics p. 180
     return 0.0608*(1 + 0.925*(np.cos(psi))**2)

@@ -198,7 +198,7 @@ def main():
         visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference.main(config_file_mission)
+    #georeference.main(config_file_mission)
 
     orthorectification.main(config_file_mission)
 

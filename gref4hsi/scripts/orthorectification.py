@@ -118,10 +118,15 @@ def main(iniPath):
                               )
 
 
-    print('Orthorectifying Images')
-
-    for filename in sorted(os.listdir(h5_folder)):
+    print("\n################ Orthorectifying: ################")
+    files = sorted(os.listdir(h5_folder))
+    n_files= len(sorted(os.listdir(h5_folder)))
+    file_count = 0
+    for filename in files:
         if filename.endswith('h5') or filename.endswith('hdf'):
+
+            progress_perc = 100*file_count/n_files
+            print(f"Orthorectifying file {file_count+1}/{n_files}, progress is {progress_perc} %")
             # Path to hierarchical file
             h5_filename = h5_folder + filename
 
@@ -172,7 +177,8 @@ def main(iniPath):
                                         anc_dict = anc_dict, 
                                         anc_dir = anc_dir,
                                         interleave=config_ortho.interleave)
-
+        
+        file_count+=1
 if __name__ == '__main__':
     args = sys.argv[1:]
     iniPath = args[0]

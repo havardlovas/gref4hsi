@@ -146,10 +146,17 @@ def main(iniPath, viz = False):
 
     mesh = pv.read(path_mesh)
 
-    print('Georeferencing Images')
-
-    for filename in sorted(os.listdir(dir_r)):
+    
+    print("\n################ Georeferencing: ################")
+    files = sorted(os.listdir(dir_r))
+    n_files= len(sorted(os.listdir(dir_r)))
+    file_count = 0
+    for filename in files:
         if filename.endswith('h5') or filename.endswith('hdf'):
+
+            progress_perc = 100*file_count/n_files
+            print(f"Georeferencing file {file_count+1}/{n_files}, progress is {progress_perc} %")
+
             # Path to hierarchical file
             path_hdf = dir_r + filename
 
@@ -168,7 +175,7 @@ def main(iniPath, viz = False):
                                     intrinsic_geometry_dict = intrinsic_geometry_dict)
 
             
-            hsi_geometry.intersectWithMesh(mesh = mesh, max_ray_length=max_ray_length)
+            hsi_geometry.intersect_with_mesh(mesh = mesh, max_ray_length=max_ray_length)
             
             # Computes the view angles in the local NED. Computationally intensive as local NED is defined for each intersection
             hsi_geometry.compute_view_directions_local_tangent_plane()
@@ -182,15 +189,14 @@ def main(iniPath, viz = False):
             
             write_intersection_geometry_2_h5_file(hsi_geometry=hsi_geometry, config = config, h5_filename=path_hdf)
 
-            print('Writing Point Cloud')
-            hsi_geometry.writeRGBPointCloud(config = config, hyp = hyp, transect_string = filename.split('.')[0])
+            hsi_geometry.write_rgb_point_cloud(config = config, hyp = hyp, transect_string = filename.split('.')[0])
 
             if viz:
                  visualize.show_projected_hsi_points(HSICameraGeometry=hsi_geometry, 
                                                      config=config, 
                                                      transect_string = filename.split('.')[0])
 
-            print('Intersection geometry written to:\n {0}'.format(filename))
+            
 
 
             
@@ -199,6 +205,7 @@ def main(iniPath, viz = False):
             #from scripts import visualize
             #visualize.show_projected_hsi_points(HSICameraGeometry=hsi_geometry, config=config, transect_string = filename.split('.')[0])
 
+        file_count+=1
             
 
 
