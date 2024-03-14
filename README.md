@@ -1,5 +1,7 @@
 # gref4hsi - a toolchain for the georeferencing and orthorectification of hyperspectral pushbroom data. 
-This software was made with a special emphasis on georeferencing and orthorectification of underwater hyperspectral data close-range. However, it is equally simple to use for airborne data, and probably even for satellite imagery (although modified approaches including analytical ellipsoid intersection may be better). A coregistration module might be added in the future to flexibly improve image alignment. 
+This software was made with a special emphasis on georeferencing and orthorectification of underwater hyperspectral data close-range. However, it is equally simple to use for airborne data, and probably even for satellite imagery (although modified approaches including analytical ellipsoid intersection may be better). A coregistration module might be added in the future to flexibly improve image alignment.
+
+This README is a bit verbose, but is meant to act as a "tutorial" as well, and I recommend trying to understand as much as possible.
 
 ## Installation instructions for Linux:
 The easiest approach is to use conda/mamba to get gdal and pip to install the package with the following commands (has been tested for python 3.8-3.10):
@@ -34,7 +36,7 @@ To run the code you will most likely need to re-format your raw acquired hypersp
 ```
 
 
-You minimally need the following to successfully run georeferencing: a configuration file ("\*.ini"), a terrain model, a camera model ("\*.xml") and h5/hdf file (datacube + navigation data).
+You minimally need the following to successfully run georeferencing: a configuration file ("\*.ini"), a terrain model, a camera model ("\*.xml") and h5/hdf file (datacube + navigation data). To appropriately format/create these, I recommend creating a parser. An example parser for a specim hyperspectral imager + navigation system is added under gref4hsi/utils/specim_parsing_utils.py
 
 ### Configuration file ("\*.ini"). 
 It is recommended to just go with the template and maybe change a few minor things, depending on need. A template is given in the Github repo under data/config_examples/configuration_template.ini. The file contains comments describing the entries. Take a careful look at all comments containing "Change" as these are relevant to adjust. 
@@ -152,8 +154,24 @@ h5_dict_write = {'eul_zyx' : config['HDF.raw_nav']['eul_zyx'],
             'dark_frame' : config['HDF.calibration']['darkframe'], # Optional unless 'is_radiance' is False
             'radiometric_frame' : config['HDF.calibration']['radiometricframe']} # # Optional unless 'is_radiance' is False
 
-# specim_object is an object whoose attributes correspond to the above keys
-# e.g. specim_object.radiance_cube is the 3D datacube, and specim_object_2_h5_file will write it to the h5-path specified in configuration section 'HDF.hyperspectral' by entry 'datacube'
+# Which is equivalent to (with the configuration_template.ini):
+h5_dict_write = {
+  'eul_zyx':            'raw/nav/euler_angles',
+  'position_ecef':     'raw/nav/position_ecef',
+  'nav_timestamp':     'raw/nav/timestamp',
+  'radiance_cube':    'processed/radiance/dataCube',
+  't_exp_ms':          'processed/radiance/exposureTime',
+  'hsi_timestamps':   'processed/radiance/timestamp',
+  'view_angles':       'processed/radiance/calibration/geometric/view_angles',
+  'wavelengths':       'processed/radiance/calibration/spectral/band2Wavelength',
+  'fwhm':              'processed/radiance/calibration/spectral/fwhm',
+  'dark_frame':        'processed/radiance/calibration/radiometric/darkFrame',
+  'radiometric_frame': 'processed/radiance/calibration/radiometric/radiometricFrame'
+}
+
+# At last, write the data to a h5 file
+# In this case 'specim_object' is an object whoose attributes correspond to the above keys
+# e.g. specim_object.radiance_cube is the 3D datacube, and the method 'specim_object_2_h5_file' will write  the data cube to the h5-path specified in configuration section 'HDF.hyperspectral' by entry 'datacube'
 specim_object_2_h5_file(h5_filename=h5_filename, h5_tree_dict=h5_dict_write, specim_object=specim_object)
 ```
 My recommended approach would be that you create your own modified xxx_parsing_utils.py (feel free to send a pull request) which parses and writes your specific navigation data and hyperspectral data into the format.
