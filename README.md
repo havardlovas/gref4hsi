@@ -39,7 +39,17 @@ To run the code you will most likely need to re-format your raw acquired hypersp
 You minimally need the following to successfully run georeferencing: a configuration file ("\*.ini"), a terrain model, a camera model ("\*.xml") and h5/hdf file (datacube + navigation data). To appropriately format/create these, I recommend creating a parser. An example parser for a specim hyperspectral imager + navigation system is added under gref4hsi/utils/specim_parsing_utils.py
 
 ### Configuration file ("\*.ini"). 
-It is recommended to just go with the template and maybe change a few minor things, depending on need. A template is given in the Github repo under data/config_examples/configuration_template.ini. The file contains comments describing the entries. Take a careful look at all comments containing "Change" as these are relevant to adjust. 
+It is recommended to just go with the template and maybe change a few minor things, depending on need. A template is given in the Github repo under data/config_examples/configuration_template.ini. The file contains comments describing the entries. Take a careful look at all comments containing "Change" as these are relevant to adjust depending on your setup. If your imager records h5 data, adjusting the h5 paths (sections 'HDF.xxxx') is relevant too. Morover, we interface with the configuration in a dictionary-style manner:
+
+```
+# Make an object and read the config file for the mission
+config = configparser.ConfigParser()
+config.read(config_file_mission)
+
+# Access a specific configuration, e.g. the calibrated camera model of the imager
+hsi_calib_path = config['Absolute Paths']['hsi_calib_path'] # config[<section>][<config-entry>]
+```
+
 
 ### Calibration file ("\*.xml")
 The *.xml file is our chosen camera model file and looks like this:
@@ -132,7 +142,31 @@ CalibHSI(file_name_cal_xml= confic['Absolute Paths']['hsi_calib_path'],
 There are three allowable types ("model_export_type" in the configuration file), namely "ply_file" (a.k.a. mesh files), "dem_file" and "geoid". Example geoids are added under data/world/geoids/ including the global egm08 and a norwegian geoid. Your local geoid can probably be found from [geoids](https://www.agisoft.com/downloads/geoids/) or similar. Just ensure you add this path to the 'Absolute Paths' section in the configuration file. Similarly, if you choose "model_export_type = dem_file", you can usa a terrain model from from your area as long as you add the path to the file in the 'Absolute Paths'. Remember that if the local terrain (dem file) is given wrt the geoid, you can plus them together in e.g. QGIS or simply add an approximate offset in python with rasterio. This is because the software expects DEMs giving the ellipsoid height. Lastly, if the "ply_file" is the desired option a path to this file must be added to the config file.
 
 ### The h5 files
-This format must comply with the h5 paths in the configuration file. All sections starting with "HDF.xxxx" are related to these paths. I realize that it is inconvenient to transform the format if your recorded data is in NETCDF, ENVI etc, but making this software I chose H5/HDF because of legacy. An example of format conversion is given under gref4hsi/utils/specim_parsing_utils.py where the raw format of the specim data and a navigation system is converted and written to the h5 format. The following code is taken from that script and shows how you can write all the necessary data to the appropriate h5 format:
+This format must comply with the h5 paths in the configuration file. All sections starting with "HDF.xxxx" are related to these paths. I realize that it is inconvenient to transform the format if your recorded data is in NETCDF, ENVI etc, but making this software I chose H5/HDF because of legacy and because of the flexibility of the mini-file system. The input structure (only mandatory entries) of the H5 files under mission_dir/Input/H5 is as follows (printed using h5tree in Linux):  
+```
+2022-08-31_0800_HSI_transectnr_0_chunknr_0.h5
+2022-08-31_0800_HSI_transectnr_0_chunknr_0.h5
+├── processed
+│   └── radiance
+│       ├── calibration
+│       │   ├── geometric # Optional
+│       │   │   └── view_angles
+│       │   ├── radiometric # Only if is_radiance = False
+│       │   │   ├── darkFrame
+│       │   │   └── radiometricFrame
+│       │   └── spectral 
+│       │       ├── band2Wavelength
+│       │       └── fwhm # Optional
+│       ├── dataCube 
+│       ├── exposureTime
+│       └── timestamp
+└── raw
+    └── nav
+        ├── euler_angles
+        ├── position_ecef
+        └── timestamp
+```
+Note that all these paths are parameters in the config file and you will now we will explain how to simply fill in this file tree using the config file. An example of format conversion is given under gref4hsi/utils/specim_parsing_utils.py where the raw format of the specim data and a navigation system is converted and written to the h5 format. The following code is taken from that script and shows how you can write all the necessary data to the appropriate h5 format. Assume that "specim_object" represents an object whose attributes are the datasets, meaning that e.g. specim_object.radiance_cube is the 3D datacube, and the method 'specim_object_2_h5_file' will write the data cube to the h5-path specified in configuration section 'HDF.hyperspectral' by entry 'datacube'
 
 ```
 def specim_object_2_h5_file(h5_filename, h5_tree_dict, specim_object):
@@ -152,9 +186,9 @@ h5_dict_write = {'eul_zyx' : config['HDF.raw_nav']['eul_zyx'],
             'wavelengths' : config['HDF.calibration']['band2wavelength'],
             'fwhm' : config['HDF.calibration']['fwhm'], # Optional
             'dark_frame' : config['HDF.calibration']['darkframe'], # Optional unless 'is_radiance' is False
-            'radiometric_frame' : config['HDF.calibration']['radiometricframe']} # # Optional unless 'is_radiance' is False
+            'radiometric_frame' : config['HDF.calibration']['radiometricframe']} # Optional unless 'is_radiance' is False
 
-# Which is equivalent to (with the configuration_template.ini):
+# The dictionary is equivalent to the tree view above (assuming configuration_template.ini):
 h5_dict_write = {
   'eul_zyx':            'raw/nav/euler_angles',
   'position_ecef':     'raw/nav/position_ecef',
