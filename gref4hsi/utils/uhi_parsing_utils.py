@@ -588,7 +588,7 @@ def uhi_beast(config, config_uhi):
     
 
     # For writing
-    config_file_path = MISSION_PATH + 'configuration.ini'
+    config_file_path = os.path.join(MISSION_PATH, 'configuration.ini')
 
     SPATIAL_PIXELS = 1936 # Same for almost all UHI
     
@@ -620,14 +620,17 @@ def uhi_beast(config, config_uhi):
             'hsi_frames_timestamp': config['HDF.hyperspectral']['timestamp'],
             'fov': config['HDF.calibration']['fov'],
             'wavelengths' : config['HDF.calibration']['band2wavelength'],
-            'rgb_frames' : config['HDF.rgb']['rgb_frames'],
-            'rgb_timestamp' : config['HDF.rgb']['rgb_timestamp']}
+            #'rgb_frames' : config['HDF.rgb']['rgb_frames'],
+            #'rgb_timestamp' : config['HDF.rgb']['rgb_timestamp']
+            }
     
     time_offset = config_uhi.time_offset_sec
     lon0, lat0, alt0 = config_uhi.lon_lat_alt_origin
 
-    from gref4hsi.utils.photogrammetry_utils import Photogrammetry
-    agisoft_object = Photogrammetry(project_folder = MISSION_PATH, software_type='agisoft')
+    # from gref4hsi.utils.photogrammetry_utils import Photogrammetry
+    # agisoft_object = Photogrammetry(project_folder = MISSION_PATH, software_type='agisoft')
+    # TODO:: Add support for concurrent camera given that images are contained in a h5 folder. 
+    # Should interface towards ODM as well
 
     for h5_index in range(number_of_h5_files):
         H5_FILE_PATH = H5_FILE_PATHS[h5_index]
@@ -666,7 +669,7 @@ def uhi_beast(config, config_uhi):
         
 
 
-        # If desirable to write to Agisoft type format
+        """# If desirable to write to Agisoft type format
         if config_uhi.agisoft_process:
             nav_rgb = nav
             nav_rgb.interpolate(time_interp=hyp.rgb_timestamp)
@@ -680,7 +683,7 @@ def uhi_beast(config, config_uhi):
                                             pos_acc = np.array([1, 1, 0.05]), 
                                             rot_acc = np.array([1, 1, 5]))
             except:
-                pass # If no RGB data, move forward
+                pass # If no RGB data, move forward"""
         
         
         

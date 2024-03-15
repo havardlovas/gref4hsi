@@ -543,19 +543,15 @@ def main(config, config_specim):
     df_imu = pd.DataFrame(specim_object.imu_data)
     df_gnss = pd.DataFrame(specim_object.gnss_data)
     df_sync_hsi = pd.DataFrame(specim_object.sync_data)
-    # Define the time stamps of HSI frames
-
-
-    # Let's consider this an interpolation problem. Every new sync means a new fps # frames:
+    
+    # Define the time stamps of HSI frames (special fix for Specim)
     sync_frames = df_sync_hsi['HsiFrameNum']
     sync_times = df_sync_hsi['TimestampAbs']
     hsi_frames = np.arange(metadata_obj.autodarkstartline)
+    hsi_timestamps_total = interp1d(x = sync_frames, y = sync_times, fill_value = 'extrapolate')(x = hsi_frames)
 
 
-    hsi_timestamps_total = interp1d(x = sync_frames, y= sync_times, fill_value = 'extrapolate')(x = hsi_frames)
-
-
-    # Secondly, for ease, let us interpolate position data to imu time (avoids rotational interpolation)
+    # For ease, let us interpolate position data to imu time (allows one timestamp for nav data)
     imu_time = df_imu['TimestampAbs']
 
     # Drop the specified regular clock time (as it is not needed)
@@ -566,7 +562,6 @@ def main(config, config_specim):
         column: np.interp(imu_time, df_gnss['TimestampAbs'], df_gnss[column])
         for column in df_gnss.columns if column != 'TimestampAbs'
     }
-
 
     # Create a new DataFrame with the interpolated values
     df_gnss_interpolated = pd.DataFrame({'time': imu_time, **interpolated_values})

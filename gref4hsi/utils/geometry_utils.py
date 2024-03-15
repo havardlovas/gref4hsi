@@ -552,7 +552,7 @@ class CameraGeometry():
                     # Make into gridded form:
                     self.hsi_tide_gridded = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), hsi_tide_interp.reshape((-1,1)))
                 except:
-                    print('No tide file was found!!')
+                    #print('No tide file was found!!')
                     self.hsi_tide_gridded = constant_height*np.ones((n, m, 1))
 
 

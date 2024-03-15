@@ -1,4 +1,4 @@
-import Metashape as MS
+
 import ntpath
 import h5py
 import pandas as pd
