@@ -6,9 +6,9 @@ import argparse
 from collections import namedtuple
 
 # This is very hard coded, but not necessary if Python does not know where to look
-"""module_path = 'C:/Users/haavasl/VSCodeProjects/hyperspectral_toolchain/gref4hsi/'
+module_path = 'C:/Users/haavasl/VSCodeProjects/hyperspectral_toolchain/gref4hsi/'
 if module_path not in sys.path:
-    sys.path.append(module_path)"""
+    sys.path.append(module_path)
 
 # Local resources
 from scripts import georeference
