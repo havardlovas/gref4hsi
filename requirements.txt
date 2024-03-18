@@ -23,3 +23,5 @@ embreex
 pyembree
 sphinx
 ipykernel
+ephem
+PyQt5

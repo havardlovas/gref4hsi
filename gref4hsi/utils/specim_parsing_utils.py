@@ -1,30 +1,24 @@
 """This script reads Specim data from default captures and reformats data to compatibility with pipeline"""
-
+# Python builtins
 from datetime import datetime, timedelta
 import os
-import sys
 import glob
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+# Third party libraries
 import numpy as np
 from pathlib import Path
-import spectral as sp
 from spectral import envi
-import configparser
 import pandas as pd
 import h5py
 import pymap3d as pm
 from scipy.interpolate import interp1d
-
-import pandas as pd
-import numpy as np
 from scipy.optimize import least_squares
-from utils.geometry_utils import CalibHSI
 from scipy.spatial.transform import Rotation as RotLib
 
-from utils.geometry_utils import CalibHSI
-from utils.config_utils import prepend_data_dir_to_relative_paths
+# Library dependencies
+from gref4hsi.utils.geometry_utils import CalibHSI
+from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths
 
 ACTIVE_SENSOR_SPATIAL_PIXELS = 1024 # Constant for AFX10
 ACTIVE_SENSOR_SPECTRAL_PIXELS = 448 # Constant for AFX10
@@ -78,19 +72,12 @@ class Specim():
 
         res = least_squares(optimize_func, param_0, args = (x_true, n_pix), x_scale = 'jac')
 
-        #print(res.x)# Print the found camera model.
-
         param = res.x
-
-        
-
         f = param[0]  # The focal length of the lens
         k1 = param[1]  # The 1st Radial distortion
         k2 = param[2]  # The 2nd Radial distortion
         k3 = param[3]  # The tangential distortion
-        c_x = param[4] # The
-        """rotation_x, rotation_y, rotation_z, translation_x, translation_y, translation_z, c_x, focal_length,
-        distortion_coeff_1, distortion_coeff_2, distortion_coeff_3"""
+        c_x = param[4] # The 
 
         # initialized to 0
         rotation_x = 0
@@ -268,7 +255,7 @@ A similar write process could be applied to metadata."""
 def specim_object_2_h5_file(h5_filename, h5_tree_dict, specim_object):
     with h5py.File(h5_filename, 'w', libver='latest') as f:
         for attribute_name, h5_hierarchy_item_path in h5_tree_dict.items():
-            print(attribute_name)
+            #print(attribute_name)
             dset = f.create_dataset(name=h5_hierarchy_item_path, 
                                             data = getattr(specim_object, attribute_name))            
 
@@ -302,9 +289,7 @@ def add_byte_order_to_envi_header(header_file_path, byte_order_value):
 
 def main(config, config_specim):
     
-    # Every 1000 lines take up 0.85 GB at 8 Byte float. Therefore it could make sense to partition things that are larger than 2000 lines (sub GB for 32 float/4 byte)
-    #dtype = np.float32
-    #transect_chunk_size = 2000 # The number of lines
+    # Script that calibrates data and reforms to h5 file format.
     dtype = config_specim.dtype_datacube
     transect_chunk_size = config_specim.lines_per_chunk
     cal_dir = config_specim.cal_dir
@@ -313,7 +298,7 @@ def main(config, config_specim):
 
     mission_name = Path(mission_dir).name
     out_dir = config_specim.reformatted_missions_dir
-    config_file_path = out_dir + config_specim.config_file_name
+    config_file_path = os.path.join(out_dir, config_specim.config_file_name)
 
     prepend_data_dir_to_relative_paths(config_path=config_file_path, DATA_DIR=out_dir)
 
@@ -321,13 +306,18 @@ def main(config, config_specim):
 
     # Patterns for searching data cube files
     PATTERN_ENVI = '*.hdr'
-    capture_dir = mission_dir + '/capture/'
+
+    # Expects the captured data to reside in capture subfolder
+    capture_dir = os.path.join(mission_dir, 'capture')
+
+    # Path for searching (avoid explicit )
     search_path_envi = os.path.normpath(os.path.join(capture_dir, PATTERN_ENVI))
     envi_hdr_file_path = glob.glob(search_path_envi)[0]
 
+    # Read out data
     spectral_image_obj = envi.open(envi_hdr_file_path)
 
-    # Read all meta data from raw file 
+    # Read all meta data from header file (currently hard coded, but could be avoided I guess)
     class Metadata:
         pass
 
@@ -347,7 +337,7 @@ def main(config, config_specim):
     metadata_obj.interleave = spectral_image_obj.metadata['interleave']
     metadata_obj.data_type = spectral_image_obj.metadata['data type']
     
-    # Derived from knowledge of the sensor (sensor constants)
+    # Derived from knowledge of the sensor (sensor constants that could differ for other sensors)
     metadata_obj.binning_spatial = int(ACTIVE_SENSOR_SPATIAL_PIXELS/metadata_obj.n_pix)
     metadata_obj.binning_spectral = int(ACTIVE_SENSOR_SPECTRAL_PIXELS/metadata_obj.n_bands)
 
@@ -454,6 +444,7 @@ def main(config, config_specim):
     search_path_envi_cal = os.path.normpath(os.path.join(cal_dir, PATTERN_ENVI_CAL))
     ENVI_CAL_HDR_FILE_PATH = glob.glob(search_path_envi_cal)[0]
 
+    # For allowing spectral module to read
     RAD_CAL_BYTE_ORDER = 0
 
     add_byte_order_to_envi_header(header_file_path=ENVI_CAL_HDR_FILE_PATH, byte_order_value=RAD_CAL_BYTE_ORDER)
@@ -467,6 +458,7 @@ def main(config, config_specim):
     cal_n_bands = int(radiometric_image_obj.metadata['bands'])
     cal_n_pix = int(radiometric_image_obj.metadata['samples'])
 
+    # For calibration
     radiometric_frame = radiometric_image_obj[:,:,:].reshape((cal_n_pix, cal_n_bands))
 
     specim_object.radiometric_frame = radiometric_frame
@@ -551,19 +543,15 @@ def main(config, config_specim):
     df_imu = pd.DataFrame(specim_object.imu_data)
     df_gnss = pd.DataFrame(specim_object.gnss_data)
     df_sync_hsi = pd.DataFrame(specim_object.sync_data)
-    # Define the time stamps of HSI frames
-
-
-    # Let's consider this an interpolation problem. Every new sync means a new fps # frames:
+    
+    # Define the time stamps of HSI frames (special fix for Specim)
     sync_frames = df_sync_hsi['HsiFrameNum']
     sync_times = df_sync_hsi['TimestampAbs']
     hsi_frames = np.arange(metadata_obj.autodarkstartline)
+    hsi_timestamps_total = interp1d(x = sync_frames, y = sync_times, fill_value = 'extrapolate')(x = hsi_frames)
 
 
-    hsi_timestamps_total = interp1d(x = sync_frames, y= sync_times, fill_value = 'extrapolate')(x = hsi_frames)
-
-
-    # Secondly, for ease, let us interpolate position data to imu time (avoids rotational interpolation)
+    # For ease, let us interpolate position data to imu time (allows one timestamp for nav data)
     imu_time = df_imu['TimestampAbs']
 
     # Drop the specified regular clock time (as it is not needed)
@@ -574,7 +562,6 @@ def main(config, config_specim):
         column: np.interp(imu_time, df_gnss['TimestampAbs'], df_gnss[column])
         for column in df_gnss.columns if column != 'TimestampAbs'
     }
-
 
     # Create a new DataFrame with the interpolated values
     df_gnss_interpolated = pd.DataFrame({'time': imu_time, **interpolated_values})

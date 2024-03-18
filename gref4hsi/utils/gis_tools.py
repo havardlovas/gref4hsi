@@ -1,3 +1,4 @@
+# Python standard lib
 import os
 from concurrent.futures import ThreadPoolExecutor
 
@@ -6,9 +7,7 @@ import cv2 as cv
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
-import pyproj
 from pyproj import CRS, Transformer
-import pyvista as pv
 import rasterio
 from rasterio.features import geometry_mask
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -17,15 +16,11 @@ from shapely.geometry import Polygon, mapping, MultiPoint
 from sklearn.neighbors import NearestNeighbors
 from spectral import envi
 import spectral as sp
-import spectral.io.envi
 import h5py
 
+# Lib modules
+from gref4hsi.scripts.colours import Image as Imcol
 
-# Local module
-from scripts.colours import Image as Imcol
-from utils.parsing_utils import Hyperspectral
-
-GRAVITY = 9.81 # m/s^2
 # ENVI datatype conversion dictionary
 dtype_dict = {1:np.uint8,
              2:np.int16,
@@ -598,9 +593,6 @@ class GeoSpatialAbstractionHSI():
         if os.path.exists(data_file_path):
             os.remove(data_file_path)
             os.remove(header_file_path)
-        
-        import time
-        start_time = time.time()
 
         if writer_type == "rasterio":
             # Assuming ortho_datacube is a 3D NumPy array with shape (k, nx, mx)
@@ -652,12 +644,12 @@ class GeoSpatialAbstractionHSI():
 
             GeoSpatialAbstractionHSI.write_datacube_memmap(memmap_array=mm, **memmap_gen_params)
 
-            #mm[:] = ortho_datacube_reshaped
+            
 
 
 
-        dt = time.time() - start_time
-        print(f"The time difference for {writer_type} was {dt} seconds")
+        
+        
         
         header = sp.io.envi.read_envi_header(datacube_path + '.hdr') # Open for extraction
         header.pop('band names')
@@ -819,7 +811,7 @@ class GeoSpatialAbstractionHSI():
                                "width": dst_width,
                                "height": dst_height,
                                "nodata": 0})
-            #print("Coregistered to shape:", dst_height, dst_width, '\n Affine', dst_transform)
+            
             # open output
             with rasterio.open(outfile, "w", **dst_kwargs) as dst:
                 # iterate through bands and write using reproject function
@@ -896,7 +888,7 @@ class GeoSpatialAbstractionHSI():
         # Find the keypoints and descriptors with SIFT
         sift = cv.SIFT_create()
         kp2, des2 = sift.detectAndCompute(gray2, None)
-        print('Key points found')
+        
         kp1, des1 = sift.detectAndCompute(gray1, None)
         FLANN_INDEX_KDTREE = 1
         index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
@@ -932,8 +924,6 @@ class GeoSpatialAbstractionHSI():
         plt.imshow(img3, 'gray')
         plt.show()
 
-        #print(len(good))
-
         med_u = np.median(diff_u[np.abs(diff_u) < 10])
         med_v = np.median(diff_v[np.abs(diff_u) < 10])
 #
@@ -951,16 +941,11 @@ class GeoSpatialAbstractionHSI():
         diff = np.sqrt(diff_u ** 2 + diff_v ** 2)
 
         MAE_tot = np.median(diff[diff < 5])
-        print(len(good))
-        print(MAE_tot)
+        
         self.feature_uv_hsi = uv_vec_hsi[diff < 5, :]
         self.feature_uv_rgb = uv_vec_rgb[diff < 5, :]
         print(len(self.feature_uv_rgb))
-#
-        #print(med_u)
-        #print(med_v)
-        #print(MAD_u)
-        #print(MAD_v)
+
 
         #plt.imshow(gray1)
 

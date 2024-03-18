@@ -1,10 +1,10 @@
+# Third party
 import numpy as np
 import numpy.matlib
 from osgeo import gdal, osr
 import rasterio
 from scipy.spatial.transform import Rotation as RotLib
 from scipy.spatial.transform import Slerp
-from scipy.interpolate import interp1d
 import open3d as o3d
 import xmltodict
 from pyproj import CRS, Transformer
@@ -18,14 +18,13 @@ from rasterio.transform import from_origin
 from rasterio.windows import from_bounds
 from rasterio.windows import Window
 
+# Python standard lib
 import os
 import time
 from datetime import datetime
 from dateutil import parser
 
-# A file were we define geometry and geometric transforms.
-
-# Perhaps a class with one "__init__.py
+# A file were we define geometry and geometric transforms
 class CalibHSI:
     def __init__(self, file_name_cal_xml, config, mode = 'r', param_dict = None):
         """
@@ -88,7 +87,6 @@ class CameraGeometry():
             self.position_nav = pos
         else:
             self.position_nav = pos - np.transpose(pos0) # Camera pos
-
 
 
         self.rotation_nav = rot
@@ -235,7 +233,7 @@ class CameraGeometry():
 
         for i in range(n):
             self.rayDirectionsGlobal[i, :, :] = self.rotation_hsi[i].apply(dir_local)
-    def intersectWithMesh(self, mesh, max_ray_length):
+    def intersect_with_mesh(self, mesh, max_ray_length):
         """Intersects the rays of the camera with the 3D triangular mesh
 
         :param mesh: A mesh object read via the pyvista library
@@ -255,7 +253,7 @@ class CameraGeometry():
 
         dir = (self.rayDirectionsGlobal * max_ray_length).reshape((-1,3))
 
-        print('Starting Ray Tracing')
+        
         
         start_time = time.time()
 
@@ -285,8 +283,6 @@ class CameraGeometry():
 
 
         stop_time = time.time()
-
-        print('Ray traced {0} rays on a mesh with {1} cells in {2} seconds'.format(dir.shape[0], mesh.cell_normals.shape[0], stop_time - start_time))
 
         normals = mesh.cell_normals[cells,:]
 
@@ -318,7 +314,7 @@ class CameraGeometry():
             # Calculate a depth map (the z-component, 1D scanline)
             self.depth_map[i, :] = self.points_hsi_crs[i, :, 2]/self.rayDirectionsLocal[:, 2]
 
-        print('Finished ray tracing')
+        
 
         self.unix_time_grid = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), self.time.reshape((-1,1)))
         self.unix_time = self.unix_time_grid.reshape((-1, 1)) # Vector-form
@@ -342,10 +338,6 @@ class CameraGeometry():
         a = np.transpose(dir_hat).dot(B.dot(dir_hat))
         b = 2*np.transpose(p0).dot(B.dot(dir_hat))
         c = np.transpose(p0).dot(B.dot(p0)) - 1
-
-        print(a)
-        print(b)
-        print(c)
 
         p = np.zeros(3)
         p[0] = a
@@ -560,7 +552,7 @@ class CameraGeometry():
                     # Make into gridded form:
                     self.hsi_tide_gridded = np.einsum('ijk, ik -> ijk', np.ones((n, m, 1), dtype=np.float64), hsi_tide_interp.reshape((-1,1)))
                 except:
-                    print('No tide file was found!!')
+                    #print('No tide file was found!!')
                     self.hsi_tide_gridded = constant_height*np.ones((n, m, 1))
 
 
@@ -568,7 +560,7 @@ class CameraGeometry():
             else: # A Good place to write parsers for other formats
                 TypeError
         
-    def writeRGBPointCloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
+    def write_rgb_point_cloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
         wl_red = float(config['General']['red_wave_length'])
         wl_green = float(config['General']['green_wave_length'])
         wl_blue = float(config['General']['blue_wave_length'])
@@ -1116,7 +1108,6 @@ def dem_2_mesh(path_dem, model_path, config):
                 proj = ds.GetProjection()
                 is_projected = False
 
-            print(f"DEM projected EPSG Code: {epsg_proj}")
 
             # Automatically set
             
@@ -1141,7 +1132,7 @@ def dem_2_mesh(path_dem, model_path, config):
             ds = None
             band = None
     
-    print("DEM-Mesh conversion completed.")
+
     points = np.loadtxt(output_xyz)
 
     # Create a pyvista point cloud object

@@ -4,74 +4,72 @@ import os
 
 import numpy as np
 
-from utils import parsing_utils, uhi_parsing_utils
-from scripts import georeference, orthorectification
-from scripts import visualize
-from utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
+from gref4hsi.utils import parsing_utils, uhi_parsing_utils
+from gref4hsi.scripts import georeference, orthorectification
+from gref4hsi.scripts import visualize
+from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 
-DATA_DIR = "D:/HyperspectralDataAll/UHI/2020-07-01-14-34-57-ArcticSeaIce-Ben-Lange/"
+DATA_DIR = "/media/haavasl/Expansion/HyperspectralDataAll/UHI/2020-07-01-14-34-57-ArcticSeaIce-Ben-Lange/"
 
 # The configuration file stores the settings for georeferencing
-config_file_mission = DATA_DIR + 'configuration.ini'
+config_file_mission = os.path.join(DATA_DIR, 'configuration.ini')
 
 
 
-# If the user has set a config file already, then that one can be used
-if os.path.exists(config_file_mission):
-    # Set the data directory for the mission, and create empty folder structure
-    prepend_data_dir_to_relative_paths(config_path=config_file_mission, DATA_DIR=DATA_DIR)
-else:
-    # Read config from a template (relative path):
-    config_path_template = 'data/config_examples/configuration_uhi.ini'
 
-    # Copies the template to config_file_mission and sets up the necessary directories
-    prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DATA_DIR)
+config_path_template = '/home/haavasl/VsCodeProjects/gref4hsi/data/config_examples/configuration_uhi.ini'
 
-    # Non-default settings
-    custom_config = {'General':
-                        {'mission_dir': DATA_DIR,
-                        'model_export_type': 'dem_file', # Infer seafloor structure from altimeter recordings
-                        'max_ray_length': 5,
-                        'lab_cal_dir': 'D:/HyperspectralDataAll/UHI/Lab_Calibration_Data/NP/'}, # Max distance in meters from UHI to seafloor
+# Copies the template to config_file_mission and sets up the necessary directories
+prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DATA_DIR)
 
-                    'Coordinate Reference Systems': 
-                        {'proj_epsg' : 3395, # The projected CRS for orthorectified data (an arctic CRS)
-                        'geocsc_epsg_export' : 4978, # 3D cartesian system for earth consistent with GPS frame (but inconsistent with eurasian techtonic plate)
-                        'dem_epsg' : 3395, # (Optional) If you have a DEM this can be used
-                        'pos_epsg_orig' : 4978}, # The CRS of the positioning data we deliver to the georeferencing
+# Non-default settings
+custom_config = {'General':
+                    {'mission_dir': DATA_DIR,
+                    'model_export_type': 'dem_file', # Infer seafloor structure from altimeter recordings
+                    'max_ray_length': 5,
+                    'lab_cal_dir': '/media/haavasl/Expansion/HyperspectralDataAll/UHI/Lab_Calibration_Data/NP'}, # Max distance in meters from UHI to seafloor
 
-                    'Relative Paths':
-                        {'dem_folder': 'Input/GIS/'}, # Using altimeter, we generate one DEM per transect chunk
+                'Coordinate Reference Systems': 
+                    {'proj_epsg' : 3395, # The projected CRS for orthorectified data (an arctic CRS)
+                    'geocsc_epsg_export' : 4978, # 3D cartesian system for earth consistent with GPS frame (but inconsistent with eurasian techtonic plate)
+                    'dem_epsg' : 3395, # (Optional) If you have a DEM this can be used
+                    'pos_epsg_orig' : 4978}, # The CRS of the positioning data we deliver to the georeferencing
 
-                    'Orthorectification':
-                        {'resample_rgb_only': True, # Good choice for speed
-                        'resolutionhyperspectralmosaic': 0.1, # 1 cm
-                        'raster_transform_method': 'north_east'},
-                    
-                    'HDF.raw_nav': {'altitude': 'raw/nav/altitude',
-                        'rotation_reference_type' : 'eul_ZYX', # The vehicles orientations are used as Yaw, Pitch, Roll
-                        'is_global_rot' : False, # The vehicles orientations are used as Yaw, Pitch, Roll
-                        'eul_is_degrees' : True},
+                'Relative Paths':
+                    {'dem_folder': 'Input/GIS/'}, # Using altimeter, we generate one DEM per transect chunk
+                
+                'Absolute Paths':
+                    {'geoid_path': '/media/haavasl/Expansion/Specim/Missions/2024-02-19-Sletvik/slettvik_hopavaagen_202402191253_ntnu_hyperspectral_74m/geoids/no_kv_HREF2018A_NN2000_EUREF89.tif'}, # Using altimeter, we generate one DEM per transect chunk
 
-                    'HDF.calibration': {'band2wavelength' : 'processed/radiance/calibration/spectral/band2Wavelength',
-                                    'darkframe' : 'processed/radiance/calibration/radiometric/darkFrame',
-                                    'radiometricframe' : 'processed/radiance/calibration/radiometric/radiometricFrame',
-                                    'fov' : 'processed/radiance/calibration/geometric/fieldOfView'},
-                    
-                    # Where to find the standard data for the cube. Note that is_calibrated implies whether data is already in correct format
-                    'HDF.hyperspectral': {'datacube' : 'processed/radiance/dataCube',
-                                        'exposuretime' : 'processed/radiance/exposureTime',
-                                        'timestamp' : 'processed/radiance/timestamp',
-                                        'is_calibrated' : True},
+                'Orthorectification':
+                    {'resample_rgb_only': True, # Good choice for speed
+                    'resolutionhyperspectralmosaic': 0.1, # 1 cm
+                    'raster_transform_method': 'north_east'},
+                
+                'HDF.raw_nav': {'altitude': 'raw/nav/altitude',
+                    'rotation_reference_type' : 'eul_ZYX', # The vehicles orientations are used as Yaw, Pitch, Roll
+                    'is_global_rot' : False, # The vehicles orientations are used as Yaw, Pitch, Roll
+                    'eul_is_degrees' : True},
 
-                    'HDF.rgb' :{'rgb_frames' : 'rawdata/rgb/rgbFrames',
-                                'rgb_frames_timestamp' : 'rawdata/rgb/timestamp'}
-                    
-    }
+                'HDF.calibration': {'band2wavelength' : 'processed/radiance/calibration/spectral/band2Wavelength',
+                                'darkframe' : 'processed/radiance/calibration/radiometric/darkFrame',
+                                'radiometricframe' : 'processed/radiance/calibration/radiometric/radiometricFrame',
+                                'fov' : 'processed/radiance/calibration/geometric/fieldOfView'},
+                
+                # Where to find the standard data for the cube. Note that is_calibrated implies whether data is already in correct format
+                'HDF.hyperspectral': {'datacube' : 'processed/radiance/dataCube',
+                                    'exposuretime' : 'processed/radiance/exposureTime',
+                                    'timestamp' : 'processed/radiance/timestamp',
+                                    'is_calibrated' : True},
 
-    # Customizes the config file
-    customize_config(config_path=config_file_mission, dict_custom=custom_config)
+                'HDF.rgb' :{'rgb_frames' : 'rawdata/rgb/rgbFrames',
+                            'rgb_frames_timestamp' : 'rawdata/rgb/timestamp'}
+                
+}
+
+# Customizes the config file
+customize_config(config_path=config_file_mission, dict_custom=custom_config)
 
 # Settings specific to the pre-processing of UHI data. At present they are hardcoded, but they could be integrated 
 SettingsPreprocess = namedtuple('SettingsPreprocessing', ['dtype_datacube', 
@@ -118,7 +116,7 @@ def main():
     config.read(config_file_mission)
 
     # The minimum for georeferencing is to parse 1) Mesh model and 2) The pose of the reference
-    uhi_parsing_utils.uhi_beast(config=config, config_uhi=config_uhi_preprocess)
+    """uhi_parsing_utils.uhi_beast(config=config, config_uhi=config_uhi_preprocess)"""
     
     config = parsing_utils.export_pose(config_file_mission)
 
@@ -130,7 +128,7 @@ def main():
     parsing_utils.export_model(config_file_mission)
 
     # Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    visualize.show_mesh_camera(config)
+    #visualize.show_mesh_camera(config)
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
     georeference.main(config_file_mission, viz=False)

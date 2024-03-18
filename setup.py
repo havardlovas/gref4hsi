@@ -3,7 +3,7 @@ import setuptools
 
 setuptools.setup(
     name='gref4hsi',
-    version='0.1.1',    
+    version='0.1.6',    
     description='A Python package for for georeferencing and orthorectifying hyperspectral imagery',
     long_description=pathlib.Path("README.md").read_text(),
     long_description_content_type = "text/markdown",
@@ -33,7 +33,7 @@ setuptools.setup(
         "pykdtree",
         "trimesh",
         "rtree",
-        "pyembree",
+        "embreex",
         "ephem"
     ],
 
@@ -43,8 +43,12 @@ setuptools.setup(
         'License :: OSI Approved :: European Union Public Licence 1.2 (EUPL 1.2)',  
         'Operating System :: Microsoft :: Windows :: Windows 10',        
         'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
     ],
-    python_requires='>3.7,<3.9',
+    python_requires='>3.7',
     packages=setuptools.find_packages(),
     include_package_data=True
 )
