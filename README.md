@@ -70,7 +70,7 @@ The *.xml file is our chosen camera model file and looks like this:
     <width>512</width>
 </calibration>
 ```
-rx, ry and rz are the boresight angles in radians, while tx, ty and tz. They are used to transform vectors from the HSI camera frame to the vehicle body frame through:
+rx, ry and rz are the boresight angles in radians, while tx, ty and tz are lever arms in the vehicle body frame. They are used to transform vectors from the HSI camera frame to the vehicle body frame through:
 ```
 rot_hsi_ref_eul = np.array([rz, ry, rx])
 
@@ -82,7 +82,7 @@ X_hsi = np.array([x, y, z]) # some vector
 
 X_body =  R*X_hsi + t# the vector expressed in the body frame 
 ```
-In our computation we use a frame convention akin to the camera frames in computer vision. This means that x-right, y-backward, and z-downward for a well aligned camera. This is why the rz is non-zero. The easiest if you are unsure of whether your scanner is flipped is to swap the sign rz.
+In our computation we use a frame convention akin to the camera frames in computer vision. This means that x-right, y-backward, and z-downward for a well aligned camera. In contrast the vehicle body frame follows the roll-pitch-yaw convention with x-forward, y-starboard, z-downward. This is why the rz is by default $\pm \pi/2$. The easiest if you are unsure of whether your scanner is flipped is to swap the sign rz.
 
 
 
