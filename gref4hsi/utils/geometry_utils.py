@@ -777,7 +777,7 @@ class FeatureCalibrationObject():
 
 
 
-def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, extrapolate = True, use_absolute_position = True):
+def interpolate_poses(timestamp_from, pos_from, rot_from, timestamps_to, pos0 = None, extrapolate = True, use_absolute_position = True):
     """
 
     :param timestamp_from:
