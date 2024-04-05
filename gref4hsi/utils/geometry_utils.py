@@ -1053,7 +1053,36 @@ def rot_mat_ned_2_ecef(lat, lon):
     return R_ned_ecef
 
 
+def read_raster(filename, out_crs="EPSG:3857", use_z=False):
+    """Read a raster to a ``pyvista.StructuredGrid``.
 
+    This will handle coordinate transformations.
+    """
+    from rasterio import transform
+    import rioxarray
+    # Read in the data
+    data = rioxarray.open_rasterio(filename)
+    values = np.asarray(data)
+    data.rio.nodata
+    nans = values == data.rio.nodata
+    if np.any(nans):
+        # values = np.ma.masked_where(nans, values)
+        values[nans] = np.nan
+    # Make a mesh
+    xx, yy = np.meshgrid(data["x"], data["y"])
+    if use_z and values.shape[0] == 1:
+        # will make z-comp the values in the file
+        zz = values.reshape(xx.shape)
+    else:
+        # or this will make it flat
+        zz = np.zeros_like(xx)
+    mesh = pv.StructuredGrid(xx, yy, zz)
+    pts = mesh.points
+    lon, lat = transform(data.rio.crs, out_crs, pts[:, 0], pts[:, 1])
+    mesh.points[:, 0] = lon
+    mesh.points[:, 1] = lat
+    mesh["data"] = values.reshape(mesh.n_points, -1, order="F")
+    return mesh
 
 def dem_2_mesh(path_dem, model_path, config):
     """
@@ -1119,15 +1148,17 @@ def dem_2_mesh(path_dem, model_path, config):
             mask = band_data != no_data_value
 
             # Create and open the output XYZ file for writing if it does not exist:
-            #if not os.path.exists(output_xyz):
-            with open(output_xyz, 'w') as xyz_file:
-                # Write data to the XYZ file using the mask and calculated coordinates
-                for y in range(ds.RasterYSize):
-                    for x in range(ds.RasterXSize):
-                        if mask[y, x]:
-                            x_coord = x_origin + x * x_resolution
-                            y_coord = y_origin + y * y_resolution
-                            xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
+            if not os.path.exists(output_xyz):
+                with open(output_xyz, 'w') as xyz_file:
+                    # Write data to the XYZ file using the mask and calculated coordinates
+                    for y in range(ds.RasterYSize):
+                        for x in range(ds.RasterXSize):
+                            if mask[y, x]:
+                                x_coord = x_origin + x * x_resolution
+                                y_coord = y_origin + y * y_resolution
+                                xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
+            else:
+                print('*.xyz already exists')
             # Clean up
             ds = None
             band = None
@@ -1137,9 +1168,10 @@ def dem_2_mesh(path_dem, model_path, config):
 
     # Create a pyvista point cloud object
     cloud = pv.PolyData(points)
-
+    
+    # TODO: Apply patch to avoid crash for triangulation when using big DEM files
     # Generate a mesh from points
-    mesh = cloud.delaunay_2d()
+    mesh = cloud.delaunay_2d(progress_bar=True)
 
     # Transform the mesh points from projected to geocentric ECEF.
     geocsc = CRS.from_epsg(epsg_geocsc)

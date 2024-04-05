@@ -62,7 +62,7 @@ class TimeData:
         self.value = value
     def interpolate(self, time_interp):
         self.time_interp = time_interp
-        self.value_interp = interp1d(x = self.time, y = self.value, kind='linear', fill_value='extrapolate')(x=self.time_interp)
+        self.value_interp = interp1d(x = self.time, y = self.value, kind='nearest', fill_value='extrapolate')(x=self.time_interp)
             
 
 class NAV:
@@ -287,6 +287,11 @@ def read_nav_from_mat(mat_filename):
     mat_contents = {}
     mat_contents = loadmat(filename=mat_filename)
 
+    m_att = mat_contents['ATTENTION']
+    #m_att['SpotOnTime'][m_att['Note'] == 'UHI s1 start']
+
+    
+
     
     # +
     """Cell defining all nav data of relevance"""
@@ -326,7 +331,7 @@ def read_nav_from_mat(mat_filename):
 def write_nav_data_to_h5(nav, time_offset, config, H5_FILE_PATH):
     
     # The time stamp used for writing
-    nav_timestamp_rov = nav.roll.time
+    nav_timestamp_rov = nav.yaw.time
 
     # Interpolate nav data to those times
     nav.interpolate(time_interp=nav_timestamp_rov)

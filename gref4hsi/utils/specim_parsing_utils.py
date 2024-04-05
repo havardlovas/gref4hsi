@@ -300,7 +300,7 @@ def main(config, config_specim):
     out_dir = config_specim.reformatted_missions_dir
     config_file_path = os.path.join(out_dir, config_specim.config_file_name)
 
-    prepend_data_dir_to_relative_paths(config_path=config_file_path, DATA_DIR=out_dir)
+    #prepend_data_dir_to_relative_paths(config_path=config_file_path, DATA_DIR=out_dir)
 
     specim_object = Specim(mission_path=mission_dir, config=config)
 
@@ -424,7 +424,7 @@ def main(config, config_specim):
     # Set value in config file:
     config.set('Relative Paths', 'hsi_calib_path', value = xml_cal_write_path)
 
-    config_file_path = out_dir + config_specim.config_file_name
+    
 
     # Write the config object 
     with open(config_file_path, 'w') as configfile:
@@ -451,7 +451,7 @@ def main(config, config_specim):
 
     ENVI_CAL_IMAGE_FILE_PATH = ENVI_CAL_HDR_FILE_PATH.split('.')[0] + '.cal' # SPECTRAL does not expect this suffix by default
 
-    # For some reason, the byte order
+    # For some reason, the byte order is needed
     radiometric_image_obj = envi.open(ENVI_CAL_HDR_FILE_PATH, image = ENVI_CAL_IMAGE_FILE_PATH)
 
     cal_n_lines = int(radiometric_image_obj.metadata['lines'])
@@ -483,11 +483,11 @@ def main(config, config_specim):
 
     # +
     # Extract the starting/stopping lines
-    START_STOP_DIR = mission_dir + '/start_stop_lines'
+    START_STOP_DIR = os.path.join(mission_dir, 'start_stop_lines')
     
     # Allow software to function if start_stop_lines not specified
-    if not os.path.exists(START_STOP_DIR + '/'):
-        os.mkdir(START_STOP_DIR + '/')
+    if not os.path.exists(START_STOP_DIR):
+        os.mkdir(START_STOP_DIR)
         # Chunk according to chunk size
         start_lines = np.arange(start=0,
                                 stop=metadata_obj.autodarkstartline, 
@@ -505,7 +505,7 @@ def main(config, config_specim):
         
         df_start_stop = pd.DataFrame(start_stop_data)
 
-        df_start_stop.to_csv(path_or_buf = START_STOP_DIR + '/' + 'start_stop_lines.txt', sep=' ')
+        df_start_stop.to_csv(path_or_buf = os.path.join(START_STOP_DIR, 'start_stop_lines.txt'), sep=' ')
 
 
 
@@ -579,7 +579,7 @@ def main(config, config_specim):
     pitch = np.array(df_imu['Pitch']).reshape((-1,1))
     yaw = np.array(df_imu['Yaw']).reshape((-1,1))
 
-    # Roll pitch yaw are stacked with in an unintuitive attribute. The euler angles with rotation order ZYX are Yaw Pitch Roll
+    # Roll pitch yaw are stacked in attribute eul_zyx. The euler angles with rotation order ZYX are Yaw Pitch Roll
     specim_object.eul_zyx = np.concatenate((roll, pitch, yaw), axis = 1)
 
     # Position is stored as ECEF cartesian coordinates (mutually orthogonal axis) instead of spherioid-like lon, lat, alt
@@ -614,7 +614,7 @@ def main(config, config_specim):
     # Define h5 file name
     h5_folder = config['Absolute Paths']['h5_folder']
 
-    # It is nicer to deal with 4 byte numbers in general
+    # Each line in start_stop defines a transect
     n_transects = df_start_stop.shape[0]
     for transect_number in range(n_transects):
         start_line = df_start_stop['line_start'][transect_number]
@@ -631,8 +631,7 @@ def main(config, config_specim):
             else:
                 chunk_stop_idx = chunk_start_idx + transect_chunk_size
 
-
-
+            #print(f'Chunk from line {chunk_start_idx} to line {chunk_stop_idx} is being written')
             data_cube = spectral_image_obj[chunk_start_idx:chunk_stop_idx, :, :]
             # Calibration equation
             specim_object.radiance_cube = ( (data_cube - dark_frame)*radiometric_frame/(metadata_obj.t_exp_ms/1000) ).astype(dtype = dtype) # 4 Byte

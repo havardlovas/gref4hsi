@@ -541,8 +541,8 @@ class GeoSpatialAbstractionHSI():
         # Calculate the nearest neighbors. Here we only use one neighbor, but other approaches could be employed
         dist, indexes = tree.kneighbors(xy, 1)
 
-        # We can mask the data by allowing interpolation with a radius of the resolution
-        mask_nn = dist > resolution
+        # We can mask the data by allowing interpolation with a radius of 2x the resolution
+        mask_nn = dist > 2*resolution
         
         return transform, height, width, indexes, suffix, mask_nn
 
@@ -719,19 +719,20 @@ class GeoSpatialAbstractionHSI():
 
         sp.io.envi.write_envi_header(fileName=header_file_path, header_dict=header)
 
-    def compare_hsi_composite_with_rgb_mosaic(self):
-        self.rgb_ortho_path = self.config['Absolute Paths']['rgb_ortho_path']
-        self.hsi_composite = self.config['Absolute Paths']['rgb_composite_folder'] + self.name + '.tif'
-        self.rgb_ortho_reshaped = self.config['Absolute Paths']['rgbOrthoReshaped'] + self.name + '.tif'
-        self.dem_path = self.config['Absolute Paths']['dem_path']
-        self.dem_reshaped = self.config['Absolute Paths']['demReshaped'] + self.name + '_dem.tif'
+    @staticmethod
+    def compare_hsi_composite_with_rgb_mosaic(config):
+        rgb_ortho_path = config['Absolute Paths']['rgb_ortho_path']
+        hsi_composite = config['Absolute Paths']['rgb_composite_folder'] + name + '.tif'
+        rgb_ortho_reshaped = config['Absolute Paths']['rgbOrthoReshaped'] + name + '.tif'
+        dem_path = config['Absolute Paths']['dem_path']
+        dem_reshaped = config['Absolute Paths']['demReshaped'] + name + '_dem.tif'
 
-        self.resample_rgb_ortho_to_hsi_ortho()
+        resample_rgb_ortho_to_hsi_ortho()
 
-        self.resample_dem_to_hsi_ortho()
+        resample_dem_to_hsi_ortho()
 
 
-        raster_rgb = gdal.Open(self.rgb_ortho_reshaped, gdal.GA_Update)
+        raster_rgb = gdal.Open(rgb_ortho_reshaped, gdal.GA_Update)
         xoff1, a1, b1, yoff1, d1, e1 = raster_rgb.GetGeoTransform()  # This should be equal
         raster_rgb_array = np.array(raster_rgb.ReadAsArray())
         R = raster_rgb_array[0, :, :].reshape((raster_rgb_array.shape[1], raster_rgb_array.shape[2], 1))
@@ -741,10 +742,10 @@ class GeoSpatialAbstractionHSI():
         ortho_rgb = np.concatenate((R, G, B), axis=2)
         rgb_image = Imcol(ortho_rgb)
 
-        raster_hsi = gdal.Open(self.hsi_composite)
+        raster_hsi = gdal.Open(hsi_composite)
         raster_hsi_array = np.array(raster_hsi.ReadAsArray())
         xoff2, a2, b2, yoff2, d2, e2 = raster_hsi.GetGeoTransform()
-        self.transform_pixel_projected = raster_hsi.GetGeoTransform()
+        transform_pixel_projected = raster_hsi.GetGeoTransform()
         R = raster_hsi_array[0, :, :].reshape((raster_hsi_array.shape[1], raster_hsi_array.shape[2], 1))
         G = raster_hsi_array[1, :, :].reshape((raster_hsi_array.shape[1], raster_hsi_array.shape[2], 1))
         B = raster_hsi_array[2, :, :].reshape((raster_hsi_array.shape[1], raster_hsi_array.shape[2], 1))
@@ -760,7 +761,7 @@ class GeoSpatialAbstractionHSI():
 
 
         # Dem
-        self.raster_dem = rasterio.open(self.dem_reshaped)
+        raster_dem = rasterio.open(dem_reshaped)
 
 
         # Adjust Clahe
@@ -770,7 +771,7 @@ class GeoSpatialAbstractionHSI():
         hsi_image.to_luma(gamma=False, image_array = hsi_image.clahe_adjusted)
         rgb_image.to_luma(gamma=False, image_array= rgb_image.clahe_adjusted)
 
-        self.compute_sift_difference(hsi_image.luma_array, rgb_image.luma_array)
+        compute_sift_difference(hsi_image.luma_array, rgb_image.luma_array)
 
 
 
@@ -923,52 +924,11 @@ class GeoSpatialAbstractionHSI():
         img3 = cv.drawMatches(gray1, kp1, gray2, kp2, good, None, **draw_params)
         plt.imshow(img3, 'gray')
         plt.show()
-
-        med_u = np.median(diff_u[np.abs(diff_u) < 10])
-        med_v = np.median(diff_v[np.abs(diff_u) < 10])
-#
-        #print(np.mean(np.abs(diff_u[np.abs(diff_u) < 100])))
-        #print(np.mean(np.abs(diff_v[np.abs(diff_u) < 100])))
 ##
-        #print(np.median(np.abs(diff_u[np.abs(diff_u) < 100]  - med_u)))
-        #print(np.median(np.abs(diff_v[np.abs(diff_u) < 100] - med_v)))
-##
-        MAD_u = np.median(np.abs(diff_u[np.abs(diff_u) < 100]  - med_u))
-        MAD_v = np.median(np.abs(diff_v[np.abs(diff_u) < 100] - med_v))
-##
-        #MAD_tot = np.median(np.sqrt((diff_v[np.abs(diff_u) < 100] - med_v)**2 + (diff_u[np.abs(diff_u) < 100] - med_u)**2))
-        # IF the disagreement is more than 100 pixels, omit it
-        diff = np.sqrt(diff_u ** 2 + diff_v ** 2)
-
-        MAE_tot = np.median(diff[diff < 5])
+        # The absolute errors
+        diff_AE = np.sqrt(diff_u ** 2 + diff_v ** 2)
         
-        self.feature_uv_hsi = uv_vec_hsi[diff < 5, :]
-        self.feature_uv_rgb = uv_vec_rgb[diff < 5, :]
-        print(len(self.feature_uv_rgb))
-
-
-        #plt.imshow(gray1)
-
-
-
-
-
-        #plt.scatter(uv_vec[:,0][np.abs(diff_u) < 100], uv_vec[:,1][np.abs(diff_u) < 100], c = diff_u[np.abs(diff_u) < 100] - np.median(diff_u[np.abs(diff_u) < 100]))
-        #plt.colorbar()
-        #plt.show()
-
-
-        #plt.hist(diff_u[np.abs(diff) < 100], 50)
-        #plt.title('MAD u: ' + str(np.round(MAD_u,2)))
-        #plt.xlim([-100, 100])
-        #plt.show()
-
-        plt.hist(diff[diff < 10]*0.002, 50)
-        #plt.title('MAD v: ' + str(np.round(MAD_v, 2)))
-        #plt.xlim([-100, 100])
-        plt.show()
-        #
-        self.diff = diff
+        return uv_vec_hsi, uv_vec_rgb, diff_AE
 
 
 
@@ -1051,8 +1011,21 @@ class GeoSpatialAbstractionHSI():
         #self.y1_y_rgb = u_rgb - np.floor(u_rgb)
 
 
+    @staticmethod
+    def feature_matches_to_GCP(features_hsi, features_ref, pixel_nr_raster, time_raster):
+        """Function to establish 2D feature positions u, j in raw cube, as well as true reference positions X, Y, Z
 
+        :param features_hsi: _description_
+        :type features_hsi: _type_
+        :param features_ref: _description_
+        :type features_ref: _type_
+        :param pixel_nr_raster: _description_
+        :type pixel_nr_raster: _type_
+        :param time_raster: _description_
+        :type time_raster: _type_
+        """
 
+        return None
 
 
 
