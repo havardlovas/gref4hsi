@@ -260,8 +260,7 @@ def set_camera_model(config, config_file_path, config_uhi, model_type, binning_s
         CAMERA_CALIB_XML_DIR = config['Absolute Paths']['calib_folder']
         xml_cal_write_path = CAMERA_CALIB_XML_DIR + file_name_xml
 
-        CalibHSI(file_name_cal_xml= xml_cal_write_path, 
-                        config = config, 
+        CalibHSI(file_name_cal_xml= xml_cal_write_path,  
                         mode = 'w', 
                         param_dict = param_dict)
 

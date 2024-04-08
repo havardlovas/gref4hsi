@@ -27,17 +27,12 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
         
     pose_path = config['Absolute Paths']['pose_path']
 
-    # Offsets used for plotting
-    offset_x = float(config['General']['offset_x'])
-    offset_y = float(config['General']['offset_y'])
-    offset_z = float(config['General']['offset_z'])
-
 
     pose = pd.read_csv(
         pose_path, sep=',',
         header=0)
 
-    points_cam_ecef = np.concatenate( (pose[" X"].values.reshape((-1,1)) - offset_x, pose[" Y"].values.reshape((-1,1)) - offset_y, pose[" Z"].values.reshape((-1,1)) - offset_z), axis = 1)
+    points_cam_ecef = np.concatenate( (pose[" X"].values.reshape((-1,1)), pose[" Y"].values.reshape((-1,1)), pose[" Z"].values.reshape((-1,1))), axis = 1)
     use_local = False
     if use_local == True:
         eul_cam = np.concatenate((pose[" Yaw"].values.reshape((-1, 1)),
@@ -53,9 +48,9 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
     # Read the mesh
     mesh = pv.read(mesh_path)
     if ref_frame == 'NED':
-        x = offset_x
-        y = offset_y
-        z = offset_z
+        x = np.mean(points_mesh_ecef[:,0])
+        y = np.mean(points_mesh_ecef[:,1])
+        z = np.mean(points_mesh_ecef[:,2])
         
         lat0, lon0, hei0 = pm.ecef2geodetic(x, y, z, deg=True)
         R_ecef_to_ned = Rotation.from_matrix(rotation_matrix_ecef2ned(lon=lon0, lat=lat0))
@@ -66,11 +61,11 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
         points_mesh_ecef = mesh.points
 
         # Next part is to make a NED
-        x_cam, y_cam, z_cam = pm.ecef2ned(x = points_cam_ecef[:,0] + x, y = points_cam_ecef[:,1] + y, z = points_cam_ecef[:,2] + z, lon0=lon0, lat0=lat0, h0=hei0)
+        x_cam, y_cam, z_cam = pm.ecef2ned(x = points_cam_ecef[:,0], y = points_cam_ecef[:,1], z = points_cam_ecef[:,2], lon0=lon0, lat0=lat0, h0=hei0)
 
         points_cam = np.concatenate((x_cam.reshape((-1,1)), y_cam.reshape((-1,1)), z_cam.reshape((-1,1))), axis = 1)
 
-        x_mesh, y_mesh, z_mesh = pm.ecef2ned(x = points_mesh_ecef[:,0] + x, y = points_mesh_ecef[:,1] + y, z = points_mesh_ecef[:,2] + z, lon0=lon0, lat0=lat0, h0=hei0)
+        x_mesh, y_mesh, z_mesh = pm.ecef2ned(x = points_mesh_ecef[:,0], y = points_mesh_ecef[:,1], z = points_mesh_ecef[:,2], lon0=lon0, lat0=lat0, h0=hei0)
 
         points_mesh = np.concatenate((x_mesh.reshape((-1,1)), y_mesh.reshape((-1,1)), z_mesh.reshape((-1,1))), axis = 1)
 
@@ -78,9 +73,6 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
 
 
     elif ref_frame == 'ENU':
-        x = offset_x
-        y = offset_y
-        z = offset_z
         lat0, lon0, hei0 = pm.ecef2geodetic(x, y, z, deg=True)
         R_ecef_to_enu = Rotation.from_matrix(rotation_matrix_ecef2enu(lon=lon0, lat=lat0))
 
@@ -90,11 +82,11 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
         points_mesh_ecef = mesh.points
 
         # Next part is to make a NED
-        x_cam, y_cam, z_cam = pm.ecef2enu(x = points_cam_ecef[:,0] + x, y = points_cam_ecef[:,1] + y, z = points_cam_ecef[:,2] + z, lon0=lon0, lat0=lat0, h0=hei0)
+        x_cam, y_cam, z_cam = pm.ecef2enu(x = points_cam_ecef[:,0], y = points_cam_ecef[:,1], z = points_cam_ecef[:,2], lon0=lon0, lat0=lat0, h0=hei0)
 
         points_cam = np.concatenate((x_cam.reshape((-1,1)), y_cam.reshape((-1,1)), z_cam.reshape((-1,1))), axis = 1)
 
-        x_mesh, y_mesh, z_mesh = pm.ecef2enu(x = points_mesh_ecef[:,0] + x, y = points_mesh_ecef[:,1] + y, z = points_mesh_ecef[:,2] + z, lon0=lon0, lat0=lat0, h0=hei0)
+        x_mesh, y_mesh, z_mesh = pm.ecef2enu(x = points_mesh_ecef[:,0], y = points_mesh_ecef[:,1], z = points_mesh_ecef[:,2], lon0=lon0, lat0=lat0, h0=hei0)
 
         points_mesh = np.concatenate((x_mesh.reshape((-1,1)), y_mesh.reshape((-1,1)), z_mesh.reshape((-1,1))), axis = 1)
         mesh.points = points_mesh
@@ -106,10 +98,6 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
 
     
 
-    #cam_rot = Rotation.from_euler("ZYX", np.array([0, 0, 0]), degrees=True).as_matrix()
-
-    # Compose the two
-    #rotMats = rotMats*cam_rot
     p = BackgroundPlotter(window_size=(600, 400))
     
     if show_mesh:

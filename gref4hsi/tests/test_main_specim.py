@@ -120,6 +120,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
                     'Orthorectification':
                         {'resample_rgb_only': True, # True can be good choice for speed during DEV
+                         'resample_ancillary': True,
                         'resolutionhyperspectralmosaic': RESOLUTION_ORTHOMOSAIC, # Resolution in m
                         'raster_transform_method': 'north_east'}, # North-east oriented rasters.
                     
@@ -133,6 +134,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         'dem_path' : DEM_PATH,
                         'orthomosaic_reference_folder' : os.path.join(specim_mission_folder, "orthomosaic"),
                         'ref_ortho_reshaped' : os.path.join(DATA_DIR, "Intermediate", "RefOrthoResampled"),
+                        'ref_gcp_path' : os.path.join(DATA_DIR, "Intermediate", "gcp.csv"),
                         # (above) The georeferencing allows processing using norwegian geoid NN2000 and worldwide EGM2008. Also, use of seafloor terrain models are supported. '
                         # At the moment refractive ray tracing is not implemented, but it could be relatively easy by first ray tracing with geoid+tide, 
                         # and then ray tracing from water
@@ -163,10 +165,10 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                               config_specim=config_specim_preprocess)"""
     
     # Interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
-    #config = parsing_utils.export_pose(config_file_mission)
+    config = parsing_utils.export_pose(config_file_mission)
     
     # Exports model
-    #parsing_utils.export_model(config_file_mission)
+    """parsing_utils.export_model(config_file_mission)"""
 
     # Commenting out the georeference step is fine if it has been done
 

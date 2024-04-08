@@ -38,14 +38,6 @@ class GeoSpatialAbstractionHSI():
         self.name = transect_string
         self.points_geocsc = point_cloud
 
-        self.offX = config_crs.off_x
-        self.offY = config_crs.off_y
-        self.offZ = config_crs.off_z
-
-        if self.offX == -1:
-            print('Offsets have not been set, or they have been overwritten by default value -1')
-            RuntimeError
-
         self.epsg_geocsc = config_crs.epsg_geocsc
         
         self.n_lines = point_cloud.shape[0]
@@ -68,13 +60,13 @@ class GeoSpatialAbstractionHSI():
         proj = CRS.from_epsg(self.epsg_proj)
         transformer = Transformer.from_crs(geocsc, proj)
 
-        xECEF = self.points_geocsc[:,:,0].reshape((-1, 1))
-        yECEF = self.points_geocsc[:, :, 1].reshape((-1, 1))
-        zECEF = self.points_geocsc[:, :, 2].reshape((-1, 1))
+        x_ecef = self.points_geocsc[:,:,0].reshape((-1, 1))
+        y_ecef = self.points_geocsc[:, :, 1].reshape((-1, 1))
+        z_ecef = self.points_geocsc[:, :, 2].reshape((-1, 1))
 
         
 
-        (east, north, hei) = transformer.transform(xx=xECEF + self.offX, yy=yECEF + self.offY, zz=zECEF + self.offZ)
+        (east, north, hei) = transformer.transform(xx=x_ecef, yy=y_ecef, zz=z_ecef)
 
         self.points_proj[:,:,0] = east.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
         self.points_proj[:, :, 1] = north.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
@@ -129,6 +121,7 @@ class GeoSpatialAbstractionHSI():
         :param config_ortho: The relevant configurations for orthorectification
         :type config_ortho: Dictionary
         """
+
 
 
         
@@ -371,12 +364,12 @@ class GeoSpatialAbstractionHSI():
                         if data.shape[1]  != self.n_pixels:
                             # For data of shape n_lines x j, for example camera positions, reshape to n_lines x n_pixels x j
                             j = data.shape[1]
-                            data = np.einsum('ijk, ik -> ijk', np.ones((self.n_lines, self.n_pixels, j), dtype=np.float32), data)
+                            data = np.einsum('ijk, ik -> ijk', np.ones((self.n_lines, self.n_pixels, j), dtype=np.float64), data)
                         else:
                             # For data with dimension n_lines x n_pixels, add third dimension
                             data = data.reshape((data.shape[0], data.shape[1], 1))
 
-                    data = data.astype(dtype = np.float32)
+                    data = data.astype(dtype = np.float64)
                     
                     # For first layer
                     if band_counter == 0:
@@ -439,16 +432,25 @@ class GeoSpatialAbstractionHSI():
 
     @staticmethod
     def cube_to_raster_grid(coords, raster_transform_method, resolution):
+        """Function that takes projected coordinates (e.g. UTM 32 east and north) of ray intersections and computes an image grid
+
+        :param coords: _description_
+        :type coords: _type_
+        :param raster_transform_method: How the raster grid is calculated. "north_east" is standard and defines a rectangle along north/east. "minimal_rectangle" is memory optimal as it finds the smallest enclosing rectangle that wraps the points.
+        :type raster_transform_method: _type_
+        :param resolution: _description_
+        :type resolution: _type_
+        :return: _description_
+        :rtype: _type_
+        """
+
+
         if raster_transform_method == 'north_east':
-            # Creates the minimal area (and thus memory) rectangle around chunk
+            # Creates the minimal area (and thus memory) rectangle around points
             polygon = MultiPoint(coords).envelope
 
             # extract coordinates
             x, y = polygon.exterior.xy
-
-            idx_ul = 3
-            idx_ur = 2
-            idx_ll = 4
 
             suffix = '_north_east'
             
@@ -456,22 +458,22 @@ class GeoSpatialAbstractionHSI():
             
         elif raster_transform_method == 'minimal_rectangle':
             
-            # Creates the minimal area (and thus memory) rectangle around chunk
+            # Creates the minimal area (and thus memory) rectangle around points
             polygon = MultiPoint(coords).minimum_rotated_rectangle
 
             # extract coordinates
             x, y = polygon.exterior.xy
 
-            # Increasing indices are against the clock
             
-            # Determine basis vectors from data
-            idx_ul = 3
-            idx_ur = 2
-            idx_ll = 4
 
             suffix = '_rotated'
 
-        # ul means upper left, ll means lower left and so on
+        # Indices increase against the clock
+        # ul means upper left corner of polygon, ll means lower left and so on
+        idx_ul = 3
+        idx_ur = 2
+        idx_ll = 4
+
         x_ul = x[idx_ul]
         y_ul = y[idx_ul]
 
@@ -481,7 +483,7 @@ class GeoSpatialAbstractionHSI():
         x_ll = x[idx_ll]
         y_ll = y[idx_ll]
 
-        # The vector from upper-left corner aka origin to the upper-right equals lambda*e_basis_x
+        # The vector from the upper-left corner aka origin to the upper-right equals lambda*e_basis_x
         e_basis_x = np.array([x_ur-x_ul, y_ur-y_ul]).reshape((2,1))
         w_transect = np.linalg.norm(e_basis_x)
         e_basis_x /= w_transect
@@ -490,11 +492,11 @@ class GeoSpatialAbstractionHSI():
         e_basis_y = np.array([x_ll-x_ul, y_ll-y_ul]).reshape((2,1))
         h_transect = np.linalg.norm(e_basis_y)
         e_basis_y /= h_transect
-        e_basis_y *= -1 # Ensuring Right handedness (image storage y direction is o)
+        e_basis_y *= -1 # Ensuring right handedness (image storage y direction is opposite)
 
         R = np.hstack((e_basis_x, e_basis_y)) # 2D rotation matrix by definition
         
-        # Define origin/translation vector
+        # Define origin/translation vector as the upper left corner
         o = np.array([x[idx_ul], y[idx_ul]]).reshape((2))
 
         # Transformation matrix rigid body 2D
@@ -503,12 +505,13 @@ class GeoSpatialAbstractionHSI():
         Trb[0:2,2] = o
         Trb[2,2] = 1
 
+        # We operate with same resolution in X and Y. Note that for "minimal_rectangle" X, Y are NOT East and North. 
         s_x = resolution
         s_y = resolution
 
         S = np.diag(np.array([s_x, s_y, 1]))
 
-        # Reflection to account for opposite row/up direction
+        # Reflection matrix to account for opposite row/up direction
         Ref = np.diag(np.array([1, -1, 1]))
 
         # The affine transform is then expressed:
@@ -518,31 +521,38 @@ class GeoSpatialAbstractionHSI():
         width = int(np.ceil(w_transect/s_x))
         height = int(np.ceil(h_transect/s_y))
 
-        # Rasterio operates with a conventional affine
+        # Rasterio operates with a conventional affine geotransform
         a, b, c, d, e, f = Taff[0,0], Taff[0,1], Taff[0,2], Taff[1,0], Taff[1,1], Taff[1,2]
-
         transform = rasterio.Affine(a, b, c, d, e, f)
 
-        # Pixel centers reside at half coordinates.
+        # Define local orthographic pixel grid. Pixel centers reside at half coordinates.
         xi, yi = np.meshgrid(np.arange(width) + 0.5, 
                                 np.arange(height) + 0.5)
+        # To get homogeneous vector (not an actual z coordinate)
         zi = np.ones(xi.shape)
 
-        # Form homogeneous vectors
+        # Form homogeneous vectors (allows translation by multiplication)
         x_r = np.vstack((xi.flatten(), yi.flatten(), zi.flatten())).T
 
-        x_p = np.matmul(Taff, x_r.T).T # Map pixels to geographic
+        # Map orthographic pixels to projected system
+        x_p = np.matmul(Taff, x_r.T).T 
 
+        # Make a point vector of grid points to be used in nearest neighbor
         xy = np.vstack((x_p[:,0].flatten(), x_p[:,1].flatten())).T
         
-
-        # Locate nearest neighbors in a radius defined by the resolution
+        # Define NN search tree from intersection points
         tree = NearestNeighbors(radius=resolution).fit(coords)
 
-        # Calculate the nearest neighbors. Here we only use one neighbor, but other approaches could be employed
-        dist, indexes = tree.kneighbors(xy, 1)
+        # Calculate the nearest intersection point (in "coords") for each grid cell ("xy").
+        
+        # Here we only use one neighbor, and indexes is a vector of len(xy) where an element indexes(i)
+        # says that the closest point to xy[i] is coords[indexes[i]]. Since coords is just a flattened/reshaped version of intersection points
+        #, the data cube can be resampled by datacube_flat=datacube.reshape((dim1*dim2, dim3)) and 
+        # geographic_datacube_flat = datacube.reshape((dim1_geo*dim2_geo, dim3)) so that geographic_datacube_flat = datacube_flat[indexes,:]
+        n_neighbors = 1
+        dist, indexes = tree.kneighbors(xy, n_neighbors)
 
-        # We can mask the data by allowing interpolation with a radius of 2x the resolution
+        # We can mask the data by allowing points within a radius of 2x the resolution
         mask_nn = dist > 2*resolution
         
         return transform, height, width, indexes, suffix, mask_nn
@@ -575,11 +585,14 @@ class GeoSpatialAbstractionHSI():
 
         crs_rasterio = CRS.from_string(crs)
 
-        writer_type = "envi"
+        writer_type = "envi" # Hardcoded
 
         # Make some simple modifications
         data_file_path = datacube_path + '.' + interleave
         header_file_path = datacube_path + '.hdr'
+
+        if os.path.exists(header_file_path):
+            return
 
         # Clean the files generated by rasterio
         def write_band(args):
@@ -968,11 +981,11 @@ class GeoSpatialAbstractionHSI():
 
 
 
-            (xECEF, yECEF, zECEF) = transformer.transform(xx=xp, yy=yp, zz=zp)
+            (x_ecef, y_ecef, z_ecef) = transformer.transform(xx=xp, yy=yp, zz=zp)
 
-            self.features_points[:, 0] = xECEF - self.offX
-            self.features_points[:, 1] = yECEF - self.offY
-            self.features_points[:, 2] = zECEF - self.offZ
+            self.features_points[:, 0] = x_ecef
+            self.features_points[:, 1] = y_ecef
+            self.features_points[:, 2] = z_ecef
 
 
 
@@ -1042,13 +1055,32 @@ class GeoSpatialAbstractionHSI():
         
         return ref_points_ecef
 
-    def compute_position_orientation_features(uv_vec_hsi, pixel_nr_image, unix_time_image, position_ecef, quaternion_ecef, time_pose):
-        """Returns the positions, orientations and pixel numbers corresponding to the features"""
+    def compute_position_orientation_features(uv_vec_hsi, pixel_nr_image, unix_time_image, position_ecef, quaternion_ecef, time_pose, nodata):
+        """Returns the positions, orientations and pixel numbers corresponding to the features. 
+        Also computes a feature mask identifying features that are invalid"""
         rows = uv_vec_hsi[:, 1]
         cols = uv_vec_hsi[:, 0]
+
+        # Determine mask
+        x0 = np.floor(cols).astype(int)
+        x1 = x0 + 1
+        y0 = np.floor(rows).astype(int)
+        y1 = y0 + 1
+
+        # All 4 neighbors (as used by bilinear interpolation) should be valid data points
+        feature_mask = np.all([pixel_nr_image[y0, x0].reshape(-1) != nodata,
+               pixel_nr_image[y1, x0].reshape(-1) != nodata,
+               pixel_nr_image[y0, x1].reshape(-1) != nodata,
+               pixel_nr_image[y1, x1].reshape(-1) != nodata], axis=0)
+
+
         pixel_nr_vec = GeoSpatialAbstractionHSI.bilinear_interpolate(pixel_nr_image, x = cols, y = rows)
         time_vec = GeoSpatialAbstractionHSI.bilinear_interpolate(unix_time_image, x = cols, y = rows)
 
+        pixel_vec_valid = pixel_nr_vec[feature_mask]
+        time_vec_valid = time_vec[feature_mask]
+
+        
         from scipy.interpolate import interp1d
         from gref4hsi.utils import geometry_utils as geom
         
@@ -1059,9 +1091,9 @@ class GeoSpatialAbstractionHSI():
         position_vec, quaternion_vec = geom.interpolate_poses(time_pose, 
                                             position_ecef, 
                                             rotation_ecef,  
-                                            timestamps_to=time_vec)
+                                            timestamps_to=time_vec_valid)
         
-        return pixel_nr_vec, position_vec, quaternion_vec
+        return pixel_vec_valid, time_vec_valid, position_vec, quaternion_vec, feature_mask
         
 
         

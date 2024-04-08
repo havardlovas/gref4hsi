@@ -15,12 +15,12 @@ from gref4hsi.utils.parsing_utils import Hyperspectral
 from gref4hsi.scripts import visualize
 
 
-def cal_file_to_rays(filename_cal, config):
+def cal_file_to_rays(filename_cal):
         # See paper by Sun, Bo, et al. "Calibration of line-scan cameras for precision measurement." Applied optics 55.25 (2016): 6836-6843.
         # Loads line camera parameters for the hyperspectral imager from an xml file.
 
         # Certain imagers deliver geometry "per pixel". This can be resolved by fitting model parameters.
-        calHSI = CalibHSI(file_name_cal_xml=filename_cal, config = config)
+        calHSI = CalibHSI(file_name_cal_xml=filename_cal)
         f = calHSI.f
         u_c = calHSI.cx
 
@@ -66,17 +66,7 @@ def cal_file_to_rays(filename_cal, config):
 
         rot_hsi_ref_obj = RotLib.from_euler(seq = 'ZYX', angles = rot_hsi_ref_eul, degrees=False)
 
-        try:
-            lever_arm_unit = config['General']['lever_arm_unit']
-        except:
-             # Defaults to meter if not set
-             lever_arm_unit = 'm'
-
-        # Handle legacy
-        if lever_arm_unit == 'mm':
-            translation_ref_hsi = np.array([trans_x, trans_y, trans_z]) / 1000 # These are millimetres
-        elif lever_arm_unit == 'm':
-            translation_ref_hsi = np.array([trans_x, trans_y, trans_z])
+        translation_ref_hsi = np.array([trans_x, trans_y, trans_z])
 
         intrinsic_geometry_dict = {'translation_ref_hsi': translation_ref_hsi,
                                    'rot_hsi_ref_obj': rot_hsi_ref_obj,
@@ -86,18 +76,18 @@ def cal_file_to_rays(filename_cal, config):
 
         return intrinsic_geometry_dict
 
-def define_hsi_ray_geometry(pos_ref_ecef, quat_ref_ecef, time_pose, pos0, intrinsic_geometry_dict):
+def define_hsi_ray_geometry(pos_ref_ecef, quat_ref_ecef, time_pose, intrinsic_geometry_dict):
         """Instantiate a camera geometry object from the h5 pose data"""
 
 
-        pos = pos_ref_ecef # Reference positions in ECEF offset by pos0
+        pos = pos_ref_ecef # Reference positions in ECEF
         rot_obj = RotLib.from_quat(quat_ref_ecef) # Reference orientations wrt ECEF
         
         ray_directions_local = intrinsic_geometry_dict['ray_directions_local']
         translation_ref_hsi = intrinsic_geometry_dict['translation_ref_hsi']
         rot_hsi_ref_obj = intrinsic_geometry_dict['rot_hsi_ref_obj']
 
-        hsi_geometry = CameraGeometry(pos0=pos0, pos=pos, rot=rot_obj, time=time_pose, is_interpolated=True, use_absolute_position=True)
+        hsi_geometry = CameraGeometry(pos=pos, rot=rot_obj, time=time_pose, is_interpolated=True, use_absolute_position=True)
         
         
         hsi_geometry.intrinsicTransformHSI(translation_ref_hsi=translation_ref_hsi, rot_hsi_ref_obj = rot_hsi_ref_obj)
@@ -167,11 +157,10 @@ def main(iniPath, viz = False):
             intrinsic_geometry_dict = cal_file_to_rays(filename_cal=hsi_cal_xml, config=config)
 
             
-            # Define the rays in ECEF for each frame. Note that if there is no position offset, pos0 is a 1x3 of zeros
+            # Define the rays in ECEF for each frame. 
             hsi_geometry = define_hsi_ray_geometry(pos_ref_ecef = hyp.pos_ref, 
                                     quat_ref_ecef = hyp.quat_ref, 
-                                    time_pose = hyp.pose_time, 
-                                    pos0 = hyp.pos0, 
+                                    time_pose = hyp.pose_time,
                                     intrinsic_geometry_dict = intrinsic_geometry_dict)
 
             
@@ -185,7 +174,8 @@ def main(iniPath, viz = False):
 
             hsi_geometry.compute_tide_level(path_tide, tide_format = 'NMA')
 
-            hsi_geometry.compute_elevation_mean_sealevel(source_epsg=config['Coordinate Reference Systems']['geocsc_epsg_export'], geoid_path=config['Absolute Paths']['geoid_path'])
+            hsi_geometry.compute_elevation_mean_sealevel(source_epsg = config['Coordinate Reference Systems']['geocsc_epsg_export'], 
+                                                         geoid_path = config['Absolute Paths']['geoid_path'])
             
             write_intersection_geometry_2_h5_file(hsi_geometry=hsi_geometry, config = config, h5_filename=path_hdf)
 

@@ -55,21 +55,12 @@ def main(iniPath):
 
     # Settings having to do with coordinate reference systems, described below
     SettingsCRS = namedtuple('SettingsOrthorectification', ['epsg_geocsc', 
-                                                              'epsg_proj', 
-                                                              'off_x', 
-                                                              'off_y', 
-                                                              'off_z'])
+                                                              'epsg_proj'])
     
     config_crs = SettingsCRS(epsg_geocsc=int(config['Coordinate Reference Systems']['geocsc_epsg_export']),
                              # The epsg code of the geocentric coordinate system (ECEF)
                              epsg_proj=int(config['Coordinate Reference Systems']['proj_epsg']),
                              # The epsg code of the projected coordinate system (e.g. UTM 32 has epsg 32632 for wgs 84 ellipsoid)
-                             off_x = float(config['General']['offset_x']),
-                             # The geocentric offset along x
-                             off_y = float(config['General']['offset_y']),
-                             # The geocentric offset along y
-                             off_z = float(config['General']['offset_z'])
-                             # The geocentric offset along z
                              )
 
     # Settings associated with orthorectification of datacube
