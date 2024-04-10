@@ -182,7 +182,9 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
     #orthorectification.main(config_file_mission)
 
-    coregistration.main(config_file_mission)
+    #coregistration.main(config_file_mission, mode='compare')
+
+    coregistration.main(config_file_mission, mode='calibrate')
 
 
 if __name__ == "__main__":

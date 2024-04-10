@@ -778,7 +778,7 @@ def compute_camera_rays_from_parameters(pixel_nr, cx, f, k1, k2, k3):
     return x_norm
 
 
-def reproject_world_points_to_hsi(trans_hsi_body, rot_hsi_body, pos_body, rot_body, points_world):
+def reproject_world_points_to_hsi_plane(trans_hsi_body, rot_hsi_body, pos_body, rot_body, points_world):
     """Reprojects world points to local image plane coordinates (x_h, y_h, 1)
 
     :param trans_hsi_body: lever arm from body center to hsi focal point
@@ -795,25 +795,24 @@ def reproject_world_points_to_hsi(trans_hsi_body, rot_hsi_body, pos_body, rot_bo
     :rtype: ndarray(n, 3)
     """
 
-    rotation_hsi_rgb = RotLib.from_euler('ZYX', rot_hsi_body, degrees=True)
+    
 
-     # Composing rotations.
-    rotation_hsi = rot_body * rotation_hsi_rgb
-
+    # We compose the hypothesized boresight (rot_hsi_body) an lever arm (trans_hsi_body) to get the hypothesized position/orientation
+    # of the hyperspectral imager
+    rotation_hsi = rot_body * rot_hsi_body
     position_hsi = pos_body + rot_body.apply(trans_hsi_body)
 
-    # An intrinsic transform is a transformation to another reference frame on the moving body, i.e. the IMU or an RGB cam
-        
-
+    # Given the positions, the hsi-point vector can be expressed in ECEF
     hsi_to_feature_global = points_world - position_hsi
 
     # Number of features to iterate
     n = hsi_to_feature_global.shape[0]
 
+    # We can now express the hsi-point vector in the HSI frame and normalize by the z component to find the image plane projection
     hsi_to_feature_local = np.zeros(hsi_to_feature_global.shape)
     for i in range(n):
         # The vector expressed in HSI frame
-        hsi_to_feature_local[i, :] = (rotation_hsi[i].inv()).apply(hsi_to_feature_local[i, :])
+        hsi_to_feature_local[i, :] = (rotation_hsi[i].inv()).apply(hsi_to_feature_global[i, :])
 
         # The vector normalized to lie on the virtual plane
         hsi_to_feature_local[i, :] /= hsi_to_feature_local[i, 2]
@@ -972,7 +971,13 @@ class GeoPose:
         self.lon = None
         self.hei = None
 
-    def compute_geodetic_position(self, epsg_geod):
+        self.compute_geodetic_position()
+        self.compute_geocentric_orientation()
+        self.compute_ned_orientation()
+        self.compute_ned_2_ecef()
+
+
+    def compute_geodetic_position(self, epsg_geod = 4326):
         """
             Function for transforming positions to latitude longitude height
             :param epsg_geod: int
@@ -1021,7 +1026,7 @@ class GeoPose:
                 self.compute_geodetic_position()
 
             R_body_2_ned = self.rot_obj_ned
-            R_ned_2_ecef = self.compute_rot_obj_ned_2_ecef()
+            R_ned_2_ecef = self.compute_ned_2_ecef()
             R_body_2_ecef = R_ned_2_ecef*R_body_2_ned
 
             self.rot_obj_ecef = R_body_2_ecef
@@ -1035,7 +1040,7 @@ class GeoPose:
             R_body_2_ecef = self.rot_obj_ecef
 
             # Define rotation from ecef 2 ned
-            R_ecef_2_ned = self.compute_rot_obj_ned_2_ecef().inv()
+            R_ecef_2_ned = self.compute_ned_2_ecef().inv()
 
             # Compose
             R_body_2_ned = R_ecef_2_ned*R_body_2_ecef
@@ -1046,7 +1051,7 @@ class GeoPose:
         else:
             pass
 
-    def compute_rot_obj_ned_2_ecef(self):
+    def compute_ned_2_ecef(self):
 
         N = self.lat.shape[0]
         rot_mats_ned_2_ecef = np.zeros((N, 3, 3), dtype=np.float64)
@@ -1055,11 +1060,11 @@ class GeoPose:
             rot_mats_ned_2_ecef[i,:,:] = rot_mat_ned_2_ecef(lat=self.lat[i], lon = self.lon[i])
 
 
-        self.rots_obj_ned_2_ecef = RotLib.from_matrix(rot_mats_ned_2_ecef)
+        self.rot_obj_ned_2_ecef = RotLib.from_matrix(rot_mats_ned_2_ecef)
 
-        return self.rots_obj_ned_2_ecef
+        return self.rot_obj_ned_2_ecef
 
-
+    
 
 
 def rot_mat_ned_2_ecef(lat, lon):
