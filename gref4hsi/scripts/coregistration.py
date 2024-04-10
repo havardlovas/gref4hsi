@@ -1,5 +1,6 @@
 import configparser
 import os
+import time
 
 import numpy as np
 import spectral as sp
@@ -11,30 +12,81 @@ from gref4hsi.utils.geometry_utils import CalibHSI, GeoPose
 
 from scipy.spatial.transform import Rotation as RotLib
 from scipy.optimize import least_squares
+from scipy.interpolate import interp1d
 import pandas as pd
 
-def optimize_reprojection(param, features_df, param0, is_variab_parameter, time_nodes):
+
+
+def numerical_jacobian(fun, param, eps=1e-6, **kwargs):
+  """
+  Computes the Jacobian of a function using central differences.
+
+  Args:
+      fun: The function for which to compute the Jacobian.
+      param: The parameters of the function.
+      eps: A small epsilon value for numerical differentiation.
+
+  Returns:
+      A numpy array representing the Jacobian.
+  """
+  n_param = len(param)
+  n_fun = len(fun(param, **kwargs))
+  jacobian = np.zeros((n_fun, n_param))
+  for i in range(n_param):
+    param_pos = param.copy()
+    param_neg = param.copy()
+    param_pos[i] += eps
+    param_neg[i] -= eps
+    jacobian[:, i] = (fun(param_pos, **kwargs) - fun(param_neg, **kwargs)) / (2 * eps)
+  return jacobian
+
+
+def interpolate_time_nodes(time_from, value, time_to, method = 'linear'):
+    # One simple option is to use Scipy's sortiment. The sparsity pattern should be included somehow..
+    if method in ['nearest', 'linear', 'slinear', 'quadratic', 'cubic']:
+        return interp1d(time_from, value, kind=method)(time_to)
+    
+
+def compose_pose_errors(param_time_var, time_nodes, unix_time_features, rot_body_ned, rot_ned_ecef, pos_body):
+    """Takes a (4*n_node) vector of errors in X, Y, Z and Yaw, interpolates and composes (adds) it to the pose from the navigation data"""
+    n_features = len(unix_time_features)
+
+    # Interpolate to the right time
+    err_interpolated = interpolate_time_nodes(time_nodes, 
+                                                param_time_var.reshape((4, -1)), 
+                                                time_to = unix_time_features, method='quadratic').transpose()
+
+    # The errors in the interpolated form
+    param_err_pos = err_interpolated[:, 0:3]
+    param_err_eul_ZYX = np.vstack((err_interpolated[:, 3:4].flatten(), 
+                                        np.zeros(n_features),
+                                        np.zeros(n_features))).transpose()
+    
+    # To be left multiplied with attitude 
+    rot_err_NED = RotLib.from_euler('ZYX', param_err_eul_ZYX, degrees=True)
+
+
+    # Modify the poses with the parametrically interpolated values:
+    pos_body += param_err_pos
+
+    # Recall that we only estimate yaw errors
+    rot_body_ned_corr = rot_err_NED * rot_body_ned
+
+    # Convert orientation to ECEF
+    rot_body_ecef = rot_ned_ecef * rot_body_ned_corr
+
+    return pos_body, rot_body_ecef
+
+def objective_fun_reprojection_error(param, features_df, param0, is_variab_parameter, time_nodes):
     
     #
-    n_param_tot = len(param) + sum(is_variab_parameter==0)
-    n_variab_param = sum(is_variab_parameter==1)
-    param_vec_total = np.zeros(n_param_tot)
-
-    if time_nodes != None:
-        n_nodes = len(time_nodes)
-        param_time_var = param[n_variab_param:]
-        param_err_pos = param_time_var[0:3*n_nodes].reshape((3, -1))
-        param_err_eul_ZYX = np.concatenate((param_time_var[3*n_nodes:4*n_nodes], 
-                                         np.zeros(n_nodes),
-                                         np.zeros(n_nodes)), axis = 1)
-        
-        # To be left multiplied with attitude 
-        rot_err_NED = RotLib.from_euler('ZYX', param_err_eul_ZYX, degrees=True)         
-
-                                      
-
+    n_param_tot_static = len(is_variab_parameter)
+    n_variab_param_static = sum(is_variab_parameter==1)
+    param_vec_total = np.zeros(n_param_tot_static)
+    
+    # Static parameters (not time-varying)
     param_count = 0
-    for i in range(n_param_tot):
+    for i in range(n_param_tot_static):
         if bool(is_variab_parameter[i]):
             # take from the parameter vector (assuming that they are ordered the same way)
             param_vec_total[i] = param[param_count]
@@ -44,23 +96,100 @@ def optimize_reprojection(param, features_df, param0, is_variab_parameter, time_
             # Take fixed parameters from param0 - the initial parameter guess
             param_vec_total[i] = param0[i]
 
+    # Static parameters:
 
+    # Boresight
     rot_x = param_vec_total[0]
     rot_y = param_vec_total[1]
     rot_z = param_vec_total[2]
+
+    # Principal point
     cx = param_vec_total[3]
+
+    # Focal length
     f = param_vec_total[4]
+
+    # Distortions
     k1 = param_vec_total[5]
     k2 = param_vec_total[6]
     k3 = param_vec_total[7]
+
+    # Lever arm
     trans_x = param_vec_total[8] 
     trans_y = param_vec_total[9]
     trans_z = param_vec_total[10] 
 
-    # The pixel numbers corresponding to the observations
-    pixel_nr = features_df['pixel_nr']
+    
+    
+    # Lever arm
+    trans_hsi_body = np.array([trans_z, trans_y, trans_x])
+    
+    # Boresight vector
+    eul_ZYX_hsi_body = np.array([rot_z, rot_y, rot_x]) * 180 / np.pi
 
-    # Computes the directions in a local frame, or normalized scanline image frame
+    # Convert to rotation object for convenience
+    rot_hsi_body = RotLib.from_euler('ZYX', eul_ZYX_hsi_body, degrees=True)
+
+    # The position of the vehicle body wrt ECEF
+    pos_body = np.vstack((features_df['position_x'], 
+                          features_df['position_y'], 
+                          features_df['position_z'])).transpose()
+    
+    # The quaternion of the body with respect to NED
+    quat_body_ned = np.vstack((features_df['quaternion_b_n_x'],
+                          features_df['quaternion_b_n_y'], 
+                          features_df['quaternion_b_n_z'],
+                          features_df['quaternion_b_n_w'])).transpose()
+    
+    # The rotation from NED to ECEF
+    quat_ned_ecef = np.vstack((features_df['quaternion_n_e_x'],
+                          features_df['quaternion_n_e_y'], 
+                          features_df['quaternion_n_e_z'],
+                          features_df['quaternion_n_e_w'])).transpose()
+
+    # Convert to rotation object for convenience
+    rot_body_ned = RotLib.from_quat(quat_body_ned)
+    rot_ned_ecef = RotLib.from_quat(quat_ned_ecef)
+
+    # Whether to estimate time-varying errors
+    if time_nodes is None:
+        # Assumes that navigation-based poses are correct
+        rot_body_ecef = rot_ned_ecef * rot_body_ned
+
+    else:
+
+        # If we try to estimate errors in the navigation data (these parameters are after the static parameters)
+        param_time_var = param[n_variab_param_static:]
+
+        # The parametric errors represent a handful of nodes and must be interpolated to the feature times
+        unix_time_features = features_df['unix_time']
+
+        # We compose them with (add them to) the position/orientation estimates from the nav system
+        pos_body, rot_body_ecef = compose_pose_errors(param_time_var, time_nodes, unix_time_features, rot_body_ned, rot_ned_ecef, pos_body)
+
+
+
+
+    # The reference points in ECEF (obtained from the reference orthomosaic)
+    points_world_reference = np.vstack((features_df['reference_points_x'], 
+                          features_df['reference_points_y'], 
+                          features_df['reference_points_z'])).transpose()
+    
+    # We reproject the reference points to the normalized HSI image plane
+    X_norm = geom_utils.reproject_world_points_to_hsi_plane(trans_hsi_body, 
+                                             rot_hsi_body, 
+                                             pos_body, 
+                                             rot_body_ecef, 
+                                             points_world_reference) # reprojects to the same frame
+    
+    # Reprojected observations in image plane
+    x_norm_reproj = X_norm[:, 0]
+    y_norm_reproj = X_norm[:, 1]
+    
+    # The observation is by definition in the scanline where y_norm = 0
+    # Using the pixel numbers corresponding to the features
+    # we convert the pixel number to an x-coordinate on the normalized HSI image plane
+    pixel_nr = features_df['pixel_nr']
     x_norm = geom_utils.compute_camera_rays_from_parameters(pixel_nr=pixel_nr,
                                                    cx=cx,
                                                    f=f,
@@ -68,60 +197,14 @@ def optimize_reprojection(param, features_df, param0, is_variab_parameter, time_
                                                    k2=k2,
                                                    k3=k3)
     
-    trans_hsi_body = np.array([trans_z, trans_y, trans_x])
-    
-    eul_ZYX_hsi_body = np.array([rot_z, rot_y, rot_x]) * 180 / np.pi
-
-    rot_hsi_body = RotLib.from_euler('ZYX', eul_ZYX_hsi_body, degrees=True)
-
-    pos_body = np.vstack((features_df['position_x'], 
-                          features_df['position_y'], 
-                          features_df['position_z'])).transpose()
-    
-    # The quaternion with respect to ECEF (should be corrected if time varying )
-    quat_body = np.vstack((features_df['quaternion_x'], 
-                          features_df['quaternion_y'], 
-                          features_df['quaternion_z'],
-                          features_df['quaternion_w'])).transpose()
-    rot_body = RotLib.from_quat(quat_body)
-
-    # The reference points in ECEF
-    points_world = np.vstack((features_df['reference_points_x'], 
-                          features_df['reference_points_y'], 
-                          features_df['reference_points_z'])).transpose()
-    
-
-    X_norm = geom_utils.reproject_world_points_to_hsi_plane(trans_hsi_body, 
-                                             rot_hsi_body, 
-                                             pos_body, 
-                                             rot_body, 
-                                             points_world) # reprojects to the same frame
-    # Reprojected observations in image plane
-    x_norm_reproj = X_norm[:, 0]
-    y_norm_reproj = X_norm[:, 1]
-    
-    # The observation is by definition in the scanline where y_norm = 0
+    # At the time (features_df["unix_time"]) of an observation, the feature satisfies y_norm=0 (not the case for y_norm_reproj).
     y_norm = np.zeros(x_norm.shape)
 
     # The difference is expressed as
     errorx = np.array(x_norm - x_norm_reproj)
     errory = np.array(y_norm - y_norm_reproj)
 
-    """print(np.median(np.abs(errorx)))
-    print(np.median(np.abs(errory)))
-
-    print(param)"""
-    #if np.median(np.abs(errorx)) < 0.01:
-    """import matplotlib.pyplot as plt
-##
-    plt.scatter(x_norm, y_norm)
-    plt.scatter(x_norm_reproj, y_norm_reproj)
-    plt.scatter(x_norm, y_norm)
-    plt.show()
-    print('')"""
-
-
-
+    # Least squares expects a 1D function evaluation vector
     return np.concatenate((errorx.reshape(-1), errory.reshape(-1)))
 
 
@@ -331,8 +414,6 @@ def main(config_path, mode):
                                    v_err < upper_bound_v], axis=0)
         # These features are used
         df_gcp_filtered = gcp_df_all[feature_mask_IQR]
-
-
         
         
         print("\n################ Calibrating camera parameters: ################")
@@ -341,9 +422,9 @@ def main(config_path, mode):
         ## Defining the options:
         
         # Here we define what that is to be calibrated
-        calibrate_dict = {'calibrate_boresight': True,
+        calibrate_dict = {'calibrate_boresight': False,
                           'calibrate_camera': False,
-                          'calibrate_lever_arm': True,
+                          'calibrate_lever_arm': False,
                           'calibrate_cx': False,
                           'calibrate_f': True,
                           'calibrate_k1': False,
@@ -353,14 +434,12 @@ def main(config_path, mode):
         calibrate_per_transect = True
 
         estimate_time_varying = True
-        time_node_spacing = 10 # s. If spacing 10 and transect lasts for 53 s will attempt to divide into largest integer leaving 
-        
-
-
+        time_node_spacing = 10 # s. If spacing 10 and transect lasts for 53 s will attempt to divide into largest integer leaving
 
         # Localize the prior calibration and use as initial parameters as well as constants for parameter xx if calibrate_xx = False
         cal_obj_prior = CalibHSI(file_name_cal_xml=config['Absolute Paths']['hsi_calib_path'])
 
+        # Whether the parameter is toggled for calibration
         is_variab_parameter = np.zeros(11).astype(np.int64)
 
         param0 = np.array([cal_obj_prior.rx, 
@@ -408,8 +487,8 @@ def main(config_path, mode):
 
 
                 if estimate_time_varying:
-                    times_samples = df_gcp_filtered['unix_time']
-                    transect_duration_sec = times_samples.max() - times_samples.max()
+                    times_samples = df_current['unix_time']
+                    transect_duration_sec = times_samples.max() - times_samples.min()
                     number_of_nodes = int(np.floor(transect_duration_sec/time_node_spacing)) + 1
 
                     # Calculate the number of nodes. It divides the transect into equal intervals, 
@@ -419,13 +498,29 @@ def main(config_path, mode):
                                         num = number_of_nodes)
                     
                     # One parameter set for X, Y, Z and one for rotZ
-                    param0_variab = np.concatenate((param0_variab, np.zeros(4*number_of_nodes)), axis=0)
+                    param0_variab_tot = np.concatenate((param0_variab, np.zeros(4*number_of_nodes)), axis=0)
+
+                    # Calculate the Jacobian (for exploiting sparsity)
+                    kwargs = {'features_df': df_current,
+                              'param0': param0,
+                              'is_variab_parameter': is_variab_parameter,
+                              'time_nodes': time_nodes}
+                    J = numerical_jacobian(fun = objective_fun_reprojection_error, param = param0_variab_tot, **kwargs)
+
+                    sparsity_perc = 100*((J==0).sum()/J.size)
+                    print(f'Jacobian computed with {sparsity_perc:.0f} % zeros')
+
+                    
+                    from scipy.sparse import lil_matrix
+                    sparsity = lil_matrix(J.shape, dtype=int)
+                    sparsity[J != 0] = 1
                 else:
                     time_nodes = None
+                    param0_variab_tot = param0_variab
 
                 n_features = df_current.shape[0]
-
-                res_pre_optim = optimize_reprojection(param0_variab, 
+                
+                res_pre_optim = objective_fun_reprojection_error(param0_variab_tot, 
                                                       df_current, 
                                                       param0, 
                                                       is_variab_parameter,
@@ -433,24 +528,27 @@ def main(config_path, mode):
                                                       )
 
                 abs_err = np.sqrt(res_pre_optim[0:n_features]**2 + res_pre_optim[0:n_features]**2)
-                median_error = np.median(abs_err)*74
-                print(f'Original MAE rp-error in is {median_error}')
+                median_error = np.median(abs_err)*cal_obj_prior.f
+                print(f'Original MAE rp-error is {median_error:.1f} pixels')
 
-                res = least_squares(fun = optimize_reprojection, 
-                                x0 = param0_variab, 
+                # Optimize the transect legs
+                time_start  = time.time()
+                res = least_squares(fun = objective_fun_reprojection_error, 
+                                x0 = param0_variab_tot, 
                                 args= (df_current, param0, is_variab_parameter, time_nodes, ), 
                                 x_scale='jac',
-                                method = 'lm')
+                                jac_sparsity=sparsity)
                 
+                optim_dur = time.time() - time_start
 
-                #median_error = np.median(np.abs(res.fun))
-
+                # Absolute reprojection errors
                 abs_err = np.sqrt(res.fun[0:n_features]**2 + res.fun[0:n_features]**2)
-                median_error = np.median(abs_err)*74
-                print(f'Optimized MAE rp-error in is {median_error}')
+                median_error_pix = np.median(abs_err)*cal_obj_prior.f
 
-
-                #print(f'Optimized reprojection error is {median_error}')
+                print(f'Optimized MAE rp-error is {median_error_pix:.1f} pixels')
+                print(f'Optimization time was {optim_dur:.0f} sec')
+                print(f'Number of nodes was {number_of_nodes}')
+                print(f'Number of features was {n_features}')
                 print('')
                 
 
@@ -458,12 +556,12 @@ def main(config_path, mode):
             
             n_features = df_gcp_filtered.shape[0]
 
-            res_pre_optim = optimize_reprojection(param0_variab, df_gcp_filtered, param0, is_variab_parameter)
-            median_error_x = np.median(np.abs(res_pre_optim[0:n_features]))*74
-            median_error_y = np.median(np.abs(res_pre_optim[n_features:2*n_features]))*74
+            res_pre_optim = objective_fun_reprojection_error(param0_variab, df_gcp_filtered, param0, is_variab_parameter)
+            median_error_x = np.median(np.abs(res_pre_optim[0:n_features]))
+            median_error_y = np.median(np.abs(res_pre_optim[n_features:2*n_features]))
             print(f'Original rp-error in x is {median_error_x} and in y is {median_error_y}')
 
-            res = least_squares(fun = optimize_reprojection, 
+            res = least_squares(fun = objective_fun_reprojection_error, 
                                 x0 = param0_variab, 
                                 args= (df_gcp_filtered, param0, is_variab_parameter, ), 
                                 x_scale='jac',
