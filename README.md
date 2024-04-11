@@ -11,6 +11,7 @@ This README is a bit verbose, but is meant to act as a "tutorial" as well, and I
 The easiest approach is to use conda/mamba to get gdal and pip to install the package with the following commands (has been tested for python 3.8-3.10):
 ```
 conda create -n my_env python=3.10 gdal rasterio
+conda activate my_env
 pip install gref4hsi 
 ```
 
@@ -18,6 +19,7 @@ pip install gref4hsi
 Seamless installation for windows is, to my experience a bit more challenging because of gdal and rasterio. For python 3.10 you could run
 ```
 conda create -n my_env python=3.10
+conda activate my_env
 pip install GDAL‑3.4.3‑cp310‑cp310‑win_amd64.whl
 pip install rasterio‑1.2.10‑cp310‑cp310‑win_amd64.whl
 pip install gref4hsi 
