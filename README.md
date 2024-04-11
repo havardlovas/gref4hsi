@@ -1,5 +1,9 @@
 # gref4hsi - a toolchain for the georeferencing and orthorectification of hyperspectral pushbroom data. 
-This software was made with a special emphasis on georeferencing and orthorectification of underwater hyperspectral data close-range. However, it is equally simple to use for airborne data, and probably even for satellite imagery (although modified approaches including analytical ellipsoid intersection may be better). A coregistration module might be added in the future to flexibly improve image alignment.
+This software was made with a special emphasis on georeferencing and orthorectification of hyperspectral imagery from drones and underwater robots. However, it is equally simple to use for airborne data, and probably even for satellite imagery (although modified approaches including analytical ellipsoid intersection may be better). There is also a coregistration module (at beta stage) which, given an accurate RGB orthomosaic, can optimize geometric parameters (static or time-varying) to align the data.
+The functionality in bullet form is:
+* georeference.py: The software currently supports direct georeferencing through CPU-accelerated ray tracing of push broom measurements onto terrain files including 3D triangular meshes (\*.ply), 2.5D raster DEM/DSM (e.g. \*.tif) and geoid models.
+* orthorectification.py: The software performs orthorectification (a form of image resampling) to any user specified projection (by EPSG code) and resolution. The default resampling strategy is north-east oriented rasters, but the software does support memory-optimally oriented rasters (smallest bounding rectangle). When you resample, you essentially figure out where to put measurements in a geographic grid. In the software, we resample the data cube, an RGB composite of the cube, but also ancillary data like intersection/sun geometries, pixel coordinates (in spatial dimension of imager) and timestamps.
+* coregistration.py: Given a reference RGB orthomosaic (e.g. from photo-matching) covering the area of the hyperspectral image, the coregistration module does SIFT-matching with the RGB composite (handling any differences in projection and raster transforms). The module also has an optimization component for using the matches to minimize the reprojection error. The user can select/toggle which parameters to optimize, including boresight angles, lever arms, camera model parameters or time-varying errors in position/orientation. Notably the module requires that the pixel-coordinates and timestamps are resampled, as done automatically in the orthorectification step.
 
 This README is a bit verbose, but is meant to act as a "tutorial" as well, and I recommend trying to understand as much as possible.
 
@@ -91,22 +95,26 @@ Moreover, the f represent the camera's focal length in pixels, width is the numb
 u = np.random.randint(1, width + 1) # Pixel numbers left to right (value from 1 to width)
 
 # Pinhole part
-x_norm_pinhole = (u - u_c) / f
+x_norm_pinhole = (u - cx) / f
 
 # Distortion part
-x_norm_nonlin = -(k1 * ((u - u_c) / 1000) ** 5 + \
-                  k2 * ((u - u_c) / 1000) ** 3 + \
-                  k3 * ((u - u_c) / 1000) ** 2) / f
+x_norm_nonlin = -(k1 * ((u - cx) / 1000) ** 5 + \
+                  k2 * ((u - cx) / 1000) ** 3 + \
+                  k3 * ((u - cx) / 1000) ** 2) / f
 
 x_norm_hsi = x_norm_pinhole + x_norm_nonlin
 
 X_norm_hsi = np.array([x_norm_hsi, 0, 1]) # The pixel ray in the hsi frame
 ```
 
-Of course most these parameters are hard to guess for a HSI and there are two simple ways of finding them. The first way is to ignore distortions and if you know the angular field of view (AFOV). Then you can calculate:
+Of course most of these parameters are hard to guess for a HSI and there are two simple ways of finding them. The first way is to ignore distortions and assume you know the angular field of view (AFOV). Then you can calculate:
 
 $$f = \frac{width}{2atan(AFOV/2)}$$
-Besides that, you set cx=width/2, and remaining k's to zero. The second approach is if you have an array describing the FOV (often from the manufacturer). 
+
+
+Besides that, you set cx=width/2, and remaining k's to zero. 
+
+The second approach to get the camera model is if you have an array describing the FOV (often from the manufacturer). 
 In our example above that would amount to a 512-length array, e.g. in degrees 
 ```
 from gref4hsi.specim_parsing_utils import Specim
@@ -266,6 +274,16 @@ parsing_utils.export_model(config_file_mission)
 # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
 georeference.main(config_file_mission)
 
+# Orthorectify/resample datacube, RGB-composite and ancillary data
 orthorectification.main(config_file_mission)
+
+# Optional: coregistration
+# Match RGB composite to reference, find features and following data, ground control point (gcp) list, for each feature pair:
+# reference point 3D (from reference), position/orientation of vehicle (using resampled time) and pixel coordinate (using resampled pixel coordinate)
+coregistration.main(config_file_mission, mode='compare')
+
+# The gcp list allows reprojecting reference points and evaluate the reprojection error,
+# which is used to optimize static geometric parameters (e.g. boresight...) or dynamic geometric parameters (time-varying nav errors).
+coregistration.main(config_file_mission, mode='calibrate')
 ```
 
