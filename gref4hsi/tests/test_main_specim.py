@@ -5,100 +5,74 @@ import os
 import argparse
 from collections import namedtuple
 import pathlib
-
-# This is very hard coded, but not necessary if Python does not know where to look
-module_path = '/home/haavasl/VsCodeProjects/gref4hsi/gref4hsi/'
-module_path = 'C:/Users/haavasl/VSCodeProjects/hyperspectral_toolchain/gref4hsi/'
-if module_path not in sys.path:
-    sys.path.append(module_path)
-
-# Local resources
-from gref4hsi.scripts import georeference
-from gref4hsi.scripts import orthorectification
-from gref4hsi.utils import parsing_utils, specim_parsing_utils
-from gref4hsi.scripts import visualize
-from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
-
-
-import numpy as np
-"""
-This script is meant to be used for testing the processing pipeline of airborne HI data from the Specim AFX10 instrument.
-"""
-
-# Make it simple to swap when working a bit on windows and a bit on Linux
+import yaml
 
 if os.name == 'nt':
     # Windows OS
     base_fp = 'D:'
     home = 'C:/Users/haavasl'
 elif os.name == 'posix':
-    # This Unix-like systems inl. Mac and Linux
+    # This Unix-like systems inl. Mac and fLinux
     base_fp = '/media/haavasl/Expansion'
-    home = 'C:/Users/haavasl'
+    home = '/home/haavasl'
 
-def main():
-    # Set up argparse
-    parser = argparse.ArgumentParser('georeference and rectify images')
+# Use this if working with the github repo to do quick changes to the module
+module_path = os.path.join(home, 'VsCodeProjects/gref4hsi/')
+if module_path not in sys.path:
+    sys.path.append(module_path)
 
-    parser.add_argument('-s', '--specim_mission_folder',
-                        type=str, 
-                        default= r"/Specim/Missions/2024-02-19-Sletvik/slettvik_hopavaagen_202402191253_ntnu_hyperspectral_74m",
-                        help='folder storing the hyperspectral data for the specific mission')
-
-    parser.add_argument('-e', '--epsg_code', 
-                        default=25832, 
-                        type=int,
-                        help='Coordinate Reference System EPSG code (e.g. 25832 for UTM 32)')
-
-    parser.add_argument('-r', '--resolution_orthomosaic', 
-                        type=float,
-                        default=1, 
-                        help='Resolution of the final processed orthomosaic in meters')
-
-    parser.add_argument('-cal_dir', '--calibration_directory', 
-                        type=str,
-                        default="/Specim/Lab_Calibrations", 
-                        help='Directory holding all spectral/radiometric/geometric calibrations for all binning values' )
-
-    parser.add_argument('-c', '--config_file_yaml', 
-                        default="",
-                        help='File that contains the configuration \
-                            parameters for the processing. \
-                            If nothing, one is generated from template.\
-                            can simply be one that was used for another mission.')
-
-    parser.add_argument('-t', '--terrain_type', 
-                        default="geoid", type=str,
-                        help ='If terrain DEM is known, select "dem_file", and if not select "geoid".')
-
-    parser.add_argument('-geoid', '--geoid_path', 
-                        default="/Specim/Missions/2024-02-19-Sletvik/slettvik_hopavaagen_202402191253_ntnu_hyperspectral_74m/geoids/no_kv_HREF2018A_NN2000_EUREF89.tif", 
-                        type=str,
-                        help='If terrain DEM is not available.')
-
-    parser.add_argument('-d', '--dem_path', 
-                        default="/Specim/Missions/2024-02-19-Sletvik/slettvik_hopavaagen_202402191253_ntnu_hyperspectral_74m/dem/dem.tif", 
-                        type=str,
-                        help='A digital terrain model, if available. If none, the geoid will be used.')
-
-    parser.add_argument('-v', '--enable_visualize', 
-                        default=False, 
-                        type = bool,
-                        help='Visualize vehicle track and terrain model')
+# Local resources
+from gref4hsi.scripts import georeference
+from gref4hsi.scripts import orthorectification
+from gref4hsi.scripts import coregistration
+from gref4hsi.utils import parsing_utils, specim_parsing_utils
+from gref4hsi.utils import visualize
+from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 
-    args = parser.parse_args()
+import numpy as np
 
+"""
+This script is meant to be used for testing the processing pipeline of airborne HI data from the Specim AFX10 instrument.
+"""
+
+# Make it simple to swap when working a bit on windows and a bit on Linux
+
+
+
+def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, lab_calibration_path):
+    # Read flight-specific yaml file
+    with open(config_yaml, 'r') as file:  
+        config_data = yaml.safe_load(file)
+    
+    
     # assigning the arguments to variables for simple backwards compatibility
-    SPECIM_MISSION_FOLDER = os.path.join(base_fp, args.specim_mission_folder)
-    EPSG_CODE = args.epsg_code 
-    RESOLUTION_ORTHOMOSAIC = args.resolution_orthomosaic
-    CALIBRATION_DIRECTORY = os.path.join(base_fp, args.calibration_directory)
-    CONFIG_FILE = args.config_file_yaml
-    ENABLE_VISUALIZE = args.enable_visualize
-    TERRAIN_TYPE = args.terrain_type
-    DEM_PATH = os.path.join(base_fp, args.dem_path)
-    GEOID_PATH = os.path.join(base_fp, args.geoid_path)
+    SPECIM_MISSION_FOLDER = specim_mission_folder
+    EPSG_CODE = config_data['mission_epsg']
+    RESOLUTION_ORTHOMOSAIC = config_data['resolution_orthomosaic']
+    CALIBRATION_DIRECTORY = lab_calibration_path
+    
+    
+    dem_fold = os.path.join(specim_mission_folder, "dem")
+
+    if not os.path.exists(dem_fold):
+        print('DEM folder does not exist so Geoid is used as terrain instead')
+        TERRAIN_TYPE = "geoid"
+    else:
+        if not os.listdir(dem_fold):
+            #print(f"The folder '{dem_fold}' is empty so Geoid is used as terrain instead.")
+            TERRAIN_TYPE = "geoid"
+        else:
+            # If there is a folder and it is not empty
+            # Find the only file that is there
+            files = [f for f in os.listdir(dem_fold) if f not in ('.', '..')]
+            DEM_PATH = os.path.join(dem_fold, files[0])
+            #print(f"The file '{DEM_PATH}' is used as terrain.")
+            TERRAIN_TYPE = "dem_file"
+            
+    
+    
+    GEOID_PATH = geoid_path
 
     # Settings associated with preprocessing of data from Specim Proprietary data to pipeline-compatible data
     SettingsPreprocess = namedtuple('SettingsPreprocessing', ['dtype_datacube', 
@@ -111,7 +85,7 @@ def main():
                                                                             'config_file_name'])
 
     config_specim_preprocess = SettingsPreprocess(dtype_datacube = np.float32, # The data type for the datacube
-                                lines_per_chunk= 2000,  # Raw datacube is chunked into this many lines. GB_per_chunk = lines_per_chunk*n_pixels*n_bands*4 bytes
+                                lines_per_chunk= 8000,  # Raw datacube is chunked into this many lines. GB_per_chunk = lines_per_chunk*n_pixels*n_bands*4 bytes
                                 specim_raw_mission_dir = SPECIM_MISSION_FOLDER, # Folder containing several mission
                                 cal_dir = CALIBRATION_DIRECTORY,  # Calibration directory holding all calibrations at all binning levels
                                 reformatted_missions_dir = os.path.join(SPECIM_MISSION_FOLDER, 'processed'), # The fill value for empty cells (select values not occcuring in cube or ancillary data)
@@ -129,15 +103,8 @@ def main():
     config_file_mission = os.path.join(DATA_DIR, 'configuration.ini')
 
 
-    # Read config from a template (relative path):
-    if CONFIG_FILE != "":
-        config_path_template = CONFIG_FILE
-    else:
-        config_path_template = os.path.join(home, '/VsCodeProjects/gref4hsi/data/config_examples/configuration_specim.ini')
-
-
     # Set the data directory for the mission, and create empty folder structure
-    prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DATA_DIR)
+    prepend_data_dir_to_relative_paths(config_path=config_template_path, DATA_DIR=DATA_DIR)
 
     # Non-default settings
     custom_config = {'General':
@@ -153,6 +120,7 @@ def main():
 
                     'Orthorectification':
                         {'resample_rgb_only': True, # True can be good choice for speed during DEV
+                         'resample_ancillary': True,
                         'resolutionhyperspectralmosaic': RESOLUTION_ORTHOMOSAIC, # Resolution in m
                         'raster_transform_method': 'north_east'}, # North-east oriented rasters.
                     
@@ -164,13 +132,19 @@ def main():
                         'geoid_path' : GEOID_PATH,
                         #'geoid_path' : 'data/world/geoids/egm08_25.gtx',
                         'dem_path' : DEM_PATH,
+                        'orthomosaic_reference_folder' : os.path.join(specim_mission_folder, "orthomosaic"),
+                        'ref_ortho_reshaped' : os.path.join(DATA_DIR, "Intermediate", "RefOrthoResampled"),
+                        'ref_gcp_path' : os.path.join(DATA_DIR, "Intermediate", "gcp.csv"),
                         # (above) The georeferencing allows processing using norwegian geoid NN2000 and worldwide EGM2008. Also, use of seafloor terrain models are supported. '
                         # At the moment refractive ray tracing is not implemented, but it could be relatively easy by first ray tracing with geoid+tide, 
                         # and then ray tracing from water
                         #'tide_path' : 'D:/HyperspectralDataAll/HI/2022-08-31-060000-Remoy-Specim/Input/tidevann_nn2000_NMA.txt'
-                        }
-                        # Tide data can be downloaded from https://www.kartverket.no/til-sjos/se-havniva
-                        # Preferably it is downloaded with reference "NN2000" to agree with DEM
+                        },
+                    # If coregistration is done, then the data must be stored after processing somewhere
+                    'HDF.coregistration': {
+                        'position_ecef': 'processed/coreg/position_ecef',
+                        'quaternion_ecef' : 'processed/coreg/quaternion_ecef'
+                    }
                     
     }
 
@@ -190,27 +164,41 @@ def main():
     # This function parses raw specim data including (spectral, radiometric, geometric) calibrations and nav data
     # into an h5 file. The nav data is written to "raw/nav/" subfolders, whereas hyperspectral data and calibration data 
     # written to "processed/hyperspectral/" and "processed/calibration/" subfolders
-    specim_parsing_utils.main(config=config,
-                              config_specim=config_specim_preprocess)
+    """specim_parsing_utils.main(config=config,
+                              config_specim=config_specim_preprocess)"""
     
     # Interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
     config = parsing_utils.export_pose(config_file_mission)
     
     # Exports model
-    parsing_utils.export_model(config_file_mission)
+    """parsing_utils.export_model(config_file_mission)"""
 
     # Commenting out the georeference step is fine if it has been done
 
     
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    if ENABLE_VISUALIZE:
-        visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
+    """if ENABLE_VISUALIZE:
+        visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')"""
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference.main(config_file_mission)
+    #georeference.main(config_file_mission)
 
-    orthorectification.main(config_file_mission)
+    #orthorectification.main(config_file_mission)
+
+    coregistration.main(config_file_mission, mode='compare')
+
+    coregistration.main(config_file_mission, mode='calibrate')
 
 
 if __name__ == "__main__":
-    main()
+    # Select a recording folder on drive
+    specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remøy/remoy_202208310800_ntnu_hyperspectral_74m")
+    
+    # Globally accessible files:
+    geoid_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/world/geoids/egm08_25.gtx")
+    config_template_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/config_examples/configuration_specim.ini")
+    lab_calibration_path = os.path.join(base_fp, "Specim/Lab_Calibrations")
+    
+    # The configuration file
+    config_yaml = os.path.join(specim_mission_folder, "config.seabee.yaml")
+    main(str(config_yaml), str(specim_mission_folder), geoid_path, config_template_path, lab_calibration_path)

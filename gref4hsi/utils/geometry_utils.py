@@ -26,7 +26,7 @@ from dateutil import parser
 
 # A file were we define geometry and geometric transforms
 class CalibHSI:
-    def __init__(self, file_name_cal_xml, config, mode = 'r', param_dict = None):
+    def __init__(self, file_name_cal_xml, mode = 'r', param_dict = None):
         """
         :param file_name_cal_xml: str
         File name of calibration file for line camera model
@@ -80,15 +80,9 @@ class CalibHSI:
                 fd.write(xmltodict.unparse(xml_dict))
 
 class CameraGeometry():
-    def __init__(self, pos0, pos, rot, time, is_interpolated = False, use_absolute_position = False):
-        self.pos0 = pos0
-
-        if use_absolute_position:
-            self.position_nav = pos
-        else:
-            self.position_nav = pos - np.transpose(pos0) # Camera pos
-
-
+    def __init__(self, pos, rot, time, is_interpolated = False, use_absolute_position = False):
+        
+        self.position_nav = pos
         self.rotation_nav = rot
 
         self.time = time
@@ -402,17 +396,17 @@ class CameraGeometry():
         self.theta_v = np.zeros((n, m))
         self.phi_v = np.zeros((n, m))
 
-        x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1)) + self.pos0[0]
-        y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1)) + self.pos0[1]
-        z_ecef = self.points_ecef_crs[:, :, 2].reshape((-1,1)) + self.pos0[2]
+        x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1))
+        y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1))
+        z_ecef = self.points_ecef_crs[:, :, 2].reshape((-1,1))
         
         lats, lons, alts = pm.ecef2geodetic(x = x_ecef, y = y_ecef, z = z_ecef)
 
         start = np.einsum('ijk, ik -> ijk', np.ones((n, m, 3), dtype=np.float64), self.position_ecef).reshape((-1,3))
 
-        x_hsi = start[:, 0].reshape((-1,1)) + self.pos0[0]
-        y_hsi = start[:, 1].reshape((-1,1)) + self.pos0[1]
-        z_hsi = start[:, 2].reshape((-1,1)) + self.pos0[2]
+        x_hsi = start[:, 0].reshape((-1,1))
+        y_hsi = start[:, 1].reshape((-1,1))
+        z_hsi = start[:, 2].reshape((-1,1))
 
         # Compute vectors from seabed intersections to HSI in NED
         NED = pm.ecef2ned(x= x_hsi, y= y_hsi, z=z_hsi, lat0 = lats, lon0=lons, h0 = alts)
@@ -444,9 +438,9 @@ class CameraGeometry():
         n = self.rayDirectionsGlobal.shape[0]
         m = self.rayDirectionsGlobal.shape[1]
 
-        x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1)) + self.pos0[0]
-        y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1)) + self.pos0[1]
-        z_ecef = self.points_ecef_crs[:, :, 2].reshape((-1,1)) + self.pos0[2]
+        x_ecef = self.points_ecef_crs[:, :, 0].reshape((-1,1))
+        y_ecef = self.points_ecef_crs[:, :, 1].reshape((-1,1)) 
+        z_ecef = self.points_ecef_crs[:, :, 2].reshape((-1,1))
 
         lats, lons, alts = pm.ecef2geodetic(x = x_ecef, y = y_ecef, z = z_ecef)
 
@@ -466,9 +460,9 @@ class CameraGeometry():
         n = self.rayDirectionsGlobal.shape[0]
         m = self.rayDirectionsGlobal.shape[1]
 
-        x_ecef = self.position_ecef[:, 0].reshape((-1,1)) + self.pos0[0]
-        y_ecef = self.position_ecef[:, 1].reshape((-1,1)) + self.pos0[1]
-        z_ecef = self.position_ecef[:, 2].reshape((-1,1)) + self.pos0[2]
+        x_ecef = self.position_ecef[:, 0].reshape((-1,1))
+        y_ecef = self.position_ecef[:, 1].reshape((-1,1))
+        z_ecef = self.position_ecef[:, 2].reshape((-1,1))
 
         #lats, lons, alts = pm.ecef2geodetic(x = x_ecef, y = y_ecef, z = z_ecef)
 
@@ -599,7 +593,7 @@ class FeatureCalibrationObject():
         self.isfirst = True
 
     def load_cam_calibration(self, filename_cal, config):
-        calHSI = CalibHSI(file_name_cal_xml=filename_cal, config = config)  # Generates a calibration object
+        calHSI = CalibHSI(file_name_cal_xml=filename_cal)  # Generates a calibration object
         self.f = calHSI.f
         self.v_c = calHSI.cx
         self.k1 = calHSI.k1
@@ -722,39 +716,7 @@ class FeatureCalibrationObject():
 
         return rot_tot
 
-    def computeDirections(self, param):
-        self.rot_x = param[0]  # Pitch relative to cam (Equivalent to cam defining NED and uhi BODY)
-        self.rot_y = param[1]*0  # Roll relative to cam
-        self.rot_z = param[2]  # Yaw relative to cam
-        self.v_c = param[3]
-        self.f = param[4]
-        self.k1 = param[5]*0
-        self.k2 = param[6]
-        self.k3 = param[7]
-
-
-        #self.v_c = 455.414296
-        #self.f = 9.55160147e+02
-        #self.k1 = 0
-        #self.k2 = 3.22199561e+02
-        #self.k3 = -7.36445822e+01
-        #self.rot_x = 1.41822029e-03
-        #self.rot_z = -3.77072811e-03
-        # Define camera model array for 960 pixels and 480. 1 is subtracted when.
-        # Pixel ranges from -0.5
-        # How to compensate for binning?
-
-        self.v = self.pixel*self.binning + 0.5*(self.binning + 1)
-
-        # Express uhi ray directions in uhi frame using line-camera model
-        x_norm_lin = (self.v - self.v_c) / self.f
-
-        x_norm_nonlin = -(self.k1 * ((self.v - self.v_c) / 1000) ** 5 + \
-                          self.k2 * ((self.v - self.v_c) / 1000) ** 3 + \
-                          self.k3 * ((self.v - self.v_c) / 1000) ** 2) / self.f
-
-        self.x_norm = x_norm_lin + x_norm_nonlin
-
+    
     # At the time of updated parameters
     def reprojectFeaturesHSI(self):
         rot_hsi_rgb = np.array([self.rot_z, self.rot_y, self.rot_x]) * 180 / np.pi
@@ -777,7 +739,90 @@ class FeatureCalibrationObject():
 
 
 
-def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, extrapolate = True, use_absolute_position = True):
+def compute_camera_rays_from_parameters(pixel_nr, cx, f, k1, k2, k3):
+    """_summary_
+
+    :param pixel_nr: _description_
+    :type pixel_nr: _type_
+    :param rot_x: _description_
+    :type rot_x: _type_
+    :param rot_y: _description_
+    :type rot_y: _type_
+    :param rot_z: _description_
+    :type rot_z: _type_
+    :param cx: _description_
+    :type cx: _type_
+    :param f: _description_
+    :type f: _type_
+    :param k1: _description_
+    :type k1: _type_
+    :param k2: _description_
+    :type k2: _type_
+    :param k3: _description_
+    :type k3: _type_
+    :return: _description_
+    :rtype: _type_
+    """
+
+    u = pixel_nr + 1
+
+    # Express uhi ray directions in uhi frame using line-camera model
+    x_norm_lin = (u - cx) / f
+
+    x_norm_nonlin = -(k1 * ((u - cx) / 1000) ** 5 + \
+                        k2 * ((u - cx) / 1000) ** 3 + \
+                        k3 * ((u - cx) / 1000) ** 2) / f
+
+    x_norm = x_norm_lin + x_norm_nonlin
+
+    return x_norm
+
+
+def reproject_world_points_to_hsi_plane(trans_hsi_body, rot_hsi_body, pos_body, rot_body, points_world):
+    """Reprojects world points to local image plane coordinates (x_h, y_h, 1)
+
+    :param trans_hsi_body: lever arm from body center to hsi focal point
+    :type trans_hsi_body: _type_
+    :param rot_hsi_body: boresight rotation 
+    :type rot_hsi_body: Scipy rotation object
+    :param pos_body: The earth fixed earth centered position of the vehicle body centre
+    :type pos_body: _type_
+    :param rot_body: The rotation of the body in ECEF
+    :type rot_body: Scipy rotation object
+    :param points_world: World points in ECEF
+    :type points_world: _type_
+    :return: The reprojection coordinates
+    :rtype: ndarray(n, 3)
+    """
+
+    
+
+    # We compose the hypothesized boresight (rot_hsi_body) an lever arm (trans_hsi_body) to get the hypothesized position/orientation
+    # of the hyperspectral imager
+    rotation_hsi = rot_body * rot_hsi_body
+    position_hsi = pos_body + rot_body.apply(trans_hsi_body)
+
+    # Given the positions, the hsi-point vector can be expressed in ECEF
+    hsi_to_feature_global = points_world - position_hsi
+
+    # Number of features to iterate
+    n = hsi_to_feature_global.shape[0]
+
+    # We can now express the hsi-point vector in the HSI frame and normalize by the z component to find the image plane projection
+    hsi_to_feature_local = np.zeros(hsi_to_feature_global.shape)
+    for i in range(n):
+        # The vector expressed in HSI frame
+        hsi_to_feature_local[i, :] = (rotation_hsi[i].inv()).apply(hsi_to_feature_global[i, :])
+
+        # The vector normalized to lie on the virtual plane
+        hsi_to_feature_local[i, :] /= hsi_to_feature_local[i, 2]
+    
+    return hsi_to_feature_local
+
+
+
+
+def interpolate_poses(timestamp_from, pos_from, rot_from, timestamps_to, extrapolate = True, use_absolute_position = True):
     """
 
     :param timestamp_from:
@@ -813,8 +858,7 @@ def interpolate_poses(timestamp_from, pos_from, pos0, rot_from, timestamps_to, e
 
 
     # Setting use_absolute_position to True means that position calculations are done with absolute
-    referenceGeometry = CameraGeometry(pos0=pos0,
-                               pos=pos_from,
+    referenceGeometry = CameraGeometry(pos=pos_from,
                                rot=rot_from,
                                time=timestamp_from,
                                use_absolute_position=use_absolute_position)
@@ -858,16 +902,6 @@ def cartesian_to_polar(xyz):
 
 
 
-
-
-class MeshGeometry():
-    def __init__(self, config):
-        mesh_path = config['General']['model_path']
-        texture_path = config['General']['tex_path']
-        offset_x = float(config['General']['offset_x'])
-        offset_y = float(config['General']['offset_y'])
-        offset_z = float(config['General']['offset_z'])
-        self.pos0 = np.array([offset_x, offset_y, offset_z]).reshape([-1, 1])
 
 
 
@@ -937,7 +971,13 @@ class GeoPose:
         self.lon = None
         self.hei = None
 
-    def compute_geodetic_position(self, epsg_geod):
+        self.compute_geodetic_position()
+        self.compute_geocentric_orientation()
+        self.compute_ned_orientation()
+        self.compute_ned_2_ecef()
+
+
+    def compute_geodetic_position(self, epsg_geod = 4326):
         """
             Function for transforming positions to latitude longitude height
             :param epsg_geod: int
@@ -986,7 +1026,7 @@ class GeoPose:
                 self.compute_geodetic_position()
 
             R_body_2_ned = self.rot_obj_ned
-            R_ned_2_ecef = self.compute_rot_obj_ned_2_ecef()
+            R_ned_2_ecef = self.compute_ned_2_ecef()
             R_body_2_ecef = R_ned_2_ecef*R_body_2_ned
 
             self.rot_obj_ecef = R_body_2_ecef
@@ -1000,7 +1040,7 @@ class GeoPose:
             R_body_2_ecef = self.rot_obj_ecef
 
             # Define rotation from ecef 2 ned
-            R_ecef_2_ned = self.compute_rot_obj_ned_2_ecef().inv()
+            R_ecef_2_ned = self.compute_ned_2_ecef().inv()
 
             # Compose
             R_body_2_ned = R_ecef_2_ned*R_body_2_ecef
@@ -1011,7 +1051,7 @@ class GeoPose:
         else:
             pass
 
-    def compute_rot_obj_ned_2_ecef(self):
+    def compute_ned_2_ecef(self):
 
         N = self.lat.shape[0]
         rot_mats_ned_2_ecef = np.zeros((N, 3, 3), dtype=np.float64)
@@ -1020,11 +1060,11 @@ class GeoPose:
             rot_mats_ned_2_ecef[i,:,:] = rot_mat_ned_2_ecef(lat=self.lat[i], lon = self.lon[i])
 
 
-        self.rots_obj_ned_2_ecef = RotLib.from_matrix(rot_mats_ned_2_ecef)
+        self.rot_obj_ned_2_ecef = RotLib.from_matrix(rot_mats_ned_2_ecef)
 
-        return self.rots_obj_ned_2_ecef
+        return self.rot_obj_ned_2_ecef
 
-
+    
 
 
 def rot_mat_ned_2_ecef(lat, lon):
@@ -1053,7 +1093,36 @@ def rot_mat_ned_2_ecef(lat, lon):
     return R_ned_ecef
 
 
+def read_raster(filename, out_crs="EPSG:3857", use_z=False):
+    """Read a raster to a ``pyvista.StructuredGrid``.
 
+    This will handle coordinate transformations.
+    """
+    from rasterio import transform
+    import rioxarray
+    # Read in the data
+    data = rioxarray.open_rasterio(filename)
+    values = np.asarray(data)
+    data.rio.nodata
+    nans = values == data.rio.nodata
+    if np.any(nans):
+        # values = np.ma.masked_where(nans, values)
+        values[nans] = np.nan
+    # Make a mesh
+    xx, yy = np.meshgrid(data["x"], data["y"])
+    if use_z and values.shape[0] == 1:
+        # will make z-comp the values in the file
+        zz = values.reshape(xx.shape)
+    else:
+        # or this will make it flat
+        zz = np.zeros_like(xx)
+    mesh = pv.StructuredGrid(xx, yy, zz)
+    pts = mesh.points
+    lon, lat = transform(data.rio.crs, out_crs, pts[:, 0], pts[:, 1])
+    mesh.points[:, 0] = lon
+    mesh.points[:, 1] = lat
+    mesh["data"] = values.reshape(mesh.n_points, -1, order="F")
+    return mesh
 
 def dem_2_mesh(path_dem, model_path, config):
     """
@@ -1119,15 +1188,17 @@ def dem_2_mesh(path_dem, model_path, config):
             mask = band_data != no_data_value
 
             # Create and open the output XYZ file for writing if it does not exist:
-            #if not os.path.exists(output_xyz):
-            with open(output_xyz, 'w') as xyz_file:
-                # Write data to the XYZ file using the mask and calculated coordinates
-                for y in range(ds.RasterYSize):
-                    for x in range(ds.RasterXSize):
-                        if mask[y, x]:
-                            x_coord = x_origin + x * x_resolution
-                            y_coord = y_origin + y * y_resolution
-                            xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
+            if not os.path.exists(output_xyz):
+                with open(output_xyz, 'w') as xyz_file:
+                    # Write data to the XYZ file using the mask and calculated coordinates
+                    for y in range(ds.RasterYSize):
+                        for x in range(ds.RasterXSize):
+                            if mask[y, x]:
+                                x_coord = x_origin + x * x_resolution
+                                y_coord = y_origin + y * y_resolution
+                                xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
+            else:
+                print('*.xyz already exists')
             # Clean up
             ds = None
             band = None
@@ -1137,9 +1208,10 @@ def dem_2_mesh(path_dem, model_path, config):
 
     # Create a pyvista point cloud object
     cloud = pv.PolyData(points)
-
+    
+    # TODO: Apply patch to avoid crash for triangulation when using big DEM files
     # Generate a mesh from points
-    mesh = cloud.delaunay_2d()
+    mesh = cloud.delaunay_2d(progress_bar=True)
 
     # Transform the mesh points from projected to geocentric ECEF.
     geocsc = CRS.from_epsg(epsg_geocsc)
@@ -1162,20 +1234,11 @@ def dem_2_mesh(path_dem, model_path, config):
     
     h_proj = points_proj[:, 2].reshape((-1, 1))
 
-    (xECEF, yECEF, zECEF) = transformer.transform(xx=x_proj, yy=y_proj, zz=h_proj)
+    (x_ecef, y_ecef, z_ecef) = transformer.transform(xx=x_proj, yy=y_proj, zz=h_proj)
 
-    mesh.points[:, 0] = xECEF.reshape(-1)
-    mesh.points[:, 1] = yECEF.reshape(-1)
-    mesh.points[:, 2] = zECEF.reshape(-1)
-
-    offX = float(config['General']['offset_x'])
-    offY = float(config['General']['offset_y'])
-    offZ = float(config['General']['offset_z'])
-
-    pos0 = np.array([offX, offY, offZ]).reshape((1, -1))
-
-    # Add same offset as position data
-    mesh.points -= pos0
+    mesh.points[:, 0] = x_ecef.reshape(-1)
+    mesh.points[:, 1] = y_ecef.reshape(-1)
+    mesh.points[:, 2] = z_ecef.reshape(-1)
 
     # Save mesh
     mesh.save(model_path)
@@ -1303,11 +1366,11 @@ def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):
     geod = CRS.from_epsg(epsg_to)
     transformer = Transformer.from_crs(geocsc, geod)
 
-    xECEF = position_ecef[:, 0].reshape((-1, 1))
-    yECEF = position_ecef[:, 1].reshape((-1, 1))
-    zECEF = position_ecef[:, 2].reshape((-1, 1))
+    x_ecef = position_ecef[:, 0].reshape((-1, 1))
+    y_ecef = position_ecef[:, 1].reshape((-1, 1))
+    z_ecef = position_ecef[:, 2].reshape((-1, 1))
 
-    (lat, lon, hei) = transformer.transform(xx=xECEF, yy=yECEF, zz=zECEF)
+    (lat, lon, hei) = transformer.transform(xx=x_ecef, yy=y_ecef, zz=z_ecef)
 
     lat_lon_hei = np.zeros(position_ecef.shape)
     lat_lon_hei[:, 0] = lat.reshape((position_ecef.shape[0], 1))

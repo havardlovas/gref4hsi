@@ -1,5 +1,9 @@
 # gref4hsi - a toolchain for the georeferencing and orthorectification of hyperspectral pushbroom data. 
-This software was made with a special emphasis on georeferencing and orthorectification of underwater hyperspectral data close-range. However, it is equally simple to use for airborne data, and probably even for satellite imagery (although modified approaches including analytical ellipsoid intersection may be better). A coregistration module might be added in the future to flexibly improve image alignment.
+This software was made with a special emphasis on georeferencing and orthorectification of hyperspectral imagery from drones and underwater robots. However, it is equally simple to use for airborne data, and probably even for satellite imagery (although modified approaches including analytical ellipsoid intersection may be better). There is also a coregistration module (at beta stage) which, given an accurate RGB orthomosaic, can optimize geometric parameters (static or time-varying) to align the data.
+The functionality in bullet form is:
+* georeference.py: The software currently supports direct georeferencing through CPU-accelerated ray tracing of push broom measurements onto terrain files including 3D triangular meshes (\*.ply), 2.5D raster DEM/DSM (e.g. \*.tif) and geoid models.
+* orthorectification.py: The software performs orthorectification (a form of image resampling) to any user specified projection (by EPSG code) and resolution. The default resampling strategy is north-east oriented rasters, but the software does support memory-optimally oriented rasters (smallest bounding rectangle). When you resample, you essentially figure out where to put measurements in a geographic grid. In the software, we resample the data cube, an RGB composite of the cube, but also ancillary data like intersection/sun geometries, pixel coordinates (in spatial dimension of imager) and timestamps.
+* coregistration.py: Given a reference RGB orthomosaic (e.g. from photo-matching) covering the area of the hyperspectral image, the coregistration module does SIFT-matching with the RGB composite (handling any differences in projection and raster transforms). The module also has an optimization component for using the matches to minimize the reprojection error. The user can select/toggle which parameters to optimize, including boresight angles, lever arms, camera model parameters or time-varying errors in position/orientation. Notably the module requires that the pixel-coordinates and timestamps are resampled, as done automatically in the orthorectification step.
 
 This README is a bit verbose, but is meant to act as a "tutorial" as well, and I recommend trying to understand as much as possible.
 
@@ -7,6 +11,7 @@ This README is a bit verbose, but is meant to act as a "tutorial" as well, and I
 The easiest approach is to use conda/mamba to get gdal and pip to install the package with the following commands (has been tested for python 3.8-3.10):
 ```
 conda create -n my_env python=3.10 gdal rasterio
+conda activate my_env
 pip install gref4hsi 
 ```
 
@@ -14,6 +19,7 @@ pip install gref4hsi
 Seamless installation for windows is, to my experience a bit more challenging because of gdal and rasterio. For python 3.10 you could run
 ```
 conda create -n my_env python=3.10
+conda activate my_env
 pip install GDAL‑3.4.3‑cp310‑cp310‑win_amd64.whl
 pip install rasterio‑1.2.10‑cp310‑cp310‑win_amd64.whl
 pip install gref4hsi 
@@ -91,22 +97,26 @@ Moreover, the f represent the camera's focal length in pixels, width is the numb
 u = np.random.randint(1, width + 1) # Pixel numbers left to right (value from 1 to width)
 
 # Pinhole part
-x_norm_pinhole = (u - u_c) / f
+x_norm_pinhole = (u - cx) / f
 
 # Distortion part
-x_norm_nonlin = -(k1 * ((u - u_c) / 1000) ** 5 + \
-                  k2 * ((u - u_c) / 1000) ** 3 + \
-                  k3 * ((u - u_c) / 1000) ** 2) / f
+x_norm_nonlin = -(k1 * ((u - cx) / 1000) ** 5 + \
+                  k2 * ((u - cx) / 1000) ** 3 + \
+                  k3 * ((u - cx) / 1000) ** 2) / f
 
 x_norm_hsi = x_norm_pinhole + x_norm_nonlin
 
 X_norm_hsi = np.array([x_norm_hsi, 0, 1]) # The pixel ray in the hsi frame
 ```
 
-Of course most these parameters are hard to guess for a HSI and there are two simple ways of finding them. The first way is to ignore distortions and if you know the angular field of view (AFOV). Then you can calculate:
+Of course most of these parameters are hard to guess for a HSI and there are two simple ways of finding them. The first way is to ignore distortions and assume you know the angular field of view (AFOV). Then you can calculate:
 
 $$f = \frac{width}{2tan(AFOV/2)}$$
-Besides that, you set cx=width/2, and remaining k's to zero. The second approach is if you have an array describing the FOV (often from the manufacturer). 
+
+
+Besides that, you set cx=width/2, and remaining k's to zero. 
+
+The second approach to get the camera model is if you have an array describing the FOV (often from the manufacturer). 
 In our example above that would amount to a 512-length array, e.g. in degrees 
 ```
 from gref4hsi.specim_parsing_utils import Specim
@@ -131,7 +141,6 @@ param_dict['tz'] = tz
 
 # Write dictionary to *.xml file
 CalibHSI(file_name_cal_xml= confic['Absolute Paths']['hsi_calib_path'], 
-                    config = config, 
                     mode = 'w', 
                     param_dict = param_dict)
 ```
@@ -139,12 +148,11 @@ CalibHSI(file_name_cal_xml= confic['Absolute Paths']['hsi_calib_path'],
 
 
 ### Terrain files
-There are three allowable types ("model_export_type" in the configuration file), namely "ply_file" (a.k.a. mesh files), "dem_file" and "geoid". Example geoids are added under data/world/geoids/ including the global egm08 and a norwegian geoid. Your local geoid can probably be found from [geoids](https://www.agisoft.com/downloads/geoids/) or similar. Just ensure you add this path to the 'Absolute Paths' section in the configuration file. Similarly, if you choose "model_export_type = dem_file", you can usa a terrain model from from your area as long as you add the path to the file in the 'Absolute Paths'. Remember that if the local terrain (dem file) is given wrt the geoid, you can plus them together in e.g. QGIS or simply add an approximate offset in python with rasterio. This is because the software expects DEMs giving the ellipsoid height. Lastly, if the "ply_file" is the desired option a path to this file must be added to the config file.
+There are three allowable types ("model_export_type" in the configuration file), namely "ply_file" (a.k.a. mesh files), "dem_file" and "geoid". Example geoids are added under data/world/geoids/ including the global egm08 and a norwegian geoid. Your local geoid can probably be found from [geoids](https://www.agisoft.com/downloads/geoids/) or similar. Just ensure you add this path to the 'Absolute Paths' section in the configuration file. Similarly, if you choose "model_export_type = dem_file", you can use a terrain model from from your area as long as you add the path to the file in the 'Absolute Paths'. Remember that if the local terrain (dem file) is given wrt the geoid, you can plus them together in e.g. QGIS or simply add an approximate offset in python with rasterio. This is because the software expects DEMs giving the ellipsoid height of the terrain. Lastly, if the "ply_file", or 3D triangular mesh is the desired option, a path to this file must be added to the config file. It should be fairly easy to use any triangular mesh format even though the option suggests "\*.ply". 
 
 ### The h5 files
 This format must comply with the h5 paths in the configuration file. All sections starting with "HDF.xxxx" are related to these paths. I realize that it is inconvenient to transform the format if your recorded data is in NETCDF, ENVI etc, but making this software I chose H5/HDF because of legacy and because of the flexibility of the mini-file system. The input structure (only mandatory entries) of the H5 files under mission_dir/Input/H5 is as follows (printed using h5tree in Linux):  
 ```
-2022-08-31_0800_HSI_transectnr_0_chunknr_0.h5
 2022-08-31_0800_HSI_transectnr_0_chunknr_0.h5
 ├── processed
 │   └── radiance
@@ -266,6 +274,16 @@ parsing_utils.export_model(config_file_mission)
 # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
 georeference.main(config_file_mission)
 
+# Orthorectify/resample datacube, RGB-composite and ancillary data
 orthorectification.main(config_file_mission)
+
+# Optional: coregistration
+# Match RGB composite to reference, find features and following data, ground control point (gcp) list, for each feature pair:
+# reference point 3D (from reference), position/orientation of vehicle (using resampled time) and pixel coordinate (using resampled pixel coordinate)
+coregistration.main(config_file_mission, mode='compare')
+
+# The gcp list allows reprojecting reference points and evaluate the reprojection error,
+# which is used to optimize static geometric parameters (e.g. boresight...) or dynamic geometric parameters (time-varying nav errors).
+coregistration.main(config_file_mission, mode='calibrate')
 ```
 

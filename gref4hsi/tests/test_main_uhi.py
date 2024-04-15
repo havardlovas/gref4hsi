@@ -1,24 +1,38 @@
 from collections import namedtuple
 import configparser
 import os
+import sys
 
 import numpy as np
 
+# Detect OS and set FPs
+if os.name == 'nt':
+    # Windows OS
+    base_fp = 'D:'
+    home = 'C:/Users/haavasl'
+elif os.name == 'posix':
+    # This Unix-like systems inl. Mac and Linux
+    base_fp = '/media/haavasl/Expansion'
+    home = 'C:/Users/haavasl'
+
+# Use this if working with the github repo to do quick changes to the module
+module_path = os.path.join(home, 'VsCodeProjects/gref4hsi/')
+if module_path not in sys.path:
+    sys.path.append(module_path)
+
 from gref4hsi.utils import parsing_utils, uhi_parsing_utils
 from gref4hsi.scripts import georeference, orthorectification
-from gref4hsi.scripts import visualize
+from gref4hsi.utils import visualize
 from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 
-DATA_DIR = "/media/haavasl/Expansion/HyperspectralDataAll/UHI/2020-07-01-14-34-57-ArcticSeaIce-Ben-Lange/"
+DATA_DIR = os.path.join(base_fp, "HyperspectralDataAll/UHI/2020-07-01-14-40-15-ArcticSeaIce-Ben-Lange/")
 
 # The configuration file stores the settings for georeferencing
 config_file_mission = os.path.join(DATA_DIR, 'configuration.ini')
 
 
-
-
-config_path_template = '/home/haavasl/VsCodeProjects/gref4hsi/data/config_examples/configuration_uhi.ini'
+config_path_template = os.path.join(home, 'VsCodeProjects/gref4hsi/data/config_examples/configuration_uhi.ini')
 
 # Copies the template to config_file_mission and sets up the necessary directories
 prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DATA_DIR)
@@ -27,8 +41,8 @@ prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DA
 custom_config = {'General':
                     {'mission_dir': DATA_DIR,
                     'model_export_type': 'dem_file', # Infer seafloor structure from altimeter recordings
-                    'max_ray_length': 5,
-                    'lab_cal_dir': '/media/haavasl/Expansion/HyperspectralDataAll/UHI/Lab_Calibration_Data/NP'}, # Max distance in meters from UHI to seafloor
+                    'max_ray_length': 20,
+                    'lab_cal_dir': os.path.join(base_fp, 'HyperspectralDataAll/UHI/Lab_Calibration_Data/NP')}, # Max distance in meters from UHI to seafloor
 
                 'Coordinate Reference Systems': 
                     {'proj_epsg' : 3395, # The projected CRS for orthorectified data (an arctic CRS)
@@ -40,11 +54,11 @@ custom_config = {'General':
                     {'dem_folder': 'Input/GIS/'}, # Using altimeter, we generate one DEM per transect chunk
                 
                 'Absolute Paths':
-                    {'geoid_path': '/media/haavasl/Expansion/Specim/Missions/2024-02-19-Sletvik/slettvik_hopavaagen_202402191253_ntnu_hyperspectral_74m/geoids/no_kv_HREF2018A_NN2000_EUREF89.tif'}, # Using altimeter, we generate one DEM per transect chunk
+                    {'geoid_path': os.path.join(home, 'VsCodeProjects\gref4hsi\data\world\geoids\egm08_25.gtx')}, # Using altimeter, we generate one DEM per transect chunk
 
                 'Orthorectification':
-                    {'resample_rgb_only': True, # Good choice for speed
-                    'resolutionhyperspectralmosaic': 0.1, # 1 cm
+                    {'resample_rgb_only': False, # Good choice for speed
+                    'resolutionhyperspectralmosaic': 0.01, # 1 cm
                     'raster_transform_method': 'north_east'},
                 
                 'HDF.raw_nav': {'altitude': 'raw/nav/altitude',
@@ -95,17 +109,20 @@ config_uhi_preprocess = SettingsPreprocess(dtype_datacube = np.float32,
                                                                     [0, 0, -1]]),
                             # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.
                             translation_alt_to_body = np.array([0.5, 0, 0]),
-                            time_offset_sec =  23,
+                            time_offset_sec =  0,
+                            # Ben's tick s1 starts at 1593614097.992003 -> 22 s delay
+                            # Ben's tick s2 starts at 1593614414.995001 -> 0 s delay
+
                             lon_lat_alt_origin =  np.array([1, 1, 0]),
                             # The beast sets up a fake coordinate system at 1 deg lon/lat.
                             config_file_name = 'configuration.ini',
-                            resolution_dem = 0.2,
-                            agisoft_process  = False)
+                            resolution_dem = 0.2, # The resolution of the Altimeter-based DEM
+                            agisoft_process  = False) # This is an option for photogrammetry-based processing in the case you have imagery
 
 
 
 
-# TODO: update config.ini automatically with paths for simple reproducability
+
 """config = configparser.ConfigParser()
 config.read(config_file)"""
 
@@ -116,7 +133,7 @@ def main():
     config.read(config_file_mission)
 
     # The minimum for georeferencing is to parse 1) Mesh model and 2) The pose of the reference
-    """uhi_parsing_utils.uhi_beast(config=config, config_uhi=config_uhi_preprocess)"""
+    uhi_parsing_utils.uhi_beast(config=config, config_uhi=config_uhi_preprocess)
     
     config = parsing_utils.export_pose(config_file_mission)
 

@@ -62,7 +62,7 @@ class TimeData:
         self.value = value
     def interpolate(self, time_interp):
         self.time_interp = time_interp
-        self.value_interp = interp1d(x = self.time, y = self.value, kind='linear', fill_value='extrapolate')(x=self.time_interp)
+        self.value_interp = interp1d(x = self.time, y = self.value, kind='nearest', fill_value='extrapolate')(x=self.time_interp)
             
 
 class NAV:
@@ -260,8 +260,7 @@ def set_camera_model(config, config_file_path, config_uhi, model_type, binning_s
         CAMERA_CALIB_XML_DIR = config['Absolute Paths']['calib_folder']
         xml_cal_write_path = CAMERA_CALIB_XML_DIR + file_name_xml
 
-        CalibHSI(file_name_cal_xml= xml_cal_write_path, 
-                        config = config, 
+        CalibHSI(file_name_cal_xml= xml_cal_write_path,  
                         mode = 'w', 
                         param_dict = param_dict)
 
@@ -286,6 +285,11 @@ def read_nav_from_mat(mat_filename):
     """Function for reading mat data from the beast format into a NAV object"""
     mat_contents = {}
     mat_contents = loadmat(filename=mat_filename)
+
+    m_att = mat_contents['ATTENTION']
+    #m_att['SpotOnTime'][m_att['Note'] == 'UHI s1 start']
+
+    
 
     
     # +
@@ -326,7 +330,7 @@ def read_nav_from_mat(mat_filename):
 def write_nav_data_to_h5(nav, time_offset, config, H5_FILE_PATH):
     
     # The time stamp used for writing
-    nav_timestamp_rov = nav.roll.time
+    nav_timestamp_rov = nav.yaw.time
 
     # Interpolate nav data to those times
     nav.interpolate(time_interp=nav_timestamp_rov)
