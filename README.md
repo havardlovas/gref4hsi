@@ -131,7 +131,6 @@ param_dict['tz'] = tz
 
 # Write dictionary to *.xml file
 CalibHSI(file_name_cal_xml= confic['Absolute Paths']['hsi_calib_path'], 
-                    config = config, 
                     mode = 'w', 
                     param_dict = param_dict)
 ```
