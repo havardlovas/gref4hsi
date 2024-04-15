@@ -20,7 +20,7 @@ import h5py
 from scipy.spatial.transform import Rotation as RotLib
 
 # Lib modules
-from gref4hsi.scripts.colours import Image as Imcol
+from gref4hsi.utils.colours import Image as Imcol
 
 # ENVI datatype conversion dictionary
 dtype_dict = {1:np.uint8,

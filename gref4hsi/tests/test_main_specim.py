@@ -26,7 +26,7 @@ from gref4hsi.scripts import georeference
 from gref4hsi.scripts import orthorectification
 from gref4hsi.scripts import coregistration
 from gref4hsi.utils import parsing_utils, specim_parsing_utils
-from gref4hsi.scripts import visualize
+from gref4hsi.utils import visualize
 from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 
@@ -139,9 +139,12 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         # At the moment refractive ray tracing is not implemented, but it could be relatively easy by first ray tracing with geoid+tide, 
                         # and then ray tracing from water
                         #'tide_path' : 'D:/HyperspectralDataAll/HI/2022-08-31-060000-Remoy-Specim/Input/tidevann_nn2000_NMA.txt'
-                        }
-                        # Tide data can be downloaded from https://www.kartverket.no/til-sjos/se-havniva
-                        # Preferably it is downloaded with reference "NN2000" to agree with DEM
+                        },
+                    # If coregistration is done, then the data must be stored after processing somewhere
+                    'HDF.coregistration': {
+                        'position_ecef': 'processed/coreg/position_ecef',
+                        'quaternion_ecef' : 'processed/coreg/quaternion_ecef'
+                    }
                     
     }
 
@@ -182,7 +185,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
     #orthorectification.main(config_file_mission)
 
-    #coregistration.main(config_file_mission, mode='compare')
+    coregistration.main(config_file_mission, mode='compare')
 
     coregistration.main(config_file_mission, mode='calibrate')
 

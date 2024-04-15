@@ -12,7 +12,7 @@ import h5py
 # Lib resources:
 from gref4hsi.utils.geometry_utils import CameraGeometry, CalibHSI
 from gref4hsi.utils.parsing_utils import Hyperspectral
-from gref4hsi.scripts import visualize
+from gref4hsi.utils import visualize
 
 
 def cal_file_to_rays(filename_cal):

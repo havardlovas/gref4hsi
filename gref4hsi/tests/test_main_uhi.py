@@ -22,7 +22,7 @@ if module_path not in sys.path:
 
 from gref4hsi.utils import parsing_utils, uhi_parsing_utils
 from gref4hsi.scripts import georeference, orthorectification
-from gref4hsi.scripts import visualize
+from gref4hsi.utils import visualize
 from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 

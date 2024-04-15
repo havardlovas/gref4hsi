@@ -7,7 +7,7 @@ import os
 from scripts import georeference
 from scripts import orthorectification
 from utils import parsing_utils
-from scripts import visualize
+from gref4hsi.utils import visualize
 from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths
 
 """

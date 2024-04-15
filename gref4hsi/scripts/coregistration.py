@@ -14,6 +14,7 @@ from scipy.spatial.transform import Rotation as RotLib
 from scipy.optimize import least_squares
 from scipy.interpolate import interp1d
 import pandas as pd
+from scipy.sparse import lil_matrix
 
 
 
@@ -42,19 +43,33 @@ def numerical_jacobian(fun, param, eps=1e-6, **kwargs):
 
 
 def interpolate_time_nodes(time_from, value, time_to, method = 'linear'):
-    # One simple option is to use Scipy's sortiment. The sparsity pattern should be included somehow..
+    """Interpolates the parameters (values) from the time nodes (time_from) to any array of interpolatable time_to array
+
+    :param time_from: The time of the time_nodes (error parameters)
+    :type time_from: ndarray (n,)
+    :param value: The values of the position and orientation errors at the time_nodes
+    :type value: ndarray (6, n)
+    :param time_to: The queried time points for interpolation
+    :type time_to: ndarray (m,)
+    :param method: ['nearest', 'linear', 'slinear', 'quadratic', 'cubic'], defaults to 'linear'
+    :type method: str, optional
+    :return: _description_
+    :rtype: _type_
+    """
+    # One simple option is to use Scipy's sortiment of interpolation options. The sparsity pattern should be included somehow..
     if method in ['nearest', 'linear', 'slinear', 'quadratic', 'cubic']:
         return interp1d(time_from, value, kind=method)(time_to)
     
 
-def compose_pose_errors(param_time_var, time_nodes, unix_time_features, rot_body_ned, rot_ned_ecef, pos_body):
-    """Takes a (4*n_node) vector of errors in X, Y, Z and Yaw, interpolates and composes (adds) it to the pose from the navigation data"""
+def compose_pose_errors(param_pose_tot, time_nodes, unix_time_features, rot_body_ned, rot_ned_ecef, pos_body, time_interpolation_method):
+    """Takes a (6*n_node) vector of errors, interpolates and composes (adds) them to the pose from the navigation data"""
     n_features = len(unix_time_features)
 
     # Interpolate to the right time
     err_interpolated = interpolate_time_nodes(time_nodes, 
-                                                param_time_var.reshape((4, -1)), 
-                                                time_to = unix_time_features, method='quadratic').transpose()
+                                              param_pose_tot,
+                                             time_to = unix_time_features, 
+                                              method=time_interpolation_method).transpose()
 
     # The errors in the interpolated form
     param_err_pos = err_interpolated[:, 0:3]
@@ -77,17 +92,26 @@ def compose_pose_errors(param_time_var, time_nodes, unix_time_features, rot_body
 
     return pos_body, rot_body_ecef
 
-def objective_fun_reprojection_error(param, features_df, param0, is_variab_parameter, time_nodes):
-    
-    #
-    n_param_tot_static = len(is_variab_parameter)
-    n_variab_param_static = sum(is_variab_parameter==1)
+
+def calculate_intrinsic_param(is_variab_param_intr, param, param0, as_calib_obj = False):
+    """Based on which parameters were toggled for adjustments it fills the 11 element intrinsic camera parameter vector
+
+    :param is_variab_param_intr: _description_
+    :type is_variab_param_intr: bool
+    :param param: _description_
+    :type param: _type_
+    :param param0: _description_
+    :type param0: _type_
+    :return: _description_
+    :rtype: _type_
+    """
+    n_param_tot_static = len(is_variab_param_intr)
     param_vec_total = np.zeros(n_param_tot_static)
     
     # Static parameters (not time-varying)
     param_count = 0
     for i in range(n_param_tot_static):
-        if bool(is_variab_parameter[i]):
+        if bool(is_variab_param_intr[i]):
             # take from the parameter vector (assuming that they are ordered the same way)
             param_vec_total[i] = param[param_count]
             param_count += 1
@@ -95,29 +119,106 @@ def objective_fun_reprojection_error(param, features_df, param0, is_variab_param
         else:
             # Take fixed parameters from param0 - the initial parameter guess
             param_vec_total[i] = param0[i]
+    
 
-    # Static parameters:
+    if as_calib_obj:
+        # If data is to be returned as dictionary
+        calib_dict = {'rx': param_vec_total[0],
+                      'ry': param_vec_total[1],
+                      'rz': param_vec_total[2],
+                      'cx': param_vec_total[3],
+                      'f': param_vec_total[4],
+                      'k1': param_vec_total[5],
+                      'k2': param_vec_total[6],
+                      'k3': param_vec_total[7],
+                      'tx': param_vec_total[8],
+                      'ty': param_vec_total[9],
+                      'tz': param_vec_total[10]}
+        
+        return calib_dict
+    else:
+        # If data is to be returned as vector
+        return param_vec_total
+
+
+def calculate_pose_param(is_variab_param_extr, is_variab_param_intr, param):
+    """Calculate a (6,n) pose vector from the parameter vector
+
+    :param is_variab_param_extr: Boolean array saying which pose degrees of freedom are variable (to be adjusted)
+    :type is_variab_param_extr: ndarray (6,) bool
+    :param is_variab_param_intr: Boolean array saying which intrinsic/static parameters are variable (to be adjusted) 
+    :type is_variab_param_intr: ndarray (11,) bool
+    :param param: parameter vector
+    :type param: ndarray (n_variab_param_static + 6*n,) 
+    :return: The (6, n) pose vector where n is the number of time nodes
+    :rtype: ndarray (6, n) 
+    """
+
+    n_variab_param_static = sum(is_variab_param_intr==1)
+
+    # The number of pose degrees of freedom to estimate. Estimating posX, posY and yaw would give n_pose_dofs = 3
+    n_pose_dofs = is_variab_param_extr.sum()
+    param_time_var = param[n_variab_param_static:].reshape((n_pose_dofs, -1))
+
+    # The errors default to zero
+    param_pose_tot = np.zeros((6, param_time_var.shape[1]))
+
+    var_dof_count = 0
+    for i in range(6): # Iterate 3 positions and 3 orientations
+        # i=0 is posx, i=1 is posy, i=2 is posz, i=3 is roll, i=4 is pitch, and i=5 is yaw
+        if is_variab_param_extr[i]:
+            # If a degree of freedom is to be tuned, we insert the error parameters from the current vector
+            param_pose_tot[i,:] = param_time_var[var_dof_count,:]
+            var_dof_count += 1
+    
+
+    return param_pose_tot
+
+def objective_fun_reprojection_error(param, features_df, param0, is_variab_param_intr, is_variab_param_extr, time_nodes, time_interpolation_method):
+    """_summary_
+
+    :param param: _description_
+    :type param: _type_
+    :param features_df: _description_
+    :type features_df: _type_
+    :param param0: _description_
+    :type param0: _type_
+    :param is_variab_param_intr: Array describing which of the 11 intrinsic parameters to be calibrated (boresight, lever arm, cam calib)
+    :type is_variab_param_intr: ndarray (11,) bool
+    :param is_variab_param_extr: Array describing which of the 6 intrinsic pose time series to be calibrated (posX, posY, posZ, roll, pitch, yaw)
+    :type is_variab_param_extr: ndarray (11,) bool
+    :param time_nodes: _description_
+    :type time_nodes: _type_
+    :param time_interpolation_method: _description_
+    :type time_interpolation_method: _type_
+    :return: _description_
+    :rtype: _type_
+    """
+    
+    #
+
+    param_vec_intr = calculate_intrinsic_param(is_variab_param_intr, param, param0)
 
     # Boresight
-    rot_x = param_vec_total[0]
-    rot_y = param_vec_total[1]
-    rot_z = param_vec_total[2]
+    rot_x = param_vec_intr[0]
+    rot_y = param_vec_intr[1]
+    rot_z = param_vec_intr[2]
 
     # Principal point
-    cx = param_vec_total[3]
+    cx = param_vec_intr[3]
 
     # Focal length
-    f = param_vec_total[4]
+    f = param_vec_intr[4]
 
     # Distortions
-    k1 = param_vec_total[5]
-    k2 = param_vec_total[6]
-    k3 = param_vec_total[7]
+    k1 = param_vec_intr[5]
+    k2 = param_vec_intr[6]
+    k3 = param_vec_intr[7]
 
     # Lever arm
-    trans_x = param_vec_total[8] 
-    trans_y = param_vec_total[9]
-    trans_z = param_vec_total[10] 
+    trans_x = param_vec_intr[8] 
+    trans_y = param_vec_intr[9]
+    trans_z = param_vec_intr[10] 
 
     
     
@@ -157,15 +258,15 @@ def objective_fun_reprojection_error(param, features_df, param0, is_variab_param
         rot_body_ecef = rot_ned_ecef * rot_body_ned
 
     else:
-
-        # If we try to estimate errors in the navigation data (these parameters are after the static parameters)
-        param_time_var = param[n_variab_param_static:]
+        
+        # Calculate the 6 dof pose error parameters (non-adjustable parameters rows are zero)
+        param_pose_tot = calculate_pose_param(is_variab_param_extr, is_variab_param_intr, param)
 
         # The parametric errors represent a handful of nodes and must be interpolated to the feature times
         unix_time_features = features_df['unix_time']
 
         # We compose them with (add them to) the position/orientation estimates from the nav system
-        pos_body, rot_body_ecef = compose_pose_errors(param_time_var, time_nodes, unix_time_features, rot_body_ned, rot_ned_ecef, pos_body)
+        pos_body, rot_body_ecef = compose_pose_errors(param_pose_tot, time_nodes, unix_time_features, rot_body_ned, rot_ned_ecef, pos_body, time_interpolation_method)
 
 
 
@@ -207,8 +308,102 @@ def objective_fun_reprojection_error(param, features_df, param0, is_variab_param
     # Least squares expects a 1D function evaluation vector
     return np.concatenate((errorx.reshape(-1), errory.reshape(-1)))
 
+def filter_gcp_by_registration_error(u_err, v_err, method = 'iqr'):
+    """Filters the matched point based on the registration error in pixels in x/east (u_err) and y/north (v_err). 
+        Returns a binary mask of 
+
+    :param u_err: error in pixels in x/east (u_err)
+    :type u_err: ndarray (n,)
+    :param v_err: error in pixels in y/north (v_err)
+    :type v_err: ndarray (n,)
+    :param method: The filtration method, defaults to 'iqr'
+    :type method: str, optional
+    :return: Binary mask that can be used for masking e.g. a dataframe or numpy array
+    :rtype: ndarray (n,)
+    """
+    if method == 'iqr':
+        # Errors in the x direction. We define the inlier interval by use of the interquartile rule
+        Q1_u = np.percentile(u_err, 25)
+        Q3_u = np.percentile(u_err, 75)
+        IQR_u = Q3_u-Q1_u
+        lower_bound_u = Q1_u - 1.5*IQR_u
+        upper_bound_u = Q3_u + 1.5*IQR_u
+
+        # Errors in the x direction. We define the inlier interval by use of the interquartile rule
+        Q1_v = np.percentile(v_err, 25)
+        Q3_v = np.percentile(v_err, 75)
+        IQR_v = Q3_v-Q1_v
+        lower_bound_v = Q1_v - 1.5*IQR_v
+        upper_bound_v = Q3_v + 1.5*IQR_v
+
+        # Simply mask by the interquartile rule for the north-east registration errors (unit is in pixels)
+        feature_mask = np.all([u_err > lower_bound_u,
+                                    u_err < upper_bound_u,
+                                    v_err > lower_bound_v,
+                                    v_err < upper_bound_v], axis=0)
+    else:
+        print('This method does not exist')
+        NotImplementedError
+    return feature_mask
 
 
+def calculate_cam_and_pose_from_param(h5_filename, param, features_df, param0, is_variab_param_intr, is_variab_param_extr, time_nodes, time_interpolation_method, h5_paths):
+
+    # Seems wize to return
+    # Return in a dictionary allowing for simple dumping to XML file (exept width)
+    if is_variab_param_intr.sum() != 0:
+        # Only compute if one or more parameters have been calibrated
+        calib_param_intr = calculate_intrinsic_param(is_variab_param_intr, param, param0, as_calib_obj = True)
+
+
+    if time_nodes is None:
+
+        # Calculate the pose vector
+        param_pose_tot = calculate_pose_param(is_variab_param_extr, is_variab_param_intr, param)
+
+        # Read the original poses and time stamps from h5
+        
+        position_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                        dataset_name=h5_paths['h5_folder_position_ecef'])
+        # Extract the ecef orientations for each frame
+        quaternion_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                        dataset_name=h5_paths['h5_folder_quaternion_ecef'])
+        # Extract the timestamps for each frame
+        time_pose = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                        dataset_name=h5_paths['h5_folder_quaternion_ecef'])
+        
+        # Minor code block for decomposing orientation into BODY-NED and NED-ECEF rotations
+        rot_body = RotLib.from_quat(quaternion_ecef)
+        geo_pose = GeoPose(timestamps=time_pose, 
+                            rot_obj=rot_body, 
+                            rot_ref='ECEF', 
+                            pos=position_ecef, 
+                            pos_epsg=4978)
+        rot_body_ned = geo_pose.rot_obj_ned
+        rot_ned_ecef = geo_pose.rot_obj_ned_2_ecef
+
+        # Compose the error parameter vector into the original pose estimates
+        pos_body_corrected, rot_body_ecef_corrected = compose_pose_errors(param_pose_tot, 
+                        time_nodes, 
+                        time_pose, 
+                        rot_body_ned, 
+                        rot_ned_ecef, 
+                        position_ecef, 
+                        time_interpolation_method)
+        
+    
+    return calib_param_intr, pos_body_corrected, rot_body_ecef_corrected.as_quat()
+
+
+    
+    
+
+
+    
+    
+
+
+    # Read the correction data from param
 
 # Function called to apply standard processing on a folder of files
 def main(config_path, mode):
@@ -247,8 +442,20 @@ def main(config_path, mode):
     # Quaternion is stored here in the H5 file
     h5_folder_quaternion_ecef = config['HDF.processed_nav']['quaternion_ecef']
 
+    # Poses modified in coregistration are written to
+    h5_folder_position_ecef_coreg = config['HDF.coregistration']['position_ecef']
+
+    # Quaternion is stored here in the H5 file
+    h5_folder_quaternion_ecef_coreg = config['HDF.coregistration']['quaternion_ecef']
+
     # Timestamps here
     h5_folder_time_pose = config['HDF.processed_nav']['timestamp']
+
+    h5_paths = {'h5_folder_position_ecef': h5_folder_position_ecef,
+                'h5_folder_quaternion_ecef': h5_folder_quaternion_ecef,
+                'h5_folder_time_pose': h5_folder_quaternion_ecef, 
+                'h5_folder_position_ecef_coreg': h5_folder_position_ecef_coreg,
+                'h5_folder_quaternion_ecef_coreg': h5_folder_quaternion_ecef_coreg}
 
     
 
@@ -352,7 +559,9 @@ def main(config_path, mode):
             diff_uv = uv_vec_hsi[feature_mask, :] - uv_vec_ref[feature_mask, :]
 
             # Now we have computed the GCPs with coincident metainformation
-            gcp_dict = {'file_count': np.ones(pixel_nr_vec.shape)*file_count,
+            n_cols_df = pixel_nr_vec.size
+            gcp_dict = {'file_count': np.ones(n_cols_df)*file_count,
+                        'h5_filename': np.repeat(h5_filename, n_cols_df),
                         'pixel_nr': pixel_nr_vec, 
                         'unix_time': unix_time_vec,
                         'position_x': position_vec[:,0],
@@ -391,29 +600,14 @@ def main(config_path, mode):
         
         gcp_df_all = pd.read_csv(ref_gcp_path)
 
-        # Errors in the x direction. We define the inlier interval by use of the interquartile rule
+        # Registration error in pixels in x-direction (u_err) and y-direction (v_err)
         u_err = gcp_df_all['diff_u']
-        Q1_u = np.percentile(u_err, 25)
-        Q3_u = np.percentile(u_err, 75)
-        IQR_u = Q3_u-Q1_u
-        lower_bound_u = Q1_u - 1.5*IQR_u
-        upper_bound_u = Q3_u + 1.5*IQR_u
-
-        # Errors in the x direction. We define the inlier interval by use of the interquartile rule
         v_err = gcp_df_all['diff_v']
-        Q1_v = np.percentile(v_err, 25)
-        Q3_v = np.percentile(v_err, 75)
-        IQR_v = Q3_v-Q1_v
-        lower_bound_v = Q1_v - 1.5*IQR_v
-        upper_bound_v = Q3_v + 1.5*IQR_v
 
-        # Simply mask by the interquartile rule for the north-east registration errors (unit is in pixels)
-        feature_mask_IQR = np.all([u_err > lower_bound_u,
-                                   u_err < upper_bound_u,
-                                   v_err > lower_bound_v,
-                                   v_err < upper_bound_v], axis=0)
+        feature_mask = filter_gcp_by_registration_error(u_err, v_err, method = 'iqr')
+        
         # These features are used
-        df_gcp_filtered = gcp_df_all[feature_mask_IQR]
+        df_gcp_filtered = gcp_df_all[feature_mask]
         
         
         print("\n################ Calibrating camera parameters: ################")
@@ -432,15 +626,26 @@ def main(config_path, mode):
                           'calibrate_k3': True}
         
         calibrate_per_transect = True
-
         estimate_time_varying = True
         time_node_spacing = 10 # s. If spacing 10 and transect lasts for 53 s will attempt to divide into largest integer leaving
+        time_interpolation_method = 'linear'
+
+        # Select which time varying degrees of freedom to estimate errors for
+        calibrate_dict_extr = {'calibrate_pos_x': True,
+                          'calibrate_pos_y': True,
+                          'calibrate_pos_z': True,
+                          'calibrate_roll': False,
+                          'calibrate_pitch': False,
+                          'calibrate_yaw': True}
 
         # Localize the prior calibration and use as initial parameters as well as constants for parameter xx if calibrate_xx = False
         cal_obj_prior = CalibHSI(file_name_cal_xml=config['Absolute Paths']['hsi_calib_path'])
 
         # Whether the parameter is toggled for calibration
-        is_variab_parameter = np.zeros(11).astype(np.int64)
+        is_variab_param_intr = np.zeros(11).astype(np.int64)
+
+        # Whether the DOF is toggled for calibration
+        is_variab_param_extr = np.zeros(6).astype(np.int64)
 
         param0 = np.array([cal_obj_prior.rx, 
                                 cal_obj_prior.ry, 
@@ -455,89 +660,127 @@ def main(config_path, mode):
                                 cal_obj_prior.tz])
 
         if calibrate_dict ['calibrate_boresight']:
-            is_variab_parameter[0:3] = 1
+            is_variab_param_intr[0:3] = 1
         
         if calibrate_dict ['calibrate_camera']:
-            is_variab_parameter[3:8] = 1
+            is_variab_param_intr[3:8] = 1
             if not calibrate_dict['calibrate_cx']:
-                is_variab_parameter[3] = 0
+                is_variab_param_intr[3] = 0
             if not calibrate_dict['calibrate_f']:
-                is_variab_parameter[4] = 0
+                is_variab_param_intr[4] = 0
             if not calibrate_dict['calibrate_k1']:
-                is_variab_parameter[5] = 0
+                is_variab_param_intr[5] = 0
             if not calibrate_dict['calibrate_k2']:
-                is_variab_parameter[6] = 0
+                is_variab_param_intr[6] = 0
             if not calibrate_dict['calibrate_k3']:
-                is_variab_parameter[7] = 0
+                is_variab_param_intr[7] = 0
 
         if calibrate_dict ['calibrate_lever_arm']:
-            is_variab_parameter[8:11] = 1
+            is_variab_param_intr[8:11] = 1
                 
-        # TODO: User should be able to specify which parameters to calibrate with dictionary above
-        # These are the adjustable parameters
-        param0_variab = param0[is_variab_parameter==1]
+        
 
+        if estimate_time_varying:
+            # Define which dofs are to be adjusted in optimization
+            if calibrate_dict_extr['calibrate_pos_x']:
+                is_variab_param_extr[0] = 1
 
+            if calibrate_dict_extr['calibrate_pos_y']:
+                is_variab_param_extr[1] = 1
+            
+            if calibrate_dict_extr['calibrate_pos_z']:
+                is_variab_param_extr[2] = 1
+            
+            if calibrate_dict_extr['calibrate_roll']:
+                is_variab_param_extr[3] = 1
+            
+            if calibrate_dict_extr['calibrate_pitch']:
+                is_variab_param_extr[4] = 1
+            
+            if calibrate_dict_extr['calibrate_yaw']:
+                is_variab_param_extr[5] = 1
+        
+        # Based on which options were toggled, the number of adjustable dofs can be computed
+        n_adjustable_dofs = is_variab_param_extr.sum()
+
+        # These are the adjustable parameters (not time-varying)
+        param0_variab = param0[is_variab_param_intr==1]
+
+        # Set the keyword arguments for optimization
+        kwargs = {'features_df': None,
+                    'param0': param0,
+                    'is_variab_param_intr': is_variab_param_intr,
+                    'time_nodes': None,
+                    'is_variab_param_extr': is_variab_param_extr,
+                    'time_interpolation_method': time_interpolation_method}
+
+        # The sometimes natural think to do
         if calibrate_per_transect:
+            # Number of transects is found form data frame
             n_transects = 1 + (df_gcp_filtered['file_count'].max() - df_gcp_filtered['file_count'].min())
             
-            # Calculate the optimal camera parameters and 
+            # Iterate through transects
             for i in range(int(n_transects)):
                 df_current = df_gcp_filtered[df_gcp_filtered['file_count'] == i]
+                
+                # Update the feature info
+                kwargs['features_df'] = df_current
 
+                n_features = df_current.shape[0]
 
                 if estimate_time_varying:
                     times_samples = df_current['unix_time']
                     transect_duration_sec = times_samples.max() - times_samples.min()
                     number_of_nodes = int(np.floor(transect_duration_sec/time_node_spacing)) + 1
 
+                    # The time varying parameters are in total the number of dofs times number of nodes
+                    param0_time_varying = np.zeros(n_adjustable_dofs*number_of_nodes)
+
+                    # The time-varying parameters are stacked after the intrinsic parameters.
+                    # This vector only holds parameters that will be adjusted
+                    param0_variab_tot = np.concatenate((param0_variab, 
+                                                        param0_time_varying), axis=0)
+
                     # Calculate the number of nodes. It divides the transect into equal intervals, 
                     # meaning that the intervals can be somewhat different at least for a small number of them.
                     time_nodes = np.linspace(start=times_samples.min(), 
                                         stop = times_samples.max(), 
                                         num = number_of_nodes)
+                    # Update optimization kwarg
+                    kwargs['time_nodes'] = time_nodes
                     
-                    # One parameter set for X, Y, Z and one for rotZ
-                    param0_variab_tot = np.concatenate((param0_variab, np.zeros(4*number_of_nodes)), axis=0)
-
-                    # Calculate the Jacobian (for exploiting sparsity)
-                    kwargs = {'features_df': df_current,
-                              'param0': param0,
-                              'is_variab_parameter': is_variab_parameter,
-                              'time_nodes': time_nodes}
+                    # Calculate the Jacobian for finding and exploiting sparsity
                     J = numerical_jacobian(fun = objective_fun_reprojection_error, param = param0_variab_tot, **kwargs)
 
                     sparsity_perc = 100*((J==0).sum()/J.size)
-                    print(f'Jacobian computed with {sparsity_perc:.0f} % zeros')
 
+                    #print(f'Jacobian computed with {sparsity_perc:.0f} % zeros')
                     
-                    from scipy.sparse import lil_matrix
+                    # Using list of list representation as recommended by Scipy's least squares
                     sparsity = lil_matrix(J.shape, dtype=int)
+
+                    # Setting the non sparse elements (in theory they could be set for small values of J too)
                     sparsity[J != 0] = 1
                 else:
                     time_nodes = None
                     param0_variab_tot = param0_variab
 
-                n_features = df_current.shape[0]
                 
-                res_pre_optim = objective_fun_reprojection_error(param0_variab_tot, 
-                                                      df_current, 
-                                                      param0, 
-                                                      is_variab_parameter,
-                                                      time_nodes
-                                                      )
+                # Run once with initial parameters
+                res_pre_optim = objective_fun_reprojection_error(param0_variab_tot, **kwargs)
 
+                # Calculate the median absolute error in pixels
                 abs_err = np.sqrt(res_pre_optim[0:n_features]**2 + res_pre_optim[0:n_features]**2)
                 median_error = np.median(abs_err)*cal_obj_prior.f
                 print(f'Original MAE rp-error is {median_error:.1f} pixels')
 
-                # Optimize the transect legs
+                # Optimize the transect and record time duration
                 time_start  = time.time()
                 res = least_squares(fun = objective_fun_reprojection_error, 
                                 x0 = param0_variab_tot, 
-                                args= (df_current, param0, is_variab_parameter, time_nodes, ), 
                                 x_scale='jac',
-                                jac_sparsity=sparsity)
+                                jac_sparsity=sparsity,
+                                kwargs=kwargs)
                 
                 optim_dur = time.time() - time_start
 
@@ -552,23 +795,29 @@ def main(config_path, mode):
                 print('')
                 
 
+                # TODO: the parameters should be injected into h5-file
+
+                h5_filename = df_current['h5_filename'][0]
+                param_optimized = res.x
+                camera_model_dict_updated, position_updated, quaternion_updated = calculate_cam_and_pose_from_param(h5_filename, param_optimized, **kwargs, h5_paths=h5_paths)
+
         else:
             
             n_features = df_gcp_filtered.shape[0]
 
-            res_pre_optim = objective_fun_reprojection_error(param0_variab, df_gcp_filtered, param0, is_variab_parameter)
+            res_pre_optim = objective_fun_reprojection_error(param0_variab, df_gcp_filtered, param0, is_variab_param_intr)
             median_error_x = np.median(np.abs(res_pre_optim[0:n_features]))
             median_error_y = np.median(np.abs(res_pre_optim[n_features:2*n_features]))
             print(f'Original rp-error in x is {median_error_x} and in y is {median_error_y}')
 
             res = least_squares(fun = objective_fun_reprojection_error, 
                                 x0 = param0_variab, 
-                                args= (df_gcp_filtered, param0, is_variab_parameter, ), 
+                                args= (df_gcp_filtered, param0, is_variab_param_intr, ), 
                                 x_scale='jac',
                                 method = 'lm')
             
-            median_error_x = np.median(np.abs(res.fun[0:n_features]))*74
-            median_error_y = np.median(np.abs(res.fun[n_features:2*n_features]))*74
+            median_error_x = np.median(np.abs(res.fun[0:n_features]))
+            median_error_y = np.median(np.abs(res.fun[n_features:2*n_features]))
             print(f'Optimized MAE rp-error in x is {median_error_x} and in y is {median_error_y}')
 
     

@@ -10,7 +10,7 @@ import pathlib
 from gref4hsi.scripts import georeference
 from gref4hsi.scripts import orthorectification
 from gref4hsi.utils import parsing_utils, specim_parsing_utils
-from gref4hsi.scripts import visualize
+from gref4hsi.utils import visualize
 from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 
