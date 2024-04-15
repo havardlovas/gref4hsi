@@ -105,7 +105,7 @@ X_norm_hsi = np.array([x_norm_hsi, 0, 1]) # The pixel ray in the hsi frame
 
 Of course most these parameters are hard to guess for a HSI and there are two simple ways of finding them. The first way is to ignore distortions and if you know the angular field of view (AFOV). Then you can calculate:
 
-$$f = \frac{width}{2atan(AFOV/2)}$$
+$$f = \frac{width}{2tan(AFOV/2)}$$
 Besides that, you set cx=width/2, and remaining k's to zero. The second approach is if you have an array describing the FOV (often from the manufacturer). 
 In our example above that would amount to a 512-length array, e.g. in degrees 
 ```
