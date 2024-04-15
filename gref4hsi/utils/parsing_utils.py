@@ -118,7 +118,6 @@ class Hyperspectral:
                 try:
                     processed_nav_config = config['HDF.processed_nav']
                     self.pos_ref = self.f[processed_nav_config['position_ecef']][()]
-                    self.pos0 = self.f[processed_nav_config['pos0']][()]
                     self.quat_ref = self.f[processed_nav_config['quaternion_ecef']][()]
                     self.pose_time = self.f[processed_nav_config['timestamp']][()]
                 except:
@@ -288,9 +287,9 @@ def ardupilot_extract_pose(config, iniPath):
     lon = points_proj[:, 1].reshape((-1, 1))
     hei = points_proj[:, 2].reshape((-1, 1))
 
-    (xECEF, yECEF, zECEF) = transformer.transform(xx=lat, yy=lon, zz=hei)
+    (x_ecef, y_ecef, z_ecef) = transformer.transform(xx=lat, yy=lon, zz=hei)
 
-    pos_geocsc = np.concatenate((xECEF.reshape((-1,1)), yECEF.reshape((-1,1)), zECEF.reshape((-1,1))), axis = 1)
+    pos_geocsc = np.concatenate((x_ecef.reshape((-1,1)), y_ecef.reshape((-1,1)), z_ecef.reshape((-1,1))), axis = 1)
 
     #dlogr = DataLogger(pose_path, 'CameraLabel, X, Y, Z, Roll, Pitch, Yaw, RotX, RotY, RotZ')
 
@@ -422,7 +421,6 @@ def reformat_h5_embedded_data_h5(config, config_file):
             # Compute interpolated absolute positions positions and orientation:
             position_interpolated, quaternion_interpolated = interpolate_poses(timestamp_from=timestamps_imu,
                                                              pos_from=position_ref,
-                                                             pos0=None,
                                                              rot_from=rot_obj,
                                                              timestamps_to=timestamp_hsi,
                                                              use_absolute_position = True)
@@ -462,30 +460,25 @@ def reformat_h5_embedded_data_h5(config, config_file):
             position_ref_ecef = geo_pose_ref.pos_geocsc
             quaternion_ref_ecef = geo_pose_ref.rot_obj_ecef.as_quat()
 
+            # For stacking in CSV
+            rot_vec_ecef = geo_pose_ref.rot_obj_ecef.as_euler('ZYX', degrees=True)
+
+            partial_pose = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
             if is_first:
-                # Calculate some appropriate offsets in ECEF
-                pos0 = np.mean(position_ref_ecef, axis=0)
-
-                # For stacking in CSV
-                rot_vec_ecef = geo_pose_ref.rot_obj_ecef.as_euler('ZYX', degrees=True)
-
-                # 
-                total_pose = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
+                # Initialize
+                total_pose = partial_pose
                 # Ensure that flag is not raised again. Offsets should only be set once.
                 is_first = False
             else:
-                # Ensure that flag is not raised again. Offsets should only be set once.
-                is_first = False
-                rot_vec_ecef = geo_pose_ref.rot_obj_ecef.as_euler('ZYX', degrees=True)
-                partial_pose = np.concatenate((timestamp_hsi.reshape((-1,1)), position_ref_ecef, rot_vec_ecef), axis=1)
+                # Concatenate/stack poses
                 total_pose = np.concatenate((total_pose, partial_pose), axis=0)
+                is_first = False
             
-            position_offset_name = config['HDF.processed_nav']['pos0']
-            Hyperspectral.add_dataset(data=pos0, name=position_offset_name, h5_filename=path_hdf)
+            
 
             # Add camera position
             position_ref_name = config['HDF.processed_nav']['position_ecef']
-            Hyperspectral.add_dataset(data=position_ref_ecef - pos0, name=position_ref_name, h5_filename=path_hdf)
+            Hyperspectral.add_dataset(data=position_ref_ecef, name=position_ref_name, h5_filename=path_hdf)
 
             # Add camera quaternion
             quaternion_ref_name = config['HDF.processed_nav']['quaternion_ecef']
@@ -519,15 +512,6 @@ def reformat_h5_embedded_data_h5(config, config_file):
             os.makedirs(directory)
         
         df.to_csv(pose_path, index=False)
-
-
-    config.set('General', 'offset_x', str(pos0[0]))
-    config.set('General', 'offset_y', str(pos0[1]))
-    config.set('General', 'offset_z', str(pos0[2]))
-    # Exporting models with offsets might be convenient
-    with open(config_file, 'w') as configfile:
-        config.write(configfile)
-    return config
 
 # The main script for aquiring pose.        
 def export_pose(config_file):

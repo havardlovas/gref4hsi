@@ -17,9 +17,10 @@ from sklearn.neighbors import NearestNeighbors
 from spectral import envi
 import spectral as sp
 import h5py
+from scipy.spatial.transform import Rotation as RotLib
 
 # Lib modules
-from gref4hsi.scripts.colours import Image as Imcol
+from gref4hsi.utils.colours import Image as Imcol
 
 # ENVI datatype conversion dictionary
 dtype_dict = {1:np.uint8,
@@ -36,14 +37,6 @@ class GeoSpatialAbstractionHSI():
     def __init__(self, point_cloud, transect_string, config_crs):
         self.name = transect_string
         self.points_geocsc = point_cloud
-
-        self.offX = config_crs.off_x
-        self.offY = config_crs.off_y
-        self.offZ = config_crs.off_z
-
-        if self.offX == -1:
-            print('Offsets have not been set, or they have been overwritten by default value -1')
-            RuntimeError
 
         self.epsg_geocsc = config_crs.epsg_geocsc
         
@@ -67,13 +60,13 @@ class GeoSpatialAbstractionHSI():
         proj = CRS.from_epsg(self.epsg_proj)
         transformer = Transformer.from_crs(geocsc, proj)
 
-        xECEF = self.points_geocsc[:,:,0].reshape((-1, 1))
-        yECEF = self.points_geocsc[:, :, 1].reshape((-1, 1))
-        zECEF = self.points_geocsc[:, :, 2].reshape((-1, 1))
+        x_ecef = self.points_geocsc[:,:,0].reshape((-1, 1))
+        y_ecef = self.points_geocsc[:, :, 1].reshape((-1, 1))
+        z_ecef = self.points_geocsc[:, :, 2].reshape((-1, 1))
 
         
 
-        (east, north, hei) = transformer.transform(xx=xECEF + self.offX, yy=yECEF + self.offY, zz=zECEF + self.offZ)
+        (east, north, hei) = transformer.transform(xx=x_ecef, yy=y_ecef, zz=z_ecef)
 
         self.points_proj[:,:,0] = east.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
         self.points_proj[:, :, 1] = north.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
@@ -128,6 +121,7 @@ class GeoSpatialAbstractionHSI():
         :param config_ortho: The relevant configurations for orthorectification
         :type config_ortho: Dictionary
         """
+
 
 
         
@@ -370,12 +364,12 @@ class GeoSpatialAbstractionHSI():
                         if data.shape[1]  != self.n_pixels:
                             # For data of shape n_lines x j, for example camera positions, reshape to n_lines x n_pixels x j
                             j = data.shape[1]
-                            data = np.einsum('ijk, ik -> ijk', np.ones((self.n_lines, self.n_pixels, j), dtype=np.float32), data)
+                            data = np.einsum('ijk, ik -> ijk', np.ones((self.n_lines, self.n_pixels, j), dtype=np.float64), data)
                         else:
                             # For data with dimension n_lines x n_pixels, add third dimension
                             data = data.reshape((data.shape[0], data.shape[1], 1))
 
-                    data = data.astype(dtype = np.float32)
+                    data = data.astype(dtype = np.float64)
                     
                     # For first layer
                     if band_counter == 0:
@@ -438,16 +432,25 @@ class GeoSpatialAbstractionHSI():
 
     @staticmethod
     def cube_to_raster_grid(coords, raster_transform_method, resolution):
+        """Function that takes projected coordinates (e.g. UTM 32 east and north) of ray intersections and computes an image grid
+
+        :param coords: _description_
+        :type coords: _type_
+        :param raster_transform_method: How the raster grid is calculated. "north_east" is standard and defines a rectangle along north/east. "minimal_rectangle" is memory optimal as it finds the smallest enclosing rectangle that wraps the points.
+        :type raster_transform_method: _type_
+        :param resolution: _description_
+        :type resolution: _type_
+        :return: _description_
+        :rtype: _type_
+        """
+
+
         if raster_transform_method == 'north_east':
-            # Creates the minimal area (and thus memory) rectangle around chunk
+            # Creates the minimal area (and thus memory) rectangle around points
             polygon = MultiPoint(coords).envelope
 
             # extract coordinates
             x, y = polygon.exterior.xy
-
-            idx_ul = 3
-            idx_ur = 2
-            idx_ll = 4
 
             suffix = '_north_east'
             
@@ -455,22 +458,22 @@ class GeoSpatialAbstractionHSI():
             
         elif raster_transform_method == 'minimal_rectangle':
             
-            # Creates the minimal area (and thus memory) rectangle around chunk
+            # Creates the minimal area (and thus memory) rectangle around points
             polygon = MultiPoint(coords).minimum_rotated_rectangle
 
             # extract coordinates
             x, y = polygon.exterior.xy
 
-            # Increasing indices are against the clock
             
-            # Determine basis vectors from data
-            idx_ul = 3
-            idx_ur = 2
-            idx_ll = 4
 
             suffix = '_rotated'
 
-        # ul means upper left, ll means lower left and so on
+        # Indices increase against the clock
+        # ul means upper left corner of polygon, ll means lower left and so on
+        idx_ul = 3
+        idx_ur = 2
+        idx_ll = 4
+
         x_ul = x[idx_ul]
         y_ul = y[idx_ul]
 
@@ -480,7 +483,7 @@ class GeoSpatialAbstractionHSI():
         x_ll = x[idx_ll]
         y_ll = y[idx_ll]
 
-        # The vector from upper-left corner aka origin to the upper-right equals lambda*e_basis_x
+        # The vector from the upper-left corner aka origin to the upper-right equals lambda*e_basis_x
         e_basis_x = np.array([x_ur-x_ul, y_ur-y_ul]).reshape((2,1))
         w_transect = np.linalg.norm(e_basis_x)
         e_basis_x /= w_transect
@@ -489,11 +492,11 @@ class GeoSpatialAbstractionHSI():
         e_basis_y = np.array([x_ll-x_ul, y_ll-y_ul]).reshape((2,1))
         h_transect = np.linalg.norm(e_basis_y)
         e_basis_y /= h_transect
-        e_basis_y *= -1 # Ensuring Right handedness (image storage y direction is o)
+        e_basis_y *= -1 # Ensuring right handedness (image storage y direction is opposite)
 
         R = np.hstack((e_basis_x, e_basis_y)) # 2D rotation matrix by definition
         
-        # Define origin/translation vector
+        # Define origin/translation vector as the upper left corner
         o = np.array([x[idx_ul], y[idx_ul]]).reshape((2))
 
         # Transformation matrix rigid body 2D
@@ -502,12 +505,13 @@ class GeoSpatialAbstractionHSI():
         Trb[0:2,2] = o
         Trb[2,2] = 1
 
+        # We operate with same resolution in X and Y. Note that for "minimal_rectangle" X, Y are NOT East and North. 
         s_x = resolution
         s_y = resolution
 
         S = np.diag(np.array([s_x, s_y, 1]))
 
-        # Reflection to account for opposite row/up direction
+        # Reflection matrix to account for opposite row/up direction
         Ref = np.diag(np.array([1, -1, 1]))
 
         # The affine transform is then expressed:
@@ -517,31 +521,38 @@ class GeoSpatialAbstractionHSI():
         width = int(np.ceil(w_transect/s_x))
         height = int(np.ceil(h_transect/s_y))
 
-        # Rasterio operates with a conventional affine
+        # Rasterio operates with a conventional affine geotransform
         a, b, c, d, e, f = Taff[0,0], Taff[0,1], Taff[0,2], Taff[1,0], Taff[1,1], Taff[1,2]
-
         transform = rasterio.Affine(a, b, c, d, e, f)
 
-        # Pixel centers reside at half coordinates.
+        # Define local orthographic pixel grid. Pixel centers reside at half coordinates.
         xi, yi = np.meshgrid(np.arange(width) + 0.5, 
                                 np.arange(height) + 0.5)
+        # To get homogeneous vector (not an actual z coordinate)
         zi = np.ones(xi.shape)
 
-        # Form homogeneous vectors
+        # Form homogeneous vectors (allows translation by multiplication)
         x_r = np.vstack((xi.flatten(), yi.flatten(), zi.flatten())).T
 
-        x_p = np.matmul(Taff, x_r.T).T # Map pixels to geographic
+        # Map orthographic pixels to projected system
+        x_p = np.matmul(Taff, x_r.T).T 
 
+        # Make a point vector of grid points to be used in nearest neighbor
         xy = np.vstack((x_p[:,0].flatten(), x_p[:,1].flatten())).T
         
-
-        # Locate nearest neighbors in a radius defined by the resolution
+        # Define NN search tree from intersection points
         tree = NearestNeighbors(radius=resolution).fit(coords)
 
-        # Calculate the nearest neighbors. Here we only use one neighbor, but other approaches could be employed
-        dist, indexes = tree.kneighbors(xy, 1)
+        # Calculate the nearest intersection point (in "coords") for each grid cell ("xy").
+        
+        # Here we only use one neighbor, and indexes is a vector of len(xy) where an element indexes(i)
+        # says that the closest point to xy[i] is coords[indexes[i]]. Since coords is just a flattened/reshaped version of intersection points
+        #, the data cube can be resampled by datacube_flat=datacube.reshape((dim1*dim2, dim3)) and 
+        # geographic_datacube_flat = datacube.reshape((dim1_geo*dim2_geo, dim3)) so that geographic_datacube_flat = datacube_flat[indexes,:]
+        n_neighbors = 1
+        dist, indexes = tree.kneighbors(xy, n_neighbors)
 
-        # We can mask the data by allowing interpolation with a radius of 2x the resolution
+        # We can mask the data by allowing points within a radius of 2x the resolution
         mask_nn = dist > 2*resolution
         
         return transform, height, width, indexes, suffix, mask_nn
@@ -574,11 +585,14 @@ class GeoSpatialAbstractionHSI():
 
         crs_rasterio = CRS.from_string(crs)
 
-        writer_type = "envi"
+        writer_type = "envi" # Hardcoded
 
         # Make some simple modifications
         data_file_path = datacube_path + '.' + interleave
         header_file_path = datacube_path + '.hdr'
+
+        if os.path.exists(header_file_path):
+            return
 
         # Clean the files generated by rasterio
         def write_band(args):
@@ -720,19 +734,14 @@ class GeoSpatialAbstractionHSI():
         sp.io.envi.write_envi_header(fileName=header_file_path, header_dict=header)
 
     @staticmethod
-    def compare_hsi_composite_with_rgb_mosaic(config):
-        rgb_ortho_path = config['Absolute Paths']['rgb_ortho_path']
-        hsi_composite = config['Absolute Paths']['rgb_composite_folder'] + name + '.tif'
-        rgb_ortho_reshaped = config['Absolute Paths']['rgbOrthoReshaped'] + name + '.tif'
-        dem_path = config['Absolute Paths']['dem_path']
-        dem_reshaped = config['Absolute Paths']['demReshaped'] + name + '_dem.tif'
+    def compare_hsi_composite_with_rgb_mosaic(hsi_composite_path, ref_ortho_reshaped_path):
+        """Compares an HSI orthomosaic """
+        
+        
 
-        resample_rgb_ortho_to_hsi_ortho()
-
-        resample_dem_to_hsi_ortho()
-
-
-        raster_rgb = gdal.Open(rgb_ortho_reshaped, gdal.GA_Update)
+        
+        # The RGB orthomosaic after reshaping (the reference)
+        raster_rgb = gdal.Open(ref_ortho_reshaped_path, gdal.GA_Update)
         xoff1, a1, b1, yoff1, d1, e1 = raster_rgb.GetGeoTransform()  # This should be equal
         raster_rgb_array = np.array(raster_rgb.ReadAsArray())
         R = raster_rgb_array[0, :, :].reshape((raster_rgb_array.shape[1], raster_rgb_array.shape[2], 1))
@@ -742,27 +751,23 @@ class GeoSpatialAbstractionHSI():
         ortho_rgb = np.concatenate((R, G, B), axis=2)
         rgb_image = Imcol(ortho_rgb)
 
-        raster_hsi = gdal.Open(hsi_composite)
+        # The HSI composite raster (the match)
+        raster_hsi = gdal.Open(hsi_composite_path)
         raster_hsi_array = np.array(raster_hsi.ReadAsArray())
         xoff2, a2, b2, yoff2, d2, e2 = raster_hsi.GetGeoTransform()
         transform_pixel_projected = raster_hsi.GetGeoTransform()
         R = raster_hsi_array[0, :, :].reshape((raster_hsi_array.shape[1], raster_hsi_array.shape[2], 1))
         G = raster_hsi_array[1, :, :].reshape((raster_hsi_array.shape[1], raster_hsi_array.shape[2], 1))
         B = raster_hsi_array[2, :, :].reshape((raster_hsi_array.shape[1], raster_hsi_array.shape[2], 1))
-
         ortho_hsi = np.concatenate((R, G, B), axis=2)
 
+        # Some form of image processing
         max_val = np.percentile(ortho_hsi.reshape(-1), 99)
         ortho_hsi /= max_val
         ortho_hsi[ortho_hsi > 1] = 1
         ortho_hsi = (ortho_hsi * 255).astype(np.uint8)
         ortho_hsi[ortho_hsi == 0] = 255
         hsi_image = Imcol(ortho_hsi)
-
-
-        # Dem
-        raster_dem = rasterio.open(dem_reshaped)
-
 
         # Adjust Clahe
         hsi_image.clahe_adjustment()
@@ -771,11 +776,16 @@ class GeoSpatialAbstractionHSI():
         hsi_image.to_luma(gamma=False, image_array = hsi_image.clahe_adjusted)
         rgb_image.to_luma(gamma=False, image_array= rgb_image.clahe_adjusted)
 
-        compute_sift_difference(hsi_image.luma_array, rgb_image.luma_array)
+        uv_vec_hsi, uv_vec_rgb, diff_AE_pixels = GeoSpatialAbstractionHSI.compute_sift_difference(hsi_image.luma_array, rgb_image.luma_array)
 
 
+        image_resolution = a2
+        diff_AE_meters = diff_AE_pixels*image_resolution
+        return uv_vec_hsi, uv_vec_rgb, diff_AE_meters, transform_pixel_projected
 
-    def resample_rgb_ortho_to_hsi_ortho(self):
+
+    @staticmethod
+    def resample_rgb_ortho_to_hsi_ortho(ref_ortho_path, hsi_composite_path, ref_ortho_reshaped_path):
         """Reproject RGB orthophoto to match the shape and projection of HSI raster.
 
         Parameters
@@ -785,9 +795,9 @@ class GeoSpatialAbstractionHSI():
         outfile : (string) path to output file tif
         """
 
-        infile = self.rgb_ortho_path
-        match = self.hsi_composite
-        outfile = self.rgb_ortho_reshaped
+        infile = ref_ortho_path
+        match = hsi_composite_path
+        outfile = ref_ortho_reshaped_path
         # open input
         with rasterio.open(infile) as src:
             src_transform = src.transform
@@ -826,7 +836,7 @@ class GeoSpatialAbstractionHSI():
                         dst_crs=dst_crs,
                         resampling=Resampling.cubic)
 
-    def resample_dem_to_hsi_ortho(self):
+    def resample_dem_to_hsi_ortho(dem_path, hsi_composite_path, dem_reshaped):
         """Reproject a file to match the shape and projection of existing raster.
 
         Parameters
@@ -836,9 +846,9 @@ class GeoSpatialAbstractionHSI():
         outfile : (string) path to output file tif
         """
 
-        infile = self.dem_path
-        match = self.hsi_composite
-        outfile = self.dem_reshaped
+        infile = dem_path
+        match = hsi_composite_path
+        outfile = dem_reshaped
         # open input
         with rasterio.open(infile) as src:
             src_transform = src.transform
@@ -877,8 +887,10 @@ class GeoSpatialAbstractionHSI():
                         dst_crs=dst_crs,
                         resampling=Resampling.cubic)
 
+    @staticmethod
+    def compute_sift_difference(gray1, gray2):
+        """Simply matches two grayscale images using SIFT"""
 
-    def compute_sift_difference(self, gray1, gray2):
         gray1 = (gray1 - np.min(gray1)) / (np.max(gray1) - np.min(gray1))
         gray2 = (gray2 - np.min(gray2)) / (np.max(gray2) - np.min(gray2))
 
@@ -922,8 +934,8 @@ class GeoSpatialAbstractionHSI():
             diff_v[i] = uv2[1] - uv1[1]
 
         img3 = cv.drawMatches(gray1, kp1, gray2, kp2, good, None, **draw_params)
-        plt.imshow(img3, 'gray')
-        plt.show()
+        #plt.imshow(img3, 'gray')
+        #plt.show()
 ##
         # The absolute errors
         diff_AE = np.sqrt(diff_u ** 2 + diff_v ** 2)
@@ -969,11 +981,11 @@ class GeoSpatialAbstractionHSI():
 
 
 
-            (xECEF, yECEF, zECEF) = transformer.transform(xx=xp, yy=yp, zz=zp)
+            (x_ecef, y_ecef, z_ecef) = transformer.transform(xx=xp, yy=yp, zz=zp)
 
-            self.features_points[:, 0] = xECEF - self.offX
-            self.features_points[:, 1] = yECEF - self.offY
-            self.features_points[:, 2] = zECEF - self.offZ
+            self.features_points[:, 0] = x_ecef
+            self.features_points[:, 1] = y_ecef
+            self.features_points[:, 2] = z_ecef
 
 
 
@@ -1011,6 +1023,81 @@ class GeoSpatialAbstractionHSI():
         #self.y1_y_rgb = u_rgb - np.floor(u_rgb)
 
 
+    def compute_reference_points_ecef(uv_vec_ref, transform_pixel_projected, dem_resampled_path, epsg_proj, epsg_geocsc=4978):
+    
+    
+        """Computes ECEF reference points from a features detected on the orthomosaic and the DEM"""
+        x = uv_vec_ref[:, 0]
+        y = uv_vec_ref[:, 1]
+
+        # Sample the terrain raster to get a projected position of data 
+        raster_dem = rasterio.open(dem_resampled_path)
+        xoff, a, b, yoff, d, e = transform_pixel_projected
+
+        # Convert the pixel coordinates into true coordinates (e.g. UTM N/E)
+        xp = a * x + b * y + xoff + 0.5*a 
+        yp = d * x + e * y + yoff + 0.5*e
+        zp = np.zeros(yp.shape)
+        for i in range(xp.shape[0]):
+            temp = [x for x in raster_dem.sample([(xp[i], yp[i])])]
+            zp[i] = float(temp[0])
+
+        # Transform points to true 3D via pyproj
+        geocsc = CRS.from_epsg(epsg_geocsc)
+        proj = CRS.from_epsg(epsg_proj)
+        transformer = Transformer.from_crs(proj, geocsc)
+        ref_points_ecef = np.zeros((xp.shape[0], 3))
+        (x_ecef, y_ecef, z_ecef) = transformer.transform(xx=xp, yy=yp, zz=zp)
+
+        ref_points_ecef[:, 0] = x_ecef
+        ref_points_ecef[:, 1] = y_ecef
+        ref_points_ecef[:, 2] = z_ecef
+        
+        return ref_points_ecef
+
+    def compute_position_orientation_features(uv_vec_hsi, pixel_nr_image, unix_time_image, position_ecef, quaternion_ecef, time_pose, nodata):
+        """Returns the positions, orientations and pixel numbers corresponding to the features. 
+        Also computes a feature mask identifying features that are invalid"""
+        rows = uv_vec_hsi[:, 1]
+        cols = uv_vec_hsi[:, 0]
+
+        # Determine mask
+        x0 = np.floor(cols).astype(int)
+        x1 = x0 + 1
+        y0 = np.floor(rows).astype(int)
+        y1 = y0 + 1
+
+        # All 4 neighbors (as used by bilinear interpolation) should be valid data points
+        feature_mask = np.all([pixel_nr_image[y0, x0].reshape(-1) != nodata,
+               pixel_nr_image[y1, x0].reshape(-1) != nodata,
+               pixel_nr_image[y0, x1].reshape(-1) != nodata,
+               pixel_nr_image[y1, x1].reshape(-1) != nodata], axis=0)
+
+
+        pixel_nr_vec = GeoSpatialAbstractionHSI.bilinear_interpolate(pixel_nr_image, x = cols, y = rows)
+        time_vec = GeoSpatialAbstractionHSI.bilinear_interpolate(unix_time_image, x = cols, y = rows)
+
+        pixel_vec_valid = pixel_nr_vec[feature_mask]
+        time_vec_valid = time_vec[feature_mask]
+
+        
+        from scipy.interpolate import interp1d
+        from gref4hsi.utils import geometry_utils as geom
+        
+
+        rotation_ecef = RotLib.from_quat(quaternion_ecef)
+
+        # Interpolates positions linearly and quaterinons by Slerp
+        position_vec, quaternion_vec = geom.interpolate_poses(time_pose, 
+                                            position_ecef, 
+                                            rotation_ecef,  
+                                            timestamps_to=time_vec_valid)
+        
+        return pixel_vec_valid, time_vec_valid, position_vec, quaternion_vec, feature_mask
+        
+
+        
+
     @staticmethod
     def feature_matches_to_GCP(features_hsi, features_ref, pixel_nr_raster, time_raster):
         """Function to establish 2D feature positions u, j in raw cube, as well as true reference positions X, Y, Z
@@ -1028,6 +1115,32 @@ class GeoSpatialAbstractionHSI():
         return None
 
 
+    # COPIED from https://stackoverflow.com/questions/12729228/simple-efficient-bilinear-interpolation-of-images-in-numpy-and-python
+    @staticmethod
+    def bilinear_interpolate(im, x, y):
+        
+        x = np.asarray(x)
+        y = np.asarray(y)
 
+        x0 = np.floor(x).astype(int)
+        x1 = x0 + 1
+        y0 = np.floor(y).astype(int)
+        y1 = y0 + 1
 
+        x0 = np.clip(x0, 0, im.shape[1]-1);
+        x1 = np.clip(x1, 0, im.shape[1]-1);
+        y0 = np.clip(y0, 0, im.shape[0]-1);
+        y1 = np.clip(y1, 0, im.shape[0]-1);
+
+        Ia = im[ y0, x0 ]
+        Ib = im[ y1, x0 ]
+        Ic = im[ y0, x1 ]
+        Id = im[ y1, x1 ]
+
+        wa = (x1-x) * (y1-y)
+        wb = (x1-x) * (y-y0)
+        wc = (x-x0) * (y1-y)
+        wd = (x-x0) * (y-y0)
+
+        return wa*Ia + wb*Ib + wc*Ic + wd*Id
 

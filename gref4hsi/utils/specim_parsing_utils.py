@@ -114,8 +114,7 @@ class Specim():
         
         file_name_calib = self.config['Absolute Paths']['hsi_calib_path']
 
-        CalibHSI(file_name_cal_xml=file_name_calib, 
-                 config = self.config, 
+        CalibHSI(file_name_cal_xml=file_name_calib,
                  mode = 'w', 
                  param_dict = param_dict)
 
@@ -416,7 +415,6 @@ def main(config, config_specim):
     xml_cal_write_path = camera_calib_xml_dir + file_name_xml
 
     CalibHSI(file_name_cal_xml= xml_cal_write_path, 
-                    config = config, 
                     mode = 'w', 
                     param_dict = param_dict)
 

@@ -14,7 +14,7 @@ if os.name == 'nt':
 elif os.name == 'posix':
     # This Unix-like systems inl. Mac and fLinux
     base_fp = '/media/haavasl/Expansion'
-    home = 'C:/Users/haavasl'
+    home = '/home/haavasl'
 
 # Use this if working with the github repo to do quick changes to the module
 module_path = os.path.join(home, 'VsCodeProjects/gref4hsi/')
@@ -24,8 +24,9 @@ if module_path not in sys.path:
 # Local resources
 from gref4hsi.scripts import georeference
 from gref4hsi.scripts import orthorectification
+from gref4hsi.scripts import coregistration
 from gref4hsi.utils import parsing_utils, specim_parsing_utils
-from gref4hsi.scripts import visualize
+from gref4hsi.utils import visualize
 from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 
@@ -119,6 +120,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
                     'Orthorectification':
                         {'resample_rgb_only': True, # True can be good choice for speed during DEV
+                         'resample_ancillary': True,
                         'resolutionhyperspectralmosaic': RESOLUTION_ORTHOMOSAIC, # Resolution in m
                         'raster_transform_method': 'north_east'}, # North-east oriented rasters.
                     
@@ -130,13 +132,19 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         'geoid_path' : GEOID_PATH,
                         #'geoid_path' : 'data/world/geoids/egm08_25.gtx',
                         'dem_path' : DEM_PATH,
+                        'orthomosaic_reference_folder' : os.path.join(specim_mission_folder, "orthomosaic"),
+                        'ref_ortho_reshaped' : os.path.join(DATA_DIR, "Intermediate", "RefOrthoResampled"),
+                        'ref_gcp_path' : os.path.join(DATA_DIR, "Intermediate", "gcp.csv"),
                         # (above) The georeferencing allows processing using norwegian geoid NN2000 and worldwide EGM2008. Also, use of seafloor terrain models are supported. '
                         # At the moment refractive ray tracing is not implemented, but it could be relatively easy by first ray tracing with geoid+tide, 
                         # and then ray tracing from water
                         #'tide_path' : 'D:/HyperspectralDataAll/HI/2022-08-31-060000-Remoy-Specim/Input/tidevann_nn2000_NMA.txt'
-                        }
-                        # Tide data can be downloaded from https://www.kartverket.no/til-sjos/se-havniva
-                        # Preferably it is downloaded with reference "NN2000" to agree with DEM
+                        },
+                    # If coregistration is done, then the data must be stored after processing somewhere
+                    'HDF.coregistration': {
+                        'position_ecef': 'processed/coreg/position_ecef',
+                        'quaternion_ecef' : 'processed/coreg/quaternion_ecef'
+                    }
                     
     }
 
@@ -163,7 +171,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     config = parsing_utils.export_pose(config_file_mission)
     
     # Exports model
-    parsing_utils.export_model(config_file_mission)
+    """parsing_utils.export_model(config_file_mission)"""
 
     # Commenting out the georeference step is fine if it has been done
 
@@ -173,19 +181,23 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
         visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')"""
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference.main(config_file_mission)
+    #georeference.main(config_file_mission)
 
-    orthorectification.main(config_file_mission)
+    #orthorectification.main(config_file_mission)
+
+    coregistration.main(config_file_mission, mode='compare')
+
+    coregistration.main(config_file_mission, mode='calibrate')
 
 
 if __name__ == "__main__":
     # Select a recording folder on drive
-    specim_mission_folder = os.path.join(base_fp, r"Specim\Missions\2022-08-31-Remøy\remoy_202208310800_ntnu_hyperspectral_74m")
+    specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remøy/remoy_202208310800_ntnu_hyperspectral_74m")
     
     # Globally accessible files:
-    geoid_path = os.path.join(home, "VsCodeProjects\gref4hsi\data\world\geoids\egm08_25.gtx")
-    config_template_path = os.path.join(home, "VsCodeProjects\gref4hsi\data\config_examples\configuration_specim.ini")
-    lab_calibration_path = os.path.join(base_fp, "Specim\Lab_Calibrations")
+    geoid_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/world/geoids/egm08_25.gtx")
+    config_template_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/config_examples/configuration_specim.ini")
+    lab_calibration_path = os.path.join(base_fp, "Specim/Lab_Calibrations")
     
     # The configuration file
     config_yaml = os.path.join(specim_mission_folder, "config.seabee.yaml")
