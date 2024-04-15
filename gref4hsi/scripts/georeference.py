@@ -154,7 +154,7 @@ def main(iniPath, viz = False):
             hyp = Hyperspectral(path_hdf, config)
 
             # Using the cal file, we can define lever arm, boresight and local ray geometry (in dictionary)
-            intrinsic_geometry_dict = cal_file_to_rays(filename_cal=hsi_cal_xml, config=config)
+            intrinsic_geometry_dict = cal_file_to_rays(filename_cal=hsi_cal_xml)
 
             
             # Define the rays in ECEF for each frame. 

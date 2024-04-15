@@ -13,7 +13,8 @@ if os.name == 'nt':
 elif os.name == 'posix':
     # This Unix-like systems inl. Mac and Linux
     base_fp = '/media/haavasl/Expansion'
-    home = 'C:/Users/haavasl'
+    home = '/home/haavasl'
+
 
 # Use this if working with the github repo to do quick changes to the module
 module_path = os.path.join(home, 'VsCodeProjects/gref4hsi/')
@@ -41,7 +42,7 @@ prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DA
 custom_config = {'General':
                     {'mission_dir': DATA_DIR,
                     'model_export_type': 'dem_file', # Infer seafloor structure from altimeter recordings
-                    'max_ray_length': 20,
+                    'max_ray_length': 5,
                     'lab_cal_dir': os.path.join(base_fp, 'HyperspectralDataAll/UHI/Lab_Calibration_Data/NP')}, # Max distance in meters from UHI to seafloor
 
                 'Coordinate Reference Systems': 
@@ -54,7 +55,7 @@ custom_config = {'General':
                     {'dem_folder': 'Input/GIS/'}, # Using altimeter, we generate one DEM per transect chunk
                 
                 'Absolute Paths':
-                    {'geoid_path': os.path.join(home, 'VsCodeProjects\gref4hsi\data\world\geoids\egm08_25.gtx')}, # Using altimeter, we generate one DEM per transect chunk
+                    {'geoid_path': os.path.join(home, "VsCodeProjects/gref4hsi/data/world/geoids/egm08_25.gtx")}, # Using altimeter, we generate one DEM per transect chunk
 
                 'Orthorectification':
                     {'resample_rgb_only': False, # Good choice for speed
@@ -145,7 +146,7 @@ def main():
     parsing_utils.export_model(config_file_mission)
 
     # Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    #visualize.show_mesh_camera(config)
+    visualize.show_mesh_camera(config)
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
     georeference.main(config_file_mission, viz=False)

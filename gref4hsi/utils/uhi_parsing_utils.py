@@ -243,8 +243,8 @@ def set_camera_model(config, config_file_path, config_uhi, model_type, binning_s
     :type config_file_path: _type_
     :param config_uhi: _description_
     :type config_uhi: _type_
-    :param model_type: _description_
-    :type model_type: _type_
+    :param model_type: ['cal_txt', 'embedded']
+    :type model_type: str
     :param binning_spatial: _description_
     :type binning_spatial: _type_
     :param fov_arr: _description_, defaults to None
@@ -689,8 +689,7 @@ def uhi_beast(config, config_uhi):
                              config_file_path = config_file_path, 
                              config_uhi=config_uhi, 
                              model_type = 'cal_txt', 
-                             binning_spatial = binning_spatial,
-                             hyp_obj=hyp)
+                             binning_spatial = binning_spatial)
 
         true_time_hsi = hyp.hsi_frames_timestamp - time_offset
 
