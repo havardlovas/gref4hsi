@@ -47,10 +47,11 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
             print(f"The folder '{dem_fold}' is empty so Geoid is used as terrain instead.")
             TERRAIN_TYPE = "geoid"
         else:
+            # If there is a folder and it is not empty
             # Find the *.tif file using glob
-            files = [f for f in os.listdir(directory) if f not in ('.', '..')]
+            files = [f for f in os.listdir(dem_fold) if f not in ('.', '..')]
             DEM_PATH = files[0]
-            print(f"The file '{dem_path}' is used as terrain.")
+            print(f"The file '{DEM_PATH}' is used as terrain.")
             TERRAIN_TYPE = "dem_file"
             
     
@@ -83,7 +84,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
     # Where to place the config
     DATA_DIR = config_specim_preprocess.reformatted_missions_dir
-    config_file_mission = os.path.join(DATA_DIR, 'configuration.ini')
+    config_file_mission = os.path.join(DATA_DIR, config_specim_preprocess.config_file_name)
 
 
     # Read config from a template (relative path):

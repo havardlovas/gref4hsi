@@ -26,7 +26,7 @@ from gref4hsi.scripts import visualize
 from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 
-DATA_DIR = os.path.join(base_fp, "HyperspectralDataAll/UHI/2020-07-01-14-40-15-ArcticSeaIce-Ben-Lange/")
+DATA_DIR = os.path.join(base_fp, "HyperspectralDataAll/UHI/2020-07-01-14-34-57-ArcticSeaIce-Ben-Lange/")
 
 # The configuration file stores the settings for georeferencing
 config_file_mission = os.path.join(DATA_DIR, 'configuration.ini')
