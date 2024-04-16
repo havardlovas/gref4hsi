@@ -62,7 +62,7 @@ def interpolate_time_nodes(time_from, value, time_to, method = 'linear'):
     elif method in ['gaussian']:
         # Use sigma as the difference between two neighboring time nodes
         sigma = time_from[1]-time_from[0]
-        eps**2 = np.sqrt(0.5*1/(sigma**2))
+        #eps**2 = np.sqrt(0.5*1/(sigma**2))
         # sigma = 1/(sqrt(2)eps)
         #https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.Rbf.html
         return RBFInterpolator(time_from.reshape((-1,1)), value, kernel='gaussian', epsilon = eps)(np.array(time_to).reshape((-1,1)))
@@ -78,11 +78,13 @@ def compose_pose_errors(param_pose_tot, time_nodes, unix_time_features, rot_body
                                               time_to = unix_time_features, 
                                               method=time_interpolation_method).transpose()
 
-    # The errors in the interpolated form
+    # The position errors make up the three first
     param_err_pos = err_interpolated[:, 0:3]
-    param_err_eul_ZYX = np.vstack((err_interpolated[:, 3:4].flatten(), 
-                                        np.zeros(n_features),
-                                        np.zeros(n_features))).transpose()
+
+    # The err has columns 3-5 roll, pitch, yaw, while from_euler('ZYX',...) requires yaw pitch roll order
+    param_err_eul_ZYX = np.vstack((err_interpolated[:, 5].flatten(), 
+                                        err_interpolated[:, 4].flatten(),
+                                        err_interpolated[:, 3].flatten())).transpose()
     
     # To be left multiplied with attitude 
     rot_err_NED = RotLib.from_euler('ZYX', param_err_eul_ZYX, degrees=True)
@@ -464,13 +466,13 @@ def main(config_path, mode):
     # Quaternion is stored here in the H5 file
     h5_folder_quaternion_ecef = config['HDF.processed_nav']['quaternion_ecef']
 
-    # Poses modified in coregistration are written to
+    # Modified positions after coregistration
     h5_folder_position_ecef_coreg = config['HDF.coregistration']['position_ecef']
 
-    # Quaternion is stored here in the H5 file
+    # Modified quaternions after coregistration
     h5_folder_quaternion_ecef_coreg = config['HDF.coregistration']['quaternion_ecef']
 
-    # Timestamps here
+    # Timestamps for each hyperspectral frame
     h5_folder_time_pose = config['HDF.processed_nav']['timestamp']
 
     h5_paths = {'h5_folder_position_ecef': h5_folder_position_ecef,
@@ -626,6 +628,7 @@ def main(config_path, mode):
         u_err = gcp_df_all['diff_u']
         v_err = gcp_df_all['diff_v']
 
+        # Filter outliers according to the interquartile method using the registration errors
         feature_mask = filter_gcp_by_registration_error(u_err, v_err, method = 'iqr')
         
         # These features are used
@@ -642,15 +645,16 @@ def main(config_path, mode):
                           'calibrate_camera': False,
                           'calibrate_lever_arm': False,
                           'calibrate_cx': False,
-                          'calibrate_f': True,
+                          'calibrate_f': False,
                           'calibrate_k1': False,
-                          'calibrate_k2': True,
-                          'calibrate_k3': True}
+                          'calibrate_k2': False,
+                          'calibrate_k3': False}
         
         calibrate_per_transect = True
         estimate_time_varying = True
         time_node_spacing = 10 # s. If spacing 10 and transect lasts for 53 s will attempt to divide into largest integer leaving
-        time_interpolation_method = 'gaussian'
+        # TODO: fix gaussian interpolation
+        time_interpolation_method = 'linear'
 
         # Select which time varying degrees of freedom to estimate errors for
         calibrate_dict_extr = {'calibrate_pos_x': True,

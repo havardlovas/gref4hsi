@@ -572,7 +572,11 @@ def export_model(config_file):
         file_path_3d_model = config['Absolute Paths']['model_path']
         # Make new only once.
 
-        dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
+        if os.path.exists(file_path_3d_model):
+            print('3D model already exists and overwriting is not supported')
+            pass
+        else:
+            dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
 
     elif model_export_type == 'geoid':
         file_path_dem = config['Absolute Paths']['dem_path']
