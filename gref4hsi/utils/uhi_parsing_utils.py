@@ -234,49 +234,69 @@ def read_fov_file_to_param(LAB_CAL_DIR, binning_spatial):
 
     return param_dict
 
-def set_camera_model(config, config_file_path, config_uhi, model_type, binning_spatial):
-    LAB_CAL_DIR = config['General']['lab_cal_dir'] # Where the fov file is
+def set_camera_model(config, config_file_path, config_uhi, model_type, binning_spatial, fov_arr = None):
+    """_summary_
 
-    if model_type == 'cal_dir':
+    :param config: _description_
+    :type config: _type_
+    :param config_file_path: _description_
+    :type config_file_path: _type_
+    :param config_uhi: _description_
+    :type config_uhi: _type_
+    :param model_type: ['cal_txt', 'embedded']
+    :type model_type: str
+    :param binning_spatial: _description_
+    :type binning_spatial: _type_
+    :param fov_arr: _description_, defaults to None
+    :type fov_arr: _type_, optional
+    """
+    if model_type == 'cal_txt':
+        # Assumes a csv file with column "View_Angle_Deg" holding the view angles
+        LAB_CAL_DIR = config['General']['lab_cal_dir'] # Where the fov file is
         param_dict = read_fov_file_to_param(LAB_CAL_DIR=LAB_CAL_DIR, binning_spatial=binning_spatial)
-        # User set rotation matrix
-        R_hsi_body = config_uhi.rotation_matrix_hsi_to_body
-
-        r_zyx = RotLib.from_matrix(R_hsi_body).as_euler('ZYX', degrees=False)
-
-        # Euler angle representation (any other would do too)
-        param_dict['rz'] = r_zyx[0]
-        param_dict['ry'] = r_zyx[1]
-        param_dict['rx'] = r_zyx[2]
-
-        # Vector from origin of HSI to body origin, expressed in body
-        # User set
-        t_hsi_body = config_uhi.translation_hsi_to_body
-        param_dict['tz'] = t_hsi_body[0]
-        param_dict['ty'] = t_hsi_body[1]
-        param_dict['tz'] = t_hsi_body[2]
-        
-        file_name_xml = 'HSI_' + str(binning_spatial) + 'b.xml'
-        CAMERA_CALIB_XML_DIR = config['Absolute Paths']['calib_folder']
-        xml_cal_write_path = CAMERA_CALIB_XML_DIR + file_name_xml
-
-        CalibHSI(file_name_cal_xml= xml_cal_write_path,  
-                        mode = 'w', 
-                        param_dict = param_dict)
-
-
-        # Set value in config file and update:
-        config.set('Relative Paths', 'hsi_calib_path', value = 'Input/Calib/' + file_name_xml)
-
-        with open(config_file_path, 'w') as configfile:
-                config.write(configfile)
-
-
     elif model_type == 'embedded':
-        print('Should make support for this')
-        pass
+        # Use supplied fov_array
+        param_dict = Specim.fov_2_param(fov = fov_arr)
     else:
         pass
+
+
+
+
+    # User set rotation matrix
+    R_hsi_body = config_uhi.rotation_matrix_hsi_to_body
+
+    r_zyx = RotLib.from_matrix(R_hsi_body).as_euler('ZYX', degrees=False)
+
+    # Euler angle representation (any other would do too)
+    param_dict['rz'] = r_zyx[0]
+    param_dict['ry'] = r_zyx[1]
+    param_dict['rx'] = r_zyx[2]
+
+    # Vector from origin of body to HSI
+    t_hsi_body = config_uhi.translation_body_to_hsi
+    param_dict['tz'] = t_hsi_body[0]
+    param_dict['ty'] = t_hsi_body[1]
+    param_dict['tz'] = t_hsi_body[2]
+
+    # Define where to write calibrated data
+    file_name_xml = 'HSI_' + str(binning_spatial) + 'b.xml'
+    CAMERA_CALIB_XML_DIR = config['Absolute Paths']['calib_folder']
+    xml_cal_write_path = CAMERA_CALIB_XML_DIR + file_name_xml
+
+
+    CalibHSI(file_name_cal_xml= xml_cal_write_path,  
+                        mode = 'w', 
+                        param_dict = param_dict)
+    
+    
+
+
+    # Set value in config file and update:
+    config.set('Relative Paths', 'hsi_calib_path', value = 'Input/Calib/' + file_name_xml)
+
+    with open(config_file_path, 'w') as configfile:
+            config.write(configfile)
 
 
     
@@ -471,8 +491,26 @@ def altimeter_data_to_point_cloud(nav, config_uhi, lat0, lon0, h0, true_time_hsi
 
     return points_altimeter_transect
 
-def write_point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, method='nearest', smooth_DEM=True):
-    
+def point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, method='nearest', smooth_DEM=True):
+    """Converts the sparse point cloud of altimeter data into a digital elevation model.
+
+    :param points: _description_
+    :type points: _type_
+    :param config: _description_
+    :type config: _type_
+    :param resolution_dem: _description_
+    :type resolution_dem: _type_
+    :param lon0: _description_
+    :type lon0: _type_
+    :param lat0: _description_
+    :type lat0: _type_
+    :param h0: _description_
+    :type h0: _type_
+    :param method: _description_, defaults to 'nearest'
+    :type method: str, optional
+    :param smooth_DEM: _description_, defaults to True
+    :type smooth_DEM: bool, optional
+    """
     # The name of the digital elevation model
     output_dem_path = config['Absolute Paths']['dem_path']
 
@@ -510,7 +548,7 @@ def write_point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, met
     # Transform extent
     (x, y, z) = transformer.transform(xx=lat_ext, yy=lon_ext, zz=h_ext)
 
-    if crs_dem.is_geocentric:
+    if crs_dem.is_geographic:
 
         res_x = resolution_dem*(x.max() - x.min())/(x_max - x_min)
         res_y = resolution_dem*(y.max() - y.min())/(y_max - y_min)
@@ -573,12 +611,13 @@ def write_point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, met
 
     if smooth_DEM == True:
         from scipy import ndimage
+        # Smooths by 4 pixel units
         sigma_x = 4
         sigma_y = 4
         grid_z = ndimage.gaussian_filter(grid_z, sigma=(sigma_y, sigma_x))
 
     
-
+    # Writes to a file
     with rasterio.open(output_dem_path, 'w', driver='GTiff', height=grid_z.shape[0],
                     width=grid_z.shape[1], count=1, dtype='float32', crs='EPSG:' + str(dem_epsg),
                     transform=transform) as dst:
@@ -649,7 +688,7 @@ def uhi_beast(config, config_uhi):
             set_camera_model(config=config, 
                              config_file_path = config_file_path, 
                              config_uhi=config_uhi, 
-                             model_type = 'cal_dir', 
+                             model_type = 'cal_txt', 
                              binning_spatial = binning_spatial)
 
         true_time_hsi = hyp.hsi_frames_timestamp - time_offset
@@ -703,7 +742,7 @@ def uhi_beast(config, config_uhi):
 
 
 
-    write_point_cloud_to_dem(point_cloud_altimeter_total, 
+    point_cloud_to_dem(point_cloud_altimeter_total, 
                                  config, 
                                  resolution_dem = config_uhi.resolution_dem, 
                                  lon0=lon0, 
@@ -711,7 +750,127 @@ def uhi_beast(config, config_uhi):
                                  h0=alt0)
 
 
+
+
+def uhi_dbe(config, config_uhi):
+    """Preparing data for the UHI-2x blueye edition (almost copy of beast)
+
+    :param config: _description_
+    :type config: _type_
+    :param config_uhi: _description_
+    :type config_uhi: _type_
+    """
+    MISSION_PATH = config['General']['mission_dir'] # Where h5 data is 
+    
+
+    # For writing
+    config_file_path = os.path.join(MISSION_PATH, 'configuration.ini')
+
+    SPATIAL_PIXELS = 1936 # Same for almost all UHI
+    
+
+    INPUT_DIR = MISSION_PATH + 'Input/'
+
+    h5_folder = config['Absolute Paths']['h5_folder']
+    H5_PATTERN = '*.h5'
+
+    MAT_DIR = INPUT_DIR
+    MAT_PATTERN = '*.mat'
+
+    # Locate mat file with nav data 
+    search_path_mat = os.path.normpath(os.path.join(MAT_DIR, MAT_PATTERN))
+    MAT_FILE_PATHS = glob.glob(search_path_mat)
+    MAT_PATH = MAT_FILE_PATHS[0] # Assuming there is only one
+
+
+    # TODO: replace with how you read in data from DVL/H5 folders
+    nav = read_nav_from_mat(mat_filename=MAT_PATH)
+
+    
+
+    # Search the h5 folder (these are the files to iterate)
+    search_path_h5 = os.path.normpath(os.path.join(h5_folder, H5_PATTERN))
+    H5_FILE_PATHS = glob.glob(search_path_h5)
+
+    number_of_h5_files = len(H5_FILE_PATHS)
+
+    h5_dict_read = {'radiance_cube': config['HDF.hyperspectral']['datacube'],
+            'hsi_frames_timestamp': config['HDF.hyperspectral']['timestamp'],
+            'fov': config['HDF.calibration']['fov'],
+            'wavelengths' : config['HDF.calibration']['band2wavelength'],
+            #'rgb_frames' : config['HDF.rgb']['rgb_frames'],
+            #'rgb_timestamp' : config['HDF.rgb']['rgb_timestamp']
+            }
+    
+    time_offset = config_uhi.time_offset_sec
+    lon0, lat0, alt0 = config_uhi.lon_lat_alt_origin
+
+    # from gref4hsi.utils.photogrammetry_utils import Photogrammetry
+    # agisoft_object = Photogrammetry(project_folder = MISSION_PATH, software_type='agisoft')
+    # TODO:: Add support for concurrent camera given that images are contained in a h5 folder. 
+    # Should interface towards ODM as well
+
+    for h5_index in range(number_of_h5_files):
+        H5_FILE_PATH = H5_FILE_PATHS[h5_index]
+
+        # Read the specified entries
+        hyp = HyperspectralLite(h5_filename=H5_FILE_PATH, h5_tree_dict=h5_dict_read)
+
+        if h5_index == 0:
+            # Camera model is set once, assuming same spatial binning throughout
+            binning_spatial = int(np.round(SPATIAL_PIXELS/hyp.radiance_cube.shape[1]))
+            
+            # Extract from the hyperspectral object
+            fov_arr = hyp.fov
+
+            # Sets camera model with user specified boresight ...
+            set_camera_model(config=config, 
+                             config_file_path = config_file_path, 
+                             config_uhi=config_uhi, 
+                             model_type = 'embedded', 
+                             binning_spatial = binning_spatial,
+                             fov_arr=fov_arr)
+
+        true_time_hsi = hyp.hsi_frames_timestamp - time_offset
+
+        # Interpolate nav to roll time, IMU time (considered nav timestamp)
+
+        ## write nav data to h5 file
+        write_nav_data_to_h5(nav, time_offset, config, H5_FILE_PATH)
         
+        # Build a point cloud
+        point_cloud_altimeter = altimeter_data_to_point_cloud(nav = nav, 
+                                                              config_uhi=config_uhi, 
+                                                              true_time_hsi = true_time_hsi, 
+                                                              lon0=lon0, 
+                                                              lat0=lat0, 
+                                                              h0=alt0)
+        if h5_index == 0:
+            point_cloud_altimeter_total = point_cloud_altimeter
+        else:
+            point_cloud_altimeter_total = np.append(point_cloud_altimeter_total, point_cloud_altimeter, axis = 0)
+        
+        
+        
+        print(H5_FILE_PATH)
+    
+    # Use the total point cloud to make a DEM
+    
+
+    if config_uhi.agisoft_process:
+        agisoft_object.load_photos_and_reference()
+
+
+
+
+
+    point_cloud_to_dem(point_cloud_altimeter_total, 
+                                 config, 
+                                 resolution_dem = config_uhi.resolution_dem, 
+                                 lon0=lon0, 
+                                 lat0=lat0, 
+                                 h0=alt0)
+
         
 
         

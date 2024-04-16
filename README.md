@@ -76,7 +76,7 @@ The *.xml file is our chosen camera model file and looks like this:
     <width>512</width>
 </calibration>
 ```
-rx, ry and rz are the boresight angles in radians, while tx, ty and tz. They are used to transform vectors from the HSI camera frame to the vehicle body frame through:
+rx, ry and rz are the boresight angles in radians, while tx, ty and tz are lever arms in the vehicle body frame. They are used to transform vectors from the HSI camera frame to the vehicle body frame through:
 ```
 rot_hsi_ref_eul = np.array([rz, ry, rx])
 
@@ -88,11 +88,11 @@ X_hsi = np.array([x, y, z]) # some vector
 
 X_body =  R*X_hsi + t# the vector expressed in the body frame 
 ```
-In our computation we use a frame convention akin to the camera frames in computer vision. This means that x-right, y-backward, and z-downward for a well aligned camera. This is why the rz is non-zero. The easiest if you are unsure of whether your scanner is flipped is to swap the sign rz.
+In our computation we use a frame convention akin to the camera frames in computer vision. This means that x-right, y-backward, and z-downward for a well aligned camera. In contrast the vehicle body frame follows the roll-pitch-yaw convention with x-forward, y-starboard, z-downward. This is why the rz is by default $\pm \pi/2$. The easiest if you are unsure of whether your scanner is flipped is to swap the sign rz.
 
 
 
-Moreover, the f represent the camera's focal length in pixels, width is the number of spatial pixels, while cx is the principal pixel (often cx=width/2). The k1, k2 are radial distortion coefficients, while k3 is a tangential coefficient. The camera model is adapted from [Sun et al. (2016)](https://opg.optica.org/ao/fulltext.cfm?uri=ao-55-25-6836&id=348983). Expressing a pixel on an undistorted image plane in the HSI frame is done through
+Moreover, the f represent the camera's focal length in pixels, width is the number of spatial pixels, while cx is the principal pixel. Often cx=(width+1)/2, e.g. if you have 5 pixels u = 1,..,5 the middle pixel is cx=3. In other words, our convention is to assign the cell centres of pixels as whole integers (starting at 1), in contrast to OpenCV which starts at 0.5. The k1, k2 are radial distortion coefficients, while k3 is a tangential coefficient. The camera model is adapted from [Sun et al. (2016)](https://opg.optica.org/ao/fulltext.cfm?uri=ao-55-25-6836&id=348983). Expressing a pixel on an undistorted image plane in the HSI frame is done through
 ```
 u = np.random.randint(1, width + 1) # Pixel numbers left to right (value from 1 to width)
 
@@ -111,7 +111,7 @@ X_norm_hsi = np.array([x_norm_hsi, 0, 1]) # The pixel ray in the hsi frame
 
 Of course most of these parameters are hard to guess for a HSI and there are two simple ways of finding them. The first way is to ignore distortions and assume you know the angular field of view (AFOV). Then you can calculate:
 
-$$f = \frac{width}{2atan(AFOV/2)}$$
+$$f = \frac{width}{2tan(AFOV/2)}$$
 
 
 Besides that, you set cx=width/2, and remaining k's to zero. 

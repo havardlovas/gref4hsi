@@ -135,16 +135,18 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         'orthomosaic_reference_folder' : os.path.join(specim_mission_folder, "orthomosaic"),
                         'ref_ortho_reshaped' : os.path.join(DATA_DIR, "Intermediate", "RefOrthoResampled"),
                         'ref_gcp_path' : os.path.join(DATA_DIR, "Intermediate", "gcp.csv"),
+                        'calib_file_coreg' : os.path.join(DATA_DIR, "Output", "HSI_coreg.xml"),
                         # (above) The georeferencing allows processing using norwegian geoid NN2000 and worldwide EGM2008. Also, use of seafloor terrain models are supported. '
                         # At the moment refractive ray tracing is not implemented, but it could be relatively easy by first ray tracing with geoid+tide, 
                         # and then ray tracing from water
                         #'tide_path' : 'D:/HyperspectralDataAll/HI/2022-08-31-060000-Remoy-Specim/Input/tidevann_nn2000_NMA.txt'
                         },
+                    
                     # If coregistration is done, then the data must be stored after processing somewhere
                     'HDF.coregistration': {
-                        'position_ecef': 'processed/coreg/position_ecef',
-                        'quaternion_ecef' : 'processed/coreg/quaternion_ecef'
-                    }
+                            'position_ecef': 'processed/coreg/position_ecef',
+                            'quaternion_ecef' : 'processed/coreg/quaternion_ecef'
+                        }
                     
     }
 
@@ -185,7 +187,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
     #orthorectification.main(config_file_mission)
 
-    coregistration.main(config_file_mission, mode='compare')
+    #coregistration.main(config_file_mission, mode='compare')
 
     coregistration.main(config_file_mission, mode='calibrate')
 

@@ -12,7 +12,7 @@ from gref4hsi.utils.geometry_utils import CalibHSI, GeoPose
 
 from scipy.spatial.transform import Rotation as RotLib
 from scipy.optimize import least_squares
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d, RBFInterpolator
 import pandas as pd
 from scipy.sparse import lil_matrix
 
@@ -59,6 +59,13 @@ def interpolate_time_nodes(time_from, value, time_to, method = 'linear'):
     # One simple option is to use Scipy's sortiment of interpolation options. The sparsity pattern should be included somehow..
     if method in ['nearest', 'linear', 'slinear', 'quadratic', 'cubic']:
         return interp1d(time_from, value, kind=method)(time_to)
+    elif method in ['gaussian']:
+        # Use sigma as the difference between two neighboring time nodes
+        sigma = time_from[1]-time_from[0]
+        eps**2 = np.sqrt(0.5*1/(sigma**2))
+        # sigma = 1/(sqrt(2)eps)
+        #https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.Rbf.html
+        return RBFInterpolator(time_from.reshape((-1,1)), value, kernel='gaussian', epsilon = eps)(np.array(time_to).reshape((-1,1)))
     
 
 def compose_pose_errors(param_pose_tot, time_nodes, unix_time_features, rot_body_ned, rot_ned_ecef, pos_body, time_interpolation_method):
@@ -68,7 +75,7 @@ def compose_pose_errors(param_pose_tot, time_nodes, unix_time_features, rot_body
     # Interpolate to the right time
     err_interpolated = interpolate_time_nodes(time_nodes, 
                                               param_pose_tot,
-                                             time_to = unix_time_features, 
+                                              time_to = unix_time_features, 
                                               method=time_interpolation_method).transpose()
 
     # The errors in the interpolated form
@@ -133,7 +140,8 @@ def calculate_intrinsic_param(is_variab_param_intr, param, param0, as_calib_obj 
                       'k3': param_vec_total[7],
                       'tx': param_vec_total[8],
                       'ty': param_vec_total[9],
-                      'tz': param_vec_total[10]}
+                      'tz': param_vec_total[10],
+                      'width': -1} # Must be set elsewhere
         
         return calib_dict
     else:
@@ -351,27 +359,31 @@ def calculate_cam_and_pose_from_param(h5_filename, param, features_df, param0, i
 
     # Seems wize to return
     # Return in a dictionary allowing for simple dumping to XML file (exept width)
-    if is_variab_param_intr.sum() != 0:
-        # Only compute if one or more parameters have been calibrated
+    if is_variab_param_intr.sum() > 0:
         calib_param_intr = calculate_intrinsic_param(is_variab_param_intr, param, param0, as_calib_obj = True)
+    else:
+        # Make identifiable that this has not been calibrated
+        calib_param_intr = None
 
 
-    if time_nodes is None:
+    # Read the original poses and time stamps from h5
+        
+    position_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                    dataset_name=h5_paths['h5_folder_position_ecef'])
+    # Extract the ecef orientations for each frame
+    quaternion_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                    dataset_name=h5_paths['h5_folder_quaternion_ecef'])
+    # Extract the timestamps for each frame
+    time_pose = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                    dataset_name=h5_paths['h5_folder_time_pose'])
+    
+    
+
+    if time_nodes is not None:
 
         # Calculate the pose vector
         param_pose_tot = calculate_pose_param(is_variab_param_extr, is_variab_param_intr, param)
 
-        # Read the original poses and time stamps from h5
-        
-        position_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                        dataset_name=h5_paths['h5_folder_position_ecef'])
-        # Extract the ecef orientations for each frame
-        quaternion_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                        dataset_name=h5_paths['h5_folder_quaternion_ecef'])
-        # Extract the timestamps for each frame
-        time_pose = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                        dataset_name=h5_paths['h5_folder_quaternion_ecef'])
-        
         # Minor code block for decomposing orientation into BODY-NED and NED-ECEF rotations
         rot_body = RotLib.from_quat(quaternion_ecef)
         geo_pose = GeoPose(timestamps=time_pose, 
@@ -391,8 +403,14 @@ def calculate_cam_and_pose_from_param(h5_filename, param, features_df, param0, i
                         position_ecef, 
                         time_interpolation_method)
         
+        quaternion_body_ecef_corrected = rot_body_ecef_corrected.as_quat()
+    else:
+        # If no corrections should be applied, set to none for identifiability
+        pos_body_corrected = None
+        rot_body_ecef_corrected = None
+        
     
-    return calib_param_intr, pos_body_corrected, rot_body_ecef_corrected.as_quat()
+    return calib_param_intr, pos_body_corrected, quaternion_body_ecef_corrected
 
 
     
@@ -432,6 +450,10 @@ def main(config_path, mode):
 
 
     ref_gcp_path = config['Absolute Paths']['ref_gcp_path']
+
+    # Location for the calibrated Cal file:calib_file_coreg
+    calib_file_coreg = config['Absolute Paths']['calib_file_coreg']
+
     
 
     # The necessary data from the H5 file for getting the positions and orientations.
@@ -453,7 +475,7 @@ def main(config_path, mode):
 
     h5_paths = {'h5_folder_position_ecef': h5_folder_position_ecef,
                 'h5_folder_quaternion_ecef': h5_folder_quaternion_ecef,
-                'h5_folder_time_pose': h5_folder_quaternion_ecef, 
+                'h5_folder_time_pose': h5_folder_time_pose, 
                 'h5_folder_position_ecef_coreg': h5_folder_position_ecef_coreg,
                 'h5_folder_quaternion_ecef_coreg': h5_folder_quaternion_ecef_coreg}
 
@@ -628,7 +650,7 @@ def main(config_path, mode):
         calibrate_per_transect = True
         estimate_time_varying = True
         time_node_spacing = 10 # s. If spacing 10 and transect lasts for 53 s will attempt to divide into largest integer leaving
-        time_interpolation_method = 'linear'
+        time_interpolation_method = 'gaussian'
 
         # Select which time varying degrees of freedom to estimate errors for
         calibrate_dict_extr = {'calibrate_pos_x': True,
@@ -716,7 +738,7 @@ def main(config_path, mode):
 
         # The sometimes natural think to do
         if calibrate_per_transect:
-            # Number of transects is found form data frame
+            # Number of transects is found from data frame
             n_transects = 1 + (df_gcp_filtered['file_count'].max() - df_gcp_filtered['file_count'].min())
             
             # Iterate through transects
@@ -728,9 +750,19 @@ def main(config_path, mode):
 
                 n_features = df_current.shape[0]
 
+                # Read out the file name corresponding to file index i
+                h5_filename = df_current['h5_filename'].iloc[0]
+
                 if estimate_time_varying:
-                    times_samples = df_current['unix_time']
-                    transect_duration_sec = times_samples.max() - times_samples.min()
+                    ## The time range is defined by the transect time:
+                    #times_samples = df_current['unix_time']
+
+                    # Extract the timestamps for each frame
+                    time_pose = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                    dataset_name=h5_folder_time_pose)
+
+
+                    transect_duration_sec = time_pose.max() - time_pose.min()
                     number_of_nodes = int(np.floor(transect_duration_sec/time_node_spacing)) + 1
 
                     # The time varying parameters are in total the number of dofs times number of nodes
@@ -743,8 +775,8 @@ def main(config_path, mode):
 
                     # Calculate the number of nodes. It divides the transect into equal intervals, 
                     # meaning that the intervals can be somewhat different at least for a small number of them.
-                    time_nodes = np.linspace(start=times_samples.min(), 
-                                        stop = times_samples.max(), 
+                    time_nodes = np.linspace(start=time_pose.min(), 
+                                        stop = time_pose.max(), 
                                         num = number_of_nodes)
                     # Update optimization kwarg
                     kwargs['time_nodes'] = time_nodes
@@ -797,9 +829,34 @@ def main(config_path, mode):
 
                 # TODO: the parameters should be injected into h5-file
 
-                h5_filename = df_current['h5_filename'][0]
+                
                 param_optimized = res.x
                 camera_model_dict_updated, position_updated, quaternion_updated = calculate_cam_and_pose_from_param(h5_filename, param_optimized, **kwargs, h5_paths=h5_paths)
+
+
+                # Now the data has been computed and can be written to h5:
+                if position_updated is None:
+                    pass
+                else:
+                    Hyperspectral.add_dataset(data=position_updated, 
+                                              name = h5_folder_position_ecef_coreg,
+                                              h5_filename=h5_filename)
+                if position_updated is None:
+                    pass
+                else:
+                    Hyperspectral.add_dataset(data = quaternion_updated, 
+                                              name = h5_folder_quaternion_ecef_coreg,
+                                              h5_filename = h5_filename)
+                if camera_model_dict_updated is None:
+                    pass
+                else:
+                    # Width is not a parameter and is inherited from the original file
+                    camera_model_dict_updated['width'] = cal_obj_prior['width']
+
+                    CalibHSI(file_name_cal_xml= calib_file_coreg, 
+                             mode = 'w',
+                             param_dict = camera_model_dict_updated)
+                    
 
         else:
             
