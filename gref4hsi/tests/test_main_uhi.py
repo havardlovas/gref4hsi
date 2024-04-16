@@ -13,7 +13,7 @@ if os.name == 'nt':
 elif os.name == 'posix':
     # This Unix-like systems inl. Mac and Linux
     base_fp = '/media/haavasl/Expansion'
-    home = 'C:/Users/haavasl'
+    home = '/home/haavasl'
 
 # Use this if working with the github repo to do quick changes to the module
 module_path = os.path.join(home, 'VsCodeProjects/gref4hsi/')
@@ -54,16 +54,16 @@ custom_config = {'General':
                     {'dem_folder': 'Input/GIS/'}, # Using altimeter, we generate one DEM per transect chunk
                 
                 'Absolute Paths':
-                    {'geoid_path': os.path.join(home, 'VsCodeProjects\gref4hsi\data\world\geoids\egm08_25.gtx')}, # Using altimeter, we generate one DEM per transect chunk
+                    {'geoid_path': os.path.join(home, "VsCodeProjects/gref4hsi/data/world/geoids/egm08_25.gtx")}, # Using altimeter, we generate one DEM per transect chunk
 
                 'Orthorectification':
-                    {'resample_rgb_only': False, # Good choice for speed
+                    {'resample_rgb_only': True, # Good choice for speed
                     'resolutionhyperspectralmosaic': 0.01, # 1 cm
                     'raster_transform_method': 'north_east'},
                 
                 'HDF.raw_nav': {'altitude': 'raw/nav/altitude',
                     'rotation_reference_type' : 'eul_ZYX', # The vehicles orientations are used as Yaw, Pitch, Roll
-                    'is_global_rot' : False, # The vehicles orientations are used as Yaw, Pitch, Roll
+                    'is_global_rot' : False, # The vehicles orientations are used as Yaw, Pitch, Roll (not ECEF variants)
                     'eul_is_degrees' : True},
 
                 'HDF.calibration': {'band2wavelength' : 'processed/radiance/calibration/spectral/band2Wavelength',
@@ -82,7 +82,7 @@ custom_config = {'General':
                 
 }
 
-# Customizes the config file
+# Customizes the config file with the above dictionary
 customize_config(config_path=config_file_mission, dict_custom=custom_config)
 
 # Settings specific to the pre-processing of UHI data. At present they are hardcoded, but they could be integrated 
