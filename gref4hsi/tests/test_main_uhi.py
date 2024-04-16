@@ -58,7 +58,7 @@ custom_config = {'General':
                     {'geoid_path': os.path.join(home, "VsCodeProjects/gref4hsi/data/world/geoids/egm08_25.gtx")}, # Using altimeter, we generate one DEM per transect chunk
 
                 'Orthorectification':
-                    {'resample_rgb_only': False, # Good choice for speed
+                    {'resample_rgb_only': True, # Good choice for speed
                     'resolutionhyperspectralmosaic': 0.01, # 1 cm
                     'raster_transform_method': 'north_east'},
                 
@@ -110,7 +110,7 @@ config_uhi_preprocess = SettingsPreprocess(dtype_datacube = np.float32,
                                                                     [0, 0, -1]]),
                             # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.
                             translation_alt_to_body = np.array([0.5, 0, 0]),
-                            time_offset_sec =  0,
+                            time_offset_sec =  22,
                             # Ben's tick s1 starts at 1593614097.992003 -> 22 s delay
                             # Ben's tick s2 starts at 1593614414.995001 -> 0 s delay
 
@@ -146,7 +146,7 @@ def main():
     parsing_utils.export_model(config_file_mission)
 
     # Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    visualize.show_mesh_camera(config)
+    #visualize.show_mesh_camera(config)
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
     georeference.main(config_file_mission, viz=False)
