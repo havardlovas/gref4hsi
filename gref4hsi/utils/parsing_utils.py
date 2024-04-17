@@ -422,8 +422,7 @@ def reformat_h5_embedded_data_h5(config, config_file):
             position_interpolated, quaternion_interpolated = interpolate_poses(timestamp_from=timestamps_imu,
                                                              pos_from=position_ref,
                                                              rot_from=rot_obj,
-                                                             timestamps_to=timestamp_hsi,
-                                                             use_absolute_position = True)
+                                                             timestamps_to=timestamp_hsi)
 
             # If the original orientations are with respect to (North-East-Down) NED
             if not is_global_rot:
@@ -442,8 +441,10 @@ def reformat_h5_embedded_data_h5(config, config_file):
 
             # For simple geo-pose for changing between formats.
             geo_pose_ref = GeoPose(timestamps=timestamp_hsi,
-                                   rot_obj= rot_interpolated, rot_ref=rot_ref,
-                                   pos = position_interpolated, pos_epsg=pos_epsg_orig)
+                                   rot_obj= rot_interpolated, 
+                                   rot_ref=rot_ref,
+                                   pos = position_interpolated, 
+                                   pos_epsg=pos_epsg_orig)
 
             # Convert position to the epsg used for the 3D model
             geo_pose_ref.compute_geocentric_position(epsg_geocsc=pos_epsg_export)

@@ -80,7 +80,7 @@ class CalibHSI:
                 fd.write(xmltodict.unparse(xml_dict))
 
 class CameraGeometry():
-    def __init__(self, pos, rot, time, is_interpolated = False, use_absolute_position = False):
+    def __init__(self, pos, rot, time, is_interpolated = False):
         
         self.position_nav = pos
         self.rotation_nav = rot
@@ -283,6 +283,12 @@ class CameraGeometry():
         slit_image_number = np.floor(rays / m).astype(np.int32)
 
         pixel_number = rays % m
+
+        n_points = np.size(points)
+        n_rays = np.size(self.points_ecef_crs)
+        if n_points != n_rays:
+            print(f'The number of hits {n_points} is lower than total number of rays {n_rays}')
+
 
         # Assign normals
         self.points_ecef_crs[slit_image_number, pixel_number] = points
@@ -822,7 +828,7 @@ def reproject_world_points_to_hsi_plane(trans_hsi_body, rot_hsi_body, pos_body, 
 
 
 
-def interpolate_poses(timestamp_from, pos_from, rot_from, timestamps_to, extrapolate = True, use_absolute_position = True):
+def interpolate_poses(timestamp_from, pos_from, rot_from, timestamps_to, extrapolate = True):
     """
 
     :param timestamp_from:
@@ -860,8 +866,7 @@ def interpolate_poses(timestamp_from, pos_from, rot_from, timestamps_to, extrapo
     # Setting use_absolute_position to True means that position calculations are done with absolute
     referenceGeometry = CameraGeometry(pos=pos_from,
                                rot=rot_from,
-                               time=timestamp_from,
-                               use_absolute_position=use_absolute_position)
+                               time=timestamp_from)
 
     # We exploit a method from the camera object
     referenceGeometry.interpolate(time_hsi=timestamps_to,
@@ -1198,7 +1203,15 @@ def dem_2_mesh(path_dem, model_path, config):
                                 y_coord = y_origin + y * y_resolution
                                 xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
             else:
-                print('*.xyz already exists')
+                print('*.xyz already exists, overwriting')
+                with open(output_xyz, 'w') as xyz_file:
+                    # Write data to the XYZ file using the mask and calculated coordinates
+                    for y in range(ds.RasterYSize):
+                        for x in range(ds.RasterXSize):
+                            if mask[y, x]:
+                                x_coord = x_origin + x * x_resolution
+                                y_coord = y_origin + y * y_resolution
+                                xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
             # Clean up
             ds = None
             band = None
@@ -1239,6 +1252,8 @@ def dem_2_mesh(path_dem, model_path, config):
     mesh.points[:, 0] = x_ecef.reshape(-1)
     mesh.points[:, 1] = y_ecef.reshape(-1)
     mesh.points[:, 2] = z_ecef.reshape(-1)
+
+   
 
     # Save mesh
     mesh.save(model_path)

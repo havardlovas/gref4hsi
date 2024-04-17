@@ -87,7 +87,7 @@ def define_hsi_ray_geometry(pos_ref_ecef, quat_ref_ecef, time_pose, intrinsic_ge
         translation_ref_hsi = intrinsic_geometry_dict['translation_ref_hsi']
         rot_hsi_ref_obj = intrinsic_geometry_dict['rot_hsi_ref_obj']
 
-        hsi_geometry = CameraGeometry(pos=pos, rot=rot_obj, time=time_pose, is_interpolated=True, use_absolute_position=True)
+        hsi_geometry = CameraGeometry(pos=pos, rot=rot_obj, time=time_pose, is_interpolated=True)
         
         
         hsi_geometry.intrinsicTransformHSI(translation_ref_hsi=translation_ref_hsi, rot_hsi_ref_obj = rot_hsi_ref_obj)
@@ -134,7 +134,7 @@ def main(iniPath, viz = False):
     # Maximal allowed ray length
     max_ray_length = float(config['General']['max_ray_length'])
 
-    mesh = pv.read(path_mesh)
+    mesh = pv.read(path_mesh,)
 
     
     print("\n################ Georeferencing: ################")

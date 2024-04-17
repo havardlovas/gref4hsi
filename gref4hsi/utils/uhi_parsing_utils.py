@@ -615,11 +615,12 @@ def point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, method='n
         sigma_x = 4
         sigma_y = 4
         grid_z = ndimage.gaussian_filter(grid_z, sigma=(sigma_y, sigma_x))
+        
 
     
     # Writes to a file
     with rasterio.open(output_dem_path, 'w', driver='GTiff', height=grid_z.shape[0],
-                    width=grid_z.shape[1], count=1, dtype='float32', crs='EPSG:' + str(dem_epsg),
+                    width=grid_z.shape[1], count=1, dtype='float64', crs='EPSG:' + str(dem_epsg),
                     transform=transform) as dst:
         dst.write(grid_z, 1)
 
