@@ -438,7 +438,7 @@ def main(config_path, mode):
 
     # Establish reference data
     path_orthomosaic_reference_folder = config['Absolute Paths']['orthomosaic_reference_folder']
-    orthomosaic_reference_fn = os.listdir(path_orthomosaic_reference_folder)[0] # Grab the only file in folder
+    orthomosaic_reference_fn = [f for f in os.listdir(path_orthomosaic_reference_folder) if f.endswith('tif')][0] # Grab the only file in folder that ends with *.tif
     ref_ortho_path = os.path.join(path_orthomosaic_reference_folder, orthomosaic_reference_fn)
 
     dem_path = config['Absolute Paths']['dem_path']
@@ -496,6 +496,8 @@ def main(config_path, mode):
         for file_count, hsi_composite_file in enumerate(hsi_composite_files):
             
             file_base_name = hsi_composite_file.split('.')[0]
+
+            
             
             # The match data (hyperspectral)
             hsi_composite_path = os.path.join(path_composites_match, hsi_composite_file)

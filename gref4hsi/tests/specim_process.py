@@ -194,9 +194,9 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # into an h5 file. The nav data is written to "raw/nav/" subfolders, whereas hyperspectral data and calibration data 
     # written to "processed/hyperspectral/" and "processed/calibration/" subfolders
     specim_parsing_utils.main(config=config,
-                              config_specim=config_specim_preprocess)"""
+                              config_specim=config_specim_preprocess)
     
-    """# Time interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
+    # Time interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
     config = parsing_utils.export_pose(config_file_mission)
     
     # Formats model to triangular mesh and an earth centered earth fixed / geocentric coordinate system
@@ -206,8 +206,8 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
     
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    if ENABLE_VISUALIZE:
-        visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
+    #if ENABLE_VISUALIZE:
+    #    visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
     georeference.main(config_file_mission)
