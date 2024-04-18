@@ -60,12 +60,14 @@ def interpolate_time_nodes(time_from, value, time_to, method = 'linear'):
     if method in ['nearest', 'linear', 'slinear', 'quadratic', 'cubic']:
         return interp1d(time_from, value, kind=method)(time_to)
     elif method in ['gaussian']:
+        # Really slow
         # Use sigma as the difference between two neighboring time nodes
         sigma = time_from[1]-time_from[0]
-        #eps**2 = np.sqrt(0.5*1/(sigma**2))
+        eps = np.sqrt(0.5*1/(sigma**2))
         # sigma = 1/(sqrt(2)eps)
         #https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.Rbf.html
-        return RBFInterpolator(time_from.reshape((-1,1)), value, kernel='gaussian', epsilon = eps)(np.array(time_to).reshape((-1,1)))
+        
+        return RBFInterpolator(time_from.reshape((-1,1)), value.T, kernel='gaussian', epsilon = eps)(np.array(time_to).reshape((-1,1))).T
     
 
 def compose_pose_errors(param_pose_tot, time_nodes, unix_time_features, rot_body_ned, rot_ned_ecef, pos_body, time_interpolation_method):

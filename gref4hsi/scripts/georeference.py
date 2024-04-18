@@ -207,6 +207,7 @@ def main(iniPath, viz = False, use_coreg_param = False):
             if use_coreg_param:
                  try:
                     # Use the coregistred dataset if it exists
+                    print('Using coregistred position')
                     pos_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                     dataset_name= h5_folder_position_ecef_coreg)
                  except:
@@ -214,12 +215,13 @@ def main(iniPath, viz = False, use_coreg_param = False):
                     pos_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                     dataset_name= h5_folder_position_ecef)
                  try:
-                    # Use the coregistred dataset if it exists
-                    pos_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                    # Use the coregistred quaternion-dataset if it exists
+                    print('Using coregistred quaternion')
+                    quat_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                     dataset_name= h5_folder_quaternion_ecef_coreg)
                  except:
                      # If not use the original
-                    pos_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                    quat_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                     dataset_name= h5_folder_quaternion_ecef)
             else:
 
@@ -230,9 +232,9 @@ def main(iniPath, viz = False, use_coreg_param = False):
                 # Extract the ecef orientations for each frame
                 quat_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                                 dataset_name=h5_folder_quaternion_ecef)
-                # Extract the timestamps for each frame
-                time_pose = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                                dataset_name= h5_folder_time_pose)
+            # Extract the timestamps for each frame
+            time_pose = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                            dataset_name= h5_folder_time_pose)
 
 
             # Using the cal file, we can define lever arm, boresight and camera model geometry (in dictionary)

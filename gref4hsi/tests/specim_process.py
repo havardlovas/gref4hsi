@@ -38,7 +38,7 @@ This script is meant to be used for testing the processing pipeline of airborne 
 
 
 
-def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, lab_calibration_path):
+def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, lab_calibration_path, fast_mode = False):
     # Read flight-specific yaml file
     with open(config_yaml, 'r') as file:  
         config_data = yaml.safe_load(file)
@@ -70,7 +70,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     
     
     # Do coregistration if there is an orthomosaic to compare under "orthomosaic"
-    do_coreg = False
+    #do_coreg = True
     ortho_ref_fold = os.path.join(specim_mission_folder, "orthomosaic")
 
     if not os.path.exists(ortho_ref_fold):
@@ -83,7 +83,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
             # If there is a folder and it is not empty
             # Find the only file that is there
             ortho_ref_file = [f for f in os.listdir(ortho_ref_fold) if f not in ('.', '..')][0]
-            do_coreg == True
+            do_coreg = True
             print(f"The file '{ortho_ref_file}' is used as as reference orthomosaic.")
             
     
@@ -176,6 +176,12 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # No need to orthorectify the data cube initially when coregistration with RGB composites is done
     if do_coreg:
         custom_config['Orthorectification']['resample_rgb_only'] = True
+    
+    # 
+    if fast_mode:
+        custom_config['Orthorectification']['resample_rgb_only'] = True
+        custom_config['Orthorectification']['resolutionhyperspectralmosaic'] = 1
+
 
     # Customizes the config file according to settings
     customize_config(config_path=config_file_mission, dict_custom=custom_config)
@@ -187,10 +193,10 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # This function parses raw specim data including (spectral, radiometric, geometric) calibrations and nav data
     # into an h5 file. The nav data is written to "raw/nav/" subfolders, whereas hyperspectral data and calibration data 
     # written to "processed/hyperspectral/" and "processed/calibration/" subfolders
-    """specim_parsing_utils.main(config=config,
+    specim_parsing_utils.main(config=config,
                               config_specim=config_specim_preprocess)"""
     
-    # Time interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
+    """# Time interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
     config = parsing_utils.export_pose(config_file_mission)
     
     # Formats model to triangular mesh and an earth centered earth fixed / geocentric coordinate system
@@ -200,8 +206,8 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
     
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    """if ENABLE_VISUALIZE:
-        visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')"""
+    if ENABLE_VISUALIZE:
+        visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
     georeference.main(config_file_mission)
@@ -212,12 +218,12 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
         # Optional: coregistration
         # Match RGB composite to reference, find features and following data, ground control point (gcp) list, for each feature pair:
         # reference point 3D (from reference), position/orientation of vehicle (using resampled time) and pixel coordinate (using resampled pixel coordinate)
-        coregistration.main(config_file_mission, mode='compare')
+        #coregistration.main(config_file_mission, mode='compare')
 
         # The gcp list allows reprojecting reference points and evaluate the reprojection error,
         # which is used to optimize static geometric parameters (e.g. boresight, camera model...) or dynamic geometric parameters (time-varying nav errors).
         # Settings are currently in coregistration script
-        coregistration.main(config_file_mission, mode='calibrate')
+        #coregistration.main(config_file_mission, mode='calibrate')
 
         # The final orthorectification can be conducted on the datacube too
         custom_config['Orthorectification']['resample_rgb_only'] = True

@@ -263,7 +263,7 @@ class CameraGeometry():
         try:
             # This will only work if exact Python version is rigght and you have PyEmbree
             points, rays, cells = mesh.multi_ray_trace(origins=start, directions=dir, first_point=True, retry=True)
-        except ImportError:
+        except:
             # If you instead use embreex, python>3.6 will do
             
             

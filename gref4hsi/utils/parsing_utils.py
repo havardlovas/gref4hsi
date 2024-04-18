@@ -540,7 +540,7 @@ def export_pose(config_file):
         pose_export_type = 'h5_embedded'
 
     if pose_export_type == 'h5_embedded':
-        config = reformat_h5_embedded_data_h5(config=config,
+        reformat_h5_embedded_data_h5(config=config,
                                               config_file=config_file)
     elif pose_export_type == 'independent_file':
         print('There is no support for this export functionality! Fix immediately!')
@@ -549,7 +549,6 @@ def export_pose(config_file):
         print('File type: ' + pose_export_type + 'type is not defined!')
         config = -1
 
-    return config
     
     
 def export_model(config_file):
