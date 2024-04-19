@@ -1,6 +1,7 @@
 import configparser
 import os
 import time
+from glob import glob
 
 import numpy as np
 import spectral as sp
@@ -15,6 +16,7 @@ from scipy.optimize import least_squares
 from scipy.interpolate import interp1d, RBFInterpolator
 import pandas as pd
 from scipy.sparse import lil_matrix
+
 
 
 
@@ -488,7 +490,9 @@ def main(config_path, mode):
     print("\n################ Coregistering: ################")
 
     # Iterate the RGB composites
-    hsi_composite_files = sorted(os.listdir(path_composites_match))
+    #hsi_composite_files = sorted(os.listdir(path_composites_match))
+    hsi_composite_paths = sorted(glob(os.path.join(path_composites_match, "*.tif")))
+    hsi_composite_files = [os.path.basename(f) for f in hsi_composite_paths]
     file_count = 0
 
     if mode == 'compare':
@@ -625,7 +629,7 @@ def main(config_path, mode):
 
     elif mode == 'calibrate':
         
-        
+        # Read Comparative data
         gcp_df_all = pd.read_csv(ref_gcp_path)
 
         # Registration error in pixels in x-direction (u_err) and y-direction (v_err)
@@ -667,6 +671,12 @@ def main(config_path, mode):
                           'calibrate_roll': False,
                           'calibrate_pitch': False,
                           'calibrate_yaw': True}
+
+
+        # Whether to plot the error vectors as functions of time
+
+        plot_err_vec_time = True
+
 
         # Localize the prior calibration and use as initial parameters as well as constants for parameter xx if calibrate_xx = False
         cal_obj_prior = CalibHSI(file_name_cal_xml=config['Absolute Paths']['hsi_calib_path'])
@@ -751,119 +761,123 @@ def main(config_path, mode):
             
             # Iterate through transects
             for i in range(int(n_transects)):
-                df_current = df_gcp_filtered[df_gcp_filtered['file_count'] == i]
-                
-                # Update the feature info
-                kwargs['features_df'] = df_current
-
-                n_features = df_current.shape[0]
-
-                # Read out the file name corresponding to file index i
-                h5_filename = df_current['h5_filename'].iloc[0]
-
-                if estimate_time_varying:
-                    ## The time range is defined by the transect time:
-                    #times_samples = df_current['unix_time']
-
-                    # Extract the timestamps for each frame
-                    time_pose = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                                    dataset_name=h5_folder_time_pose)
-
-
-                    transect_duration_sec = time_pose.max() - time_pose.min()
-                    number_of_nodes = int(np.floor(transect_duration_sec/time_node_spacing)) + 1
-
-                    # The time varying parameters are in total the number of dofs times number of nodes
-                    param0_time_varying = np.zeros(n_adjustable_dofs*number_of_nodes)
-
-                    # The time-varying parameters are stacked after the intrinsic parameters.
-                    # This vector only holds parameters that will be adjusted
-                    param0_variab_tot = np.concatenate((param0_variab, 
-                                                        param0_time_varying), axis=0)
-
-                    # Calculate the number of nodes. It divides the transect into equal intervals, 
-                    # meaning that the intervals can be somewhat different at least for a small number of them.
-                    time_nodes = np.linspace(start=time_pose.min(), 
-                                        stop = time_pose.max(), 
-                                        num = number_of_nodes)
-                    # Update optimization kwarg
-                    kwargs['time_nodes'] = time_nodes
+                # Selected Transect
+                if i ==3:
+                    df_current = df_gcp_filtered[df_gcp_filtered['file_count'] == i]
                     
-                    # Calculate the Jacobian for finding and exploiting sparsity
-                    J = numerical_jacobian(fun = objective_fun_reprojection_error, param = param0_variab_tot, **kwargs)
+                    # Update the feature info
+                    kwargs['features_df'] = df_current
 
-                    sparsity_perc = 100*((J==0).sum()/J.size)
+                    n_features = df_current.shape[0]
 
-                    #print(f'Jacobian computed with {sparsity_perc:.0f} % zeros')
+                    # Read out the file name corresponding to file index i
+                    h5_filename = df_current['h5_filename'].iloc[0]
                     
-                    # Using list of list representation as recommended by Scipy's least squares
-                    sparsity = lil_matrix(J.shape, dtype=int)
 
-                    # Setting the non sparse elements (in theory they could be set for small values of J too)
-                    sparsity[J != 0] = 1
-                else:
-                    time_nodes = None
-                    param0_variab_tot = param0_variab
+                    # If we are to estimate that which is time varying
+                    if estimate_time_varying:
+                        ## The time range is defined by the transect time:
+                        #times_samples = df_current['unix_time']
 
-                
-                # Run once with initial parameters
-                res_pre_optim = objective_fun_reprojection_error(param0_variab_tot, **kwargs)
-
-                # Calculate the median absolute error in pixels
-                abs_err = np.sqrt(res_pre_optim[0:n_features]**2 + res_pre_optim[0:n_features]**2)
-                median_error = np.median(abs_err)*cal_obj_prior.f
-                print(f'Original MAE rp-error is {median_error:.1f} pixels')
-
-                # Optimize the transect and record time duration
-                time_start  = time.time()
-                res = least_squares(fun = objective_fun_reprojection_error, 
-                                x0 = param0_variab_tot, 
-                                x_scale='jac',
-                                jac_sparsity=sparsity,
-                                kwargs=kwargs)
-                
-                optim_dur = time.time() - time_start
-
-                # Absolute reprojection errors
-                abs_err = np.sqrt(res.fun[0:n_features]**2 + res.fun[0:n_features]**2)
-                median_error_pix = np.median(abs_err)*cal_obj_prior.f
-
-                print(f'Optimized MAE rp-error is {median_error_pix:.1f} pixels')
-                print(f'Optimization time was {optim_dur:.0f} sec')
-                print(f'Number of nodes was {number_of_nodes}')
-                print(f'Number of features was {n_features}')
-                print('')
-                
-
-                # TODO: the parameters should be injected into h5-file
-
-                
-                param_optimized = res.x
-                camera_model_dict_updated, position_updated, quaternion_updated = calculate_cam_and_pose_from_param(h5_filename, param_optimized, **kwargs, h5_paths=h5_paths)
+                        # Extract the timestamps for each frame
+                        time_pose = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                        dataset_name=h5_folder_time_pose)
 
 
-                # Now the data has been computed and can be written to h5:
-                if position_updated is None:
-                    pass
-                else:
-                    Hyperspectral.add_dataset(data=position_updated, 
-                                              name = h5_folder_position_ecef_coreg,
-                                              h5_filename=h5_filename)
-                if position_updated is None:
-                    pass
-                else:
-                    Hyperspectral.add_dataset(data = quaternion_updated, 
-                                              name = h5_folder_quaternion_ecef_coreg,
-                                              h5_filename = h5_filename)
-                if camera_model_dict_updated is None:
-                    pass
-                else:
-                    # Width is not a parameter and is inherited from the original file
-                    camera_model_dict_updated['width'] = cal_obj_prior['width']
+                        transect_duration_sec = time_pose.max() - time_pose.min()
+                        number_of_nodes = int(np.floor(transect_duration_sec/time_node_spacing)) + 1
 
-                    CalibHSI(file_name_cal_xml= calib_file_coreg, 
-                             mode = 'w',
-                             param_dict = camera_model_dict_updated)
+                        # The time varying parameters are in total the number of dofs times number of nodes
+                        param0_time_varying = np.zeros(n_adjustable_dofs*number_of_nodes)
+
+                        # The time-varying parameters are stacked after the intrinsic parameters.
+                        # This vector only holds parameters that will be adjusted
+                        param0_variab_tot = np.concatenate((param0_variab, 
+                                                            param0_time_varying), axis=0)
+
+                        # Calculate the number of nodes. It divides the transect into equal intervals, 
+                        # meaning that the intervals can be somewhat different at least for a small number of them.
+                        time_nodes = np.linspace(start=time_pose.min(), 
+                                            stop = time_pose.max(), 
+                                            num = number_of_nodes)
+                        # Update optimization kwarg
+                        kwargs['time_nodes'] = time_nodes
+                        
+                        # Calculate the Jacobian for finding and exploiting sparsity
+                        J = numerical_jacobian(fun = objective_fun_reprojection_error, param = param0_variab_tot, **kwargs)
+
+                        sparsity_perc = 100*((J==0).sum()/J.size)
+
+                        #print(f'Jacobian computed with {sparsity_perc:.0f} % zeros')
+                        
+                        # Using list of list representation as recommended by Scipy's least squares
+                        sparsity = lil_matrix(J.shape, dtype=int)
+
+                        # Setting the non sparse elements (in theory they could be set for small values of J too)
+                        sparsity[J != 0] = 1
+                    else:
+                        time_nodes = None
+                        param0_variab_tot = param0_variab
+
+                    
+                    # Run once with initial parameters
+                    res_pre_optim = objective_fun_reprojection_error(param0_variab_tot, **kwargs)
+
+                    # Calculate the median absolute error in pixels
+                    abs_err = np.sqrt(res_pre_optim[0:n_features]**2 + res_pre_optim[0:n_features]**2)
+                    median_error = np.median(abs_err)*cal_obj_prior.f
+                    print(f'Original MAE rp-error is {median_error:.1f} pixels')
+
+                    # Optimize the transect and record time duration
+                    time_start  = time.time()
+                    res = least_squares(fun = objective_fun_reprojection_error, 
+                                    x0 = param0_variab_tot, 
+                                    x_scale='jac',
+                                    jac_sparsity=sparsity,
+                                    kwargs=kwargs)
+                    
+                    optim_dur = time.time() - time_start
+
+                    # Absolute reprojection errors
+                    abs_err = np.sqrt(res.fun[0:n_features]**2 + res.fun[0:n_features]**2)
+                    median_error_pix = np.median(abs_err)*cal_obj_prior.f
+
+                    print(f'Optimized MAE rp-error is {median_error_pix:.1f} pixels')
+                    print(f'Optimization time was {optim_dur:.0f} sec')
+                    print(f'Number of nodes was {number_of_nodes}')
+                    print(f'Number of features was {n_features}')
+                    print('')
+                    
+
+                    # TODO: the parameters should be injected into h5-file
+
+                    
+                    param_optimized = res.x
+                    camera_model_dict_updated, position_updated, quaternion_updated = calculate_cam_and_pose_from_param(h5_filename, param_optimized, **kwargs, h5_paths=h5_paths)
+
+
+                    # Now the data has been computed and can be written to h5:
+                    if position_updated is None:
+                        pass
+                    else:
+                        Hyperspectral.add_dataset(data=position_updated, 
+                                                name = h5_folder_position_ecef_coreg,
+                                                h5_filename=h5_filename)
+                    if position_updated is None:
+                        pass
+                    else:
+                        Hyperspectral.add_dataset(data = quaternion_updated, 
+                                                name = h5_folder_quaternion_ecef_coreg,
+                                                h5_filename = h5_filename)
+                    if camera_model_dict_updated is None:
+                        pass
+                    else:
+                        # Width is not a parameter and is inherited from the original file
+                        camera_model_dict_updated['width'] = cal_obj_prior['width']
+
+                        CalibHSI(file_name_cal_xml= calib_file_coreg, 
+                                mode = 'w',
+                                param_dict = camera_model_dict_updated)
                     
 
         else:
