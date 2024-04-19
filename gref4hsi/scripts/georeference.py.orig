@@ -215,8 +215,12 @@ def main(iniPath, viz = False, use_coreg_param = False):
                     pos_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                     dataset_name= h5_folder_position_ecef)
                  try:
+<<<<<<< HEAD
                     # Use the coregistred quaternion-dataset if it exists
                     print('Using coregistred quaternion')
+=======
+                    # Use the coregistred dataset if it exists
+>>>>>>> c05ae5e3c6473d21ada475ba36c3dffc7aca204b
                     quat_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                     dataset_name= h5_folder_quaternion_ecef_coreg)
                  except:

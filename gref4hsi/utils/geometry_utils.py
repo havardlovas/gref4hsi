@@ -17,12 +17,14 @@ from shapely.geometry import Polygon, mapping, MultiPoint
 from rasterio.transform import from_origin
 from rasterio.windows import from_bounds
 from rasterio.windows import Window
+import trimesh
 
 # Python standard lib
 import os
 import time
 from datetime import datetime
 from dateutil import parser
+import json
 
 # A file were we define geometry and geometric transforms
 class CalibHSI:
@@ -227,13 +229,15 @@ class CameraGeometry():
 
         for i in range(n):
             self.rayDirectionsGlobal[i, :, :] = self.rotation_hsi[i].apply(dir_local)
-    def intersect_with_mesh(self, mesh, max_ray_length):
+    def intersect_with_mesh(self, mesh, max_ray_length, mesh_trans):
         """Intersects the rays of the camera with the 3D triangular mesh
 
         :param mesh: A mesh object read via the pyvista library
         :type mesh: Pyvista mesh
         :param max_ray_length: The upper bound length of the camera rays (it is determined )
         :type max_ray_length: _type_
+        :param mesh_trans: The offset of the mesh
+        :type mesh_trans: _type_
         """
 
         n = self.rayDirectionsGlobal.shape[0]
@@ -243,7 +247,10 @@ class CameraGeometry():
         self.normals_ecef_crs = np.zeros((n, m, 3), dtype=np.float64)
 
         # Duplicate multiple camera centres
-        start = np.einsum('ijk, ik -> ijk', np.ones((n, m, 3), dtype=np.float64), self.position_ecef).reshape((-1,3))
+        start_ECEF = np.einsum('ijk, ik -> ijk', np.ones((n, m, 3), dtype=np.float64), self.position_ecef).reshape((-1,3))
+
+        # Subtract the mesh offset to avoid rounding errors and perform intersection tests with "small coordinates"
+        start = start_ECEF - mesh_trans
 
         dir = (self.rayDirectionsGlobal * max_ray_length).reshape((-1,3))
 
@@ -255,10 +262,10 @@ class CameraGeometry():
         
         try:
             # This will only work if exact Python version is rigght and you have PyEmbree
-            points, rays, cells = mesh.multi_ray_trace(origins=start, directions=dir, first_point=True)
-        except ImportError:
+            points, rays, cells = mesh.multi_ray_trace(origins=start, directions=dir, first_point=True, retry=True)
+        except:
             # If you instead use embreex, python>3.6 will do
-            import trimesh
+            
             
             # If the faces are 
             faces = mesh.regular_faces
@@ -270,10 +277,39 @@ class CameraGeometry():
             ray_mesh_intersector = trimesh.ray.ray_pyembree.RayMeshIntersector(geometry=tri_mesh)
 
             # Intersect data
+            count = 0
             cells, rays, points = ray_mesh_intersector.intersects_id(ray_origins=start,  
                                                                 ray_directions=dir, 
                                                                 multiple_hits=False,
                                                                 return_locations=True)
+            
+        n_points = int(np.size(points)/3)
+        n_rays = int(np.size(start)/3)
+        # Recurring is that 1- 10s of rays fail to detect intersections using Trimesh.
+        # A handy fix is to iterate the failed intersections using individual ray tracing
+        # This equivalent to the retry=True in 
+        # https://docs.pyvista.org/version/stable/api/core/_autosummary/pyvista.PolyDataFilters.multi_ray_trace.html#pyvista.PolyDataFilters.multi_ray_trace
+        if n_points != n_rays:
+            n_missing = n_rays - n_points
+            print(f'Trimesh failed to find intersections for {n_missing} rays')
+            print(f'Ray tracing for these rays is retried in pyvista')
+
+            # Identify the missing intersections:
+            missing_rays = np.array(list( set(range(n_rays)) - set(rays) ))
+
+            # And ray trace them individually in VTK
+            for ray in missing_rays:
+                # Retry failed intersections with slow pyvista version
+                point, cell = mesh.ray_trace(start[ray,:], start[ray,:] + dir[ray,:], first_point=True)
+                cells = np.concatenate((cells, cell), axis=0)
+                points = np.concatenate((points, point.reshape((1,3))), axis=0)
+                rays = np.concatenate((rays, np.array([ray])), axis=0)
+            n_points = int(np.size(points)/3)
+            print('All rays successfully traced in VTK')
+
+        else:
+            print(f'All rays were successfully intersected with trimesh')
+            
 
 
         stop_time = time.time()
@@ -284,19 +320,18 @@ class CameraGeometry():
 
         pixel_number = rays % m
 
-        n_points = np.size(points)
-        n_rays = np.size(self.points_ecef_crs)
-        if n_points != n_rays:
-            print(f'The number of hits {n_points} is lower than total number of rays {n_rays}')
+        
 
 
         # Assign normals
-        self.points_ecef_crs[slit_image_number, pixel_number] = points
+        self.points_ecef_crs[slit_image_number, pixel_number] = points + mesh_trans
 
         self.normals_ecef_crs[slit_image_number, pixel_number] = normals
 
-        self.camera_to_seabed_ECEF = self.points_ecef_crs - start.reshape((n, m, 3))
+        self.camera_to_seabed_ECEF = self.points_ecef_crs - start_ECEF.reshape((n, m, 3))
 
+
+        # Calculate
         self.points_hsi_crs = np.zeros(self.camera_to_seabed_ECEF.shape)
 
         self.normals_hsi_crs = np.zeros(self.normals_ecef_crs.shape)
@@ -1186,8 +1221,8 @@ def dem_2_mesh(path_dem, model_path, config):
             # Automatically set
             
             
-            # Get the band's data as a NumPy array
-            band_data = band.ReadAsArray()
+            # Get the band's data as a NumPy array of float64 (important)
+            band_data = band.ReadAsArray().astype(np.float64)
 
             # Create a mask to identify no-data values
             mask = band_data != no_data_value
@@ -1203,24 +1238,17 @@ def dem_2_mesh(path_dem, model_path, config):
                                 y_coord = y_origin + y * y_resolution
                                 xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
             else:
-                print('*.xyz already exists, overwriting')
-                with open(output_xyz, 'w') as xyz_file:
-                    # Write data to the XYZ file using the mask and calculated coordinates
-                    for y in range(ds.RasterYSize):
-                        for x in range(ds.RasterXSize):
-                            if mask[y, x]:
-                                x_coord = x_origin + x * x_resolution
-                                y_coord = y_origin + y * y_resolution
-                                xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
+                print('*.xyz already exists, ignoring re-creation')
             # Clean up
             ds = None
             band = None
     
 
     points = np.loadtxt(output_xyz)
+    points_offset = np.mean(points, axis = 0)
 
-    # Create a pyvista point cloud object
-    cloud = pv.PolyData(points)
+    # Create a pyvista point cloud object (just to avoid precision problems)
+    cloud = pv.PolyData(points-points_offset)
     
     # TODO: Apply patch to avoid crash for triangulation when using big DEM files
     # Generate a mesh from points
@@ -1236,7 +1264,8 @@ def dem_2_mesh(path_dem, model_path, config):
 
     transformer = Transformer.from_crs(proj, geocsc)
 
-    points_proj = mesh.points
+    # Convert to proper coordinates
+    points_proj = mesh.points + points_offset
 
     if is_projected:
         x_proj = points_proj[:, 0].reshape((-1, 1))
@@ -1249,14 +1278,34 @@ def dem_2_mesh(path_dem, model_path, config):
 
     (x_ecef, y_ecef, z_ecef) = transformer.transform(xx=x_proj, yy=y_proj, zz=h_proj)
 
-    mesh.points[:, 0] = x_ecef.reshape(-1)
-    mesh.points[:, 1] = y_ecef.reshape(-1)
-    mesh.points[:, 2] = z_ecef.reshape(-1)
+    # Introduce mesh offsets in ECEF sized numbers seem to cause troubles:
+    offset_x = np.mean(x_ecef.reshape(-1))
+    offset_y = np.mean(y_ecef.reshape(-1))
+    offset_z = np.mean(z_ecef.reshape(-1))
 
+    mesh.points[:, 0] = x_ecef.reshape(-1) - offset_x
+    mesh.points[:, 1] = y_ecef.reshape(-1) - offset_y
+    mesh.points[:, 2] = z_ecef.reshape(-1) - offset_z
    
 
     # Save mesh
     mesh.save(model_path)
+    # Save mesh meta
+    # Define your metadata dictionary
+    metadata = {
+        "offset_x": offset_x,
+        "offset_y": offset_y,
+        "offset_z": offset_z,
+        "epsg_code": geocsc.to_epsg(),  # Example EPSG code, replace with your actual code
+        "data_type": str(mesh.points.dtype),  # Add other metadata entries here
+    }
+
+    model_meta_path = model_path.split('.')[0] + '_meta.json' 
+    # Open the file in write mode with proper indentation
+    with open(model_meta_path, "w") as f:
+        # Write the dictionary to the file using JSON dump
+        json.dump(metadata, f)
+
 
 def crop_geoid_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_25.gtx'):
     # The desired CRS for the model must be same as positions, orientations

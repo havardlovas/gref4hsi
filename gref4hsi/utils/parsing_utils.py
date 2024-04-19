@@ -540,7 +540,7 @@ def export_pose(config_file):
         pose_export_type = 'h5_embedded'
 
     if pose_export_type == 'h5_embedded':
-        config = reformat_h5_embedded_data_h5(config=config,
+        reformat_h5_embedded_data_h5(config=config,
                                               config_file=config_file)
     elif pose_export_type == 'independent_file':
         print('There is no support for this export functionality! Fix immediately!')
@@ -549,7 +549,6 @@ def export_pose(config_file):
         print('File type: ' + pose_export_type + 'type is not defined!')
         config = -1
 
-    return config
     
     
 def export_model(config_file):
@@ -572,7 +571,11 @@ def export_model(config_file):
         file_path_3d_model = config['Absolute Paths']['model_path']
         # Make new only once.
 
-        dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
+        if os.path.exists(file_path_3d_model):
+            print('3D model already exists and overwriting is not supported')
+            pass
+        else:
+            dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
 
     elif model_export_type == 'geoid':
         file_path_dem = config['Absolute Paths']['dem_path']
