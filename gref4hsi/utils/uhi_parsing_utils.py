@@ -34,9 +34,6 @@ class HyperspectralLite:
                     pass
                 self.__setattr__(attribute_name, h5_item)
 
-
-
-
 class TimeData:
     """Simple way of working with time referenced data. Supports unix and date_num at the moment"""
     def __init__(self, time = None, value = None, time_format = 'date_num'):
@@ -62,6 +59,7 @@ class TimeData:
         self.value = value
     def interpolate(self, time_interp):
         self.time_interp = time_interp
+        print(f"self.value[0]: {self.value[0]}")
         self.value_interp = interp1d(x = self.time, y = self.value, kind='nearest', fill_value='extrapolate')(x=self.time_interp)
             
 
@@ -347,6 +345,65 @@ def read_nav_from_mat(mat_filename):
     
     return nav
 
+
+
+def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename):
+    """Function for reading mat data from the beast format into a NAV object"""
+    dvl_contents = {}
+    imu_contents = {}
+    alti_contents= {}
+
+    dvl_contents = pd.read_csv(dvl_filename, delimiter=',')
+    imu_contents = pd.read_csv(imu_filename, delimiter=',')
+    alti_contents = pd.read_csv(alti_filename, delimiter=',')
+
+    # Drop rows with NaN values in 'x' and 'y' columns
+    dvl_contents = dvl_contents.dropna(subset=['x', 'y', 'z']).reset_index(drop=True)
+    # Convert timestamp column to datetime objects with the specified format
+    #dvl_contents.loc[:,'TimestampMeasured'] = pd.to_datetime(dvl_contents.loc[:,'log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ')
+    dvl_contents['TimestampMeasured'] = pd.to_datetime(dvl_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(int) // 10**9
+
+    # +
+    """Cell defining all nav data of relevance"""
+    nav = NAV()
+    nav.roll = TimeData(time = imu_contents['TimestampMeasured'], 
+                        value = imu_contents['Roll'], 
+                        time_format='unix')
+
+    nav.pitch = TimeData(time = imu_contents['TimestampMeasured'],
+                        value = imu_contents['Pitch'],
+                        time_format='unix')
+
+    nav.yaw = TimeData(time = imu_contents['TimestampMeasured'], 
+                        value = imu_contents['Heading'],
+                        time_format='unix')
+    
+    nav.pos_x = TimeData(time = dvl_contents['TimestampMeasured'],
+                        value = dvl_contents['x'],
+                        time_format='unix')
+
+    nav.pos_y = TimeData(time = dvl_contents['TimestampMeasured'], 
+                        value = dvl_contents['y'], 
+                        time_format='unix')
+
+    nav.pos_z = TimeData(time = dvl_contents['TimestampMeasured'], 
+                        value = dvl_contents['z'],
+                        time_format='unix')
+    
+    nav.lat = TimeData(time = imu_contents['TimestampMeasured'], 
+                        value = ["77.782882"]*len(imu_contents['TimestampMeasured']), 
+                        time_format='unix')
+
+    nav.lon = TimeData(time = imu_contents['TimestampMeasured'], 
+                        value = ["15.780755"]*len(imu_contents['TimestampMeasured']), 
+                        time_format='unix')
+
+    nav.altitude = TimeData(time = alti_contents['TimestampMeasured'],
+                        value = alti_contents['Altitude'],
+                        time_format='unix')
+    return nav
+
+
 def write_nav_data_to_h5(nav, time_offset, config, H5_FILE_PATH):
     
     # The time stamp used for writing
@@ -623,9 +680,6 @@ def point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, method='n
                     transform=transform) as dst:
         dst.write(grid_z, 1)
 
-
-
-
 def uhi_beast(config, config_uhi):
     MISSION_PATH = config['General']['mission_dir'] # Where h5 data is 
     
@@ -770,22 +824,33 @@ def uhi_dbe(config, config_uhi):
     SPATIAL_PIXELS = 1936 # Same for almost all UHI
     
 
-    INPUT_DIR = MISSION_PATH + 'Input/'
+    INPUT_DIR = MISSION_PATH + 'Input/H5/'
 
     h5_folder = config['Absolute Paths']['h5_folder']
     H5_PATTERN = '*.h5'
 
-    MAT_DIR = INPUT_DIR
-    MAT_PATTERN = '*.mat'
+    DVL_DIR = INPUT_DIR
+    DVL_PATTERN = 'DVL_*'
+    IMU_PATTERN = 'imu*'
+    ALTI_PATTERN = 'alti*'
 
-    # Locate mat file with nav data 
-    search_path_mat = os.path.normpath(os.path.join(MAT_DIR, MAT_PATTERN))
-    MAT_FILE_PATHS = glob.glob(search_path_mat)
-    MAT_PATH = MAT_FILE_PATHS[0] # Assuming there is only one
+    # Locate dvl file with nav data 
+    search_path_dvl = os.path.normpath(os.path.join(DVL_DIR, DVL_PATTERN))
+    DVL_FILE_PATHS = glob.glob(search_path_dvl)
+    DVL_PATH = DVL_FILE_PATHS[0] # Assuming there is only one
 
+    # Locate imu file with nav data 
+    search_path_imu = os.path.normpath(os.path.join(DVL_DIR, IMU_PATTERN))
+    IMU_FILE_PATHS = glob.glob(search_path_imu)
+    IMU_PATH = IMU_FILE_PATHS[0] # Assuming there is only one
+
+    # Locate alti file with nav data 
+    search_path_alti = os.path.normpath(os.path.join(DVL_DIR, ALTI_PATTERN))
+    ALTI_FILE_PATHS = glob.glob(search_path_alti)
+    ALTI_PATH = ALTI_FILE_PATHS[0] # Assuming there is only one
 
     # TODO: replace with how you read in data from DVL/H5 folders
-    nav = read_nav_from_mat(mat_filename=MAT_PATH)
+    nav = read_nav_from_dvl_imu_alti(dvl_filename=DVL_PATH, imu_filename=IMU_PATH, alti_filename=ALTI_PATH)
 
     
 
