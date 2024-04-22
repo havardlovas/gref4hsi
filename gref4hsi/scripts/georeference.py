@@ -139,9 +139,11 @@ def main(iniPath, viz = False):
     
     print("\n################ Georeferencing: ################")
     files = sorted(os.listdir(dir_r))
-    n_files= len(sorted(os.listdir(dir_r)))
+    # Filter out files that do not end with ".h5"
+    h5_files = [file for file in files if file.endswith(".h5")]
+    n_files= len(h5_files)
     file_count = 0
-    for filename in files:
+    for filename in h5_files:
         if filename.endswith('h5') or filename.endswith('hdf'):
 
             progress_perc = 100*file_count/n_files
@@ -154,7 +156,7 @@ def main(iniPath, viz = False):
             hyp = Hyperspectral(path_hdf, config)
 
             # Using the cal file, we can define lever arm, boresight and local ray geometry (in dictionary)
-            intrinsic_geometry_dict = cal_file_to_rays(filename_cal=hsi_cal_xml, config=config)
+            intrinsic_geometry_dict = cal_file_to_rays(filename_cal=hsi_cal_xml)#, config=config)
 
             
             # Define the rays in ECEF for each frame. 

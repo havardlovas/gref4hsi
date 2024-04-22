@@ -359,6 +359,10 @@ def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename):
 
     # Drop rows with NaN values in 'x' and 'y' columns
     dvl_contents = dvl_contents.dropna(subset=['x', 'y', 'z']).reset_index(drop=True)
+    idx = dvl_contents['x'].index[0]
+    dvl_contents['x'] = dvl_contents['x']-dvl_contents['x'][idx] 
+    dvl_contents['y'] = dvl_contents['y']-dvl_contents['y'][idx]
+    dvl_contents['z'] = dvl_contents['z']-dvl_contents['z'][idx]
     # Convert timestamp column to datetime objects with the specified format
     #dvl_contents.loc[:,'TimestampMeasured'] = pd.to_datetime(dvl_contents.loc[:,'log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ')
     dvl_contents['TimestampMeasured'] = pd.to_datetime(dvl_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(int) // 10**9
