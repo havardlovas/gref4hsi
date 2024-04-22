@@ -22,9 +22,7 @@ if module_path not in sys.path:
     sys.path.append(module_path)
 
 # Local resources
-from gref4hsi.scripts import georeference
-from gref4hsi.scripts import orthorectification
-from gref4hsi.scripts import coregistration
+from gref4hsi.scripts import georeference, orthorectification, coregistration
 from gref4hsi.utils import parsing_utils, specim_parsing_utils
 from gref4hsi.utils import visualize
 from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
@@ -40,7 +38,7 @@ This script is meant to be used for testing the processing pipeline of airborne 
 
 
 
-def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, lab_calibration_path):
+def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, lab_calibration_path, fast_mode = False):
     # Read flight-specific yaml file
     with open(config_yaml, 'r') as file:  
         config_data = yaml.safe_load(file)
@@ -69,6 +67,24 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
             DEM_PATH = os.path.join(dem_fold, files[0])
             #print(f"The file '{DEM_PATH}' is used as terrain.")
             TERRAIN_TYPE = "dem_file"
+    
+    
+    # Do coregistration if there is an orthomosaic to compare under "orthomosaic"
+    #do_coreg = True
+    ortho_ref_fold = os.path.join(specim_mission_folder, "orthomosaic")
+
+    if not os.path.exists(ortho_ref_fold):
+        print('Coregistration is not done, as there was no reference orthomosaic')
+        
+    else:
+        if not os.listdir(ortho_ref_fold):
+            print('Coregistration is not done, as there was no reference orthomosaic')
+        else:
+            # If there is a folder and it is not empty
+            # Find the only file that is there
+            ortho_ref_file = [f for f in os.listdir(ortho_ref_fold) if f not in ('.', '..')][0]
+            do_coreg = True
+            print(f"The file '{ortho_ref_file}' is used as as reference orthomosaic.")
             
     
     
@@ -110,7 +126,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     custom_config = {'General':
                         {'mission_dir': DATA_DIR,
                         'model_export_type': TERRAIN_TYPE, # Ray trace onto geoid
-                        'max_ray_length': 200}, # Max distance in meters from spectral imager to seafloor. Specim does not fly higher
+                        'max_ray_length': 150}, # Max distance in meters from spectral imager to seafloor. Specim does not fly higher
 
                     'Coordinate Reference Systems':
                         {'proj_epsg' : EPSG_CODE, # The projected CRS UTM 32, common on mainland norway
@@ -135,16 +151,18 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         'orthomosaic_reference_folder' : os.path.join(specim_mission_folder, "orthomosaic"),
                         'ref_ortho_reshaped' : os.path.join(DATA_DIR, "Intermediate", "RefOrthoResampled"),
                         'ref_gcp_path' : os.path.join(DATA_DIR, "Intermediate", "gcp.csv"),
+                        'calib_file_coreg' : os.path.join(DATA_DIR, "Output", "HSI_coreg.xml"),
                         # (above) The georeferencing allows processing using norwegian geoid NN2000 and worldwide EGM2008. Also, use of seafloor terrain models are supported. '
                         # At the moment refractive ray tracing is not implemented, but it could be relatively easy by first ray tracing with geoid+tide, 
                         # and then ray tracing from water
                         #'tide_path' : 'D:/HyperspectralDataAll/HI/2022-08-31-060000-Remoy-Specim/Input/tidevann_nn2000_NMA.txt'
                         },
+                    
                     # If coregistration is done, then the data must be stored after processing somewhere
                     'HDF.coregistration': {
-                        'position_ecef': 'processed/coreg/position_ecef',
-                        'quaternion_ecef' : 'processed/coreg/quaternion_ecef'
-                    }
+                            'position_ecef': 'processed/coreg/position_ecef',
+                            'quaternion_ecef' : 'processed/coreg/quaternion_ecef'
+                        }
                     
     }
 
@@ -153,6 +171,17 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
         #'geoid_path' : 'data/world/geoids/egm08_25.gtx'
     elif TERRAIN_TYPE == 'dem_file':
         custom_config['Absolute Paths']['dem_path'] = DEM_PATH
+
+    
+    # No need to orthorectify the data cube initially when coregistration with RGB composites is done
+    if do_coreg:
+        custom_config['Orthorectification']['resample_rgb_only'] = True
+    
+    # 
+    if fast_mode:
+        custom_config['Orthorectification']['resample_rgb_only'] = True
+        custom_config['Orthorectification']['resolutionhyperspectralmosaic'] = 1
+
 
     # Customizes the config file according to settings
     customize_config(config_path=config_file_mission, dict_custom=custom_config)
@@ -164,35 +193,51 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # This function parses raw specim data including (spectral, radiometric, geometric) calibrations and nav data
     # into an h5 file. The nav data is written to "raw/nav/" subfolders, whereas hyperspectral data and calibration data 
     # written to "processed/hyperspectral/" and "processed/calibration/" subfolders
-    """specim_parsing_utils.main(config=config,
-                              config_specim=config_specim_preprocess)"""
+    specim_parsing_utils.main(config=config,
+                              config_specim=config_specim_preprocess)
     
-    # Interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
+    # Time interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
     config = parsing_utils.export_pose(config_file_mission)
     
-    # Exports model
-    """parsing_utils.export_model(config_file_mission)"""
+    # Formats model to triangular mesh and an earth centered earth fixed / geocentric coordinate system
+    parsing_utils.export_model(config_file_mission)
 
     # Commenting out the georeference step is fine if it has been done
 
     
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    """if ENABLE_VISUALIZE:
-        visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')"""
+    #if ENABLE_VISUALIZE:
+    #    visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    #georeference.main(config_file_mission)
+    georeference.main(config_file_mission)
 
-    #orthorectification.main(config_file_mission)
+    orthorectification.main(config_file_mission)
+    # The coregistration compares to the reference and optimizes geometric parameters which are used to re-georeference.
+    if do_coreg:
+        # Optional: coregistration
+        # Match RGB composite to reference, find features and following data, ground control point (gcp) list, for each feature pair:
+        # reference point 3D (from reference), position/orientation of vehicle (using resampled time) and pixel coordinate (using resampled pixel coordinate)
+        #coregistration.main(config_file_mission, mode='compare')
 
-    coregistration.main(config_file_mission, mode='compare')
+        # The gcp list allows reprojecting reference points and evaluate the reprojection error,
+        # which is used to optimize static geometric parameters (e.g. boresight, camera model...) or dynamic geometric parameters (time-varying nav errors).
+        # Settings are currently in coregistration script
+        #coregistration.main(config_file_mission, mode='calibrate')
 
-    coregistration.main(config_file_mission, mode='calibrate')
+        # The final orthorectification can be conducted on the datacube too
+        custom_config['Orthorectification']['resample_rgb_only'] = True
+
+        # Georeference with coregistred parameters
+        georeference.main(config_file_mission, use_coreg_param=True)
+
+        orthorectification.main(config_file_mission)
+
 
 
 if __name__ == "__main__":
     # Select a recording folder on drive
-    specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remøy/remoy_202208310800_ntnu_hyperspectral_74m")
+    specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remoy/remoy_202208310800_ntnu_hyperspectral_74m")
     
     # Globally accessible files:
     geoid_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/world/geoids/egm08_25.gtx")

@@ -1,5 +1,6 @@
 # Built-ins
 import configparser
+import json
 import os
 import sys
 
@@ -87,7 +88,7 @@ def define_hsi_ray_geometry(pos_ref_ecef, quat_ref_ecef, time_pose, intrinsic_ge
         translation_ref_hsi = intrinsic_geometry_dict['translation_ref_hsi']
         rot_hsi_ref_obj = intrinsic_geometry_dict['rot_hsi_ref_obj']
 
-        hsi_geometry = CameraGeometry(pos=pos, rot=rot_obj, time=time_pose, is_interpolated=True, use_absolute_position=True)
+        hsi_geometry = CameraGeometry(pos=pos, rot=rot_obj, time=time_pose, is_interpolated=True)
         
         
         hsi_geometry.intrinsicTransformHSI(translation_ref_hsi=translation_ref_hsi, rot_hsi_ref_obj = rot_hsi_ref_obj)
@@ -112,7 +113,7 @@ def write_intersection_geometry_2_h5_file(hsi_geometry, config, h5_filename):
 
 
 # Function called to apply standard processing on a folder of files
-def main(iniPath, viz = False):
+def main(iniPath, viz = False, use_coreg_param = False):
     config = configparser.ConfigParser()
     config.read(iniPath)
 
@@ -122,10 +123,42 @@ def main(iniPath, viz = False):
     # Directory of H5 files
     dir_r = config['Absolute Paths']['h5_folder']
 
+    
+
+    
+
+    # Timestamps here
+    h5_folder_time_pose = config['HDF.processed_nav']['timestamp']
+
+    # Use the regular parameters from nav system and manufacturer:
     # The path to the XML file
     hsi_cal_xml = config['Absolute Paths']['hsi_calib_path']
 
-    # The path to the Tide file (if necessary)
+    # Position is stored here in the H5 file
+    h5_folder_position_ecef = config['HDF.processed_nav']['position_ecef']
+
+    # Quaternion is stored here in the H5 file
+    h5_folder_quaternion_ecef = config['HDF.processed_nav']['quaternion_ecef']
+
+    if use_coreg_param:
+        print('Using coregistred parameters for georeferencing')
+
+        # Set the camera model to the calibrated one if it exists
+        hsi_cal_xml_coreg = config['Absolute Paths']['calib_file_coreg']
+        if os.path.exists(hsi_cal_xml_coreg):
+             hsi_cal_xml = hsi_cal_xml_coreg
+
+        # Optimized position
+        h5_folder_position_ecef_coreg = config['HDF.coregistration']['position_ecef']
+
+        # Quaternion 
+        h5_folder_quaternion_ecef_coreg = config['HDF.coregistration']['quaternion_ecef']
+        
+
+    
+    
+    
+    # The path to the Tide file (if necessary and available)
     try:
         path_tide = config['Absolute Paths']['tide_path']
     except Exception as e:
@@ -135,6 +168,24 @@ def main(iniPath, viz = False):
     max_ray_length = float(config['General']['max_ray_length'])
 
     mesh = pv.read(path_mesh)
+
+    """metadata_mesh = {
+        "offset_x": offset_x,
+        "offset_y": offset_y,
+        "offset_z": offset_y,
+        "epsg_code": geocsc.to_epsg(),  # Example EPSG code, replace with your actual code
+        "data_type": str(mesh.points.dtype),  # Add other metadata entries here
+    }"""
+
+    model_meta_path = path_mesh.split('.')[0] + '_meta.json' 
+    with open(model_meta_path, "r") as f:
+        # Load the JSON data from the file
+        metadata_mesh = json.load(f)
+        mesh_off_x = metadata_mesh['offset_x']
+        mesh_off_y = metadata_mesh['offset_y']
+        mesh_off_z = metadata_mesh['offset_z']
+        # Mesh is translated by this much
+        mesh_trans = np.array([mesh_off_x, mesh_off_y, mesh_off_z]).astype(np.float64)
 
     
     print("\n################ Georeferencing: ################")
@@ -150,23 +201,56 @@ def main(iniPath, viz = False):
             print(f"Georeferencing file {file_count+1}/{n_files}, progress is {progress_perc} %")
 
             # Path to hierarchical file
-            path_hdf = dir_r + filename
+            h5_filename = dir_r + filename
 
             # Read h5 file
-            hyp = Hyperspectral(path_hdf, config)
+            hyp = Hyperspectral(h5_filename, config)
 
-            # Using the cal file, we can define lever arm, boresight and local ray geometry (in dictionary)
-            intrinsic_geometry_dict = cal_file_to_rays(filename_cal=hsi_cal_xml)#, config=config)
+            if use_coreg_param:
+                 try:
+                    # Use the coregistred dataset if it exists
+                    print('Using coregistred position')
+                    pos_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                    dataset_name= h5_folder_position_ecef_coreg)
+                 except:
+                    # If not use the original
+                    pos_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                    dataset_name= h5_folder_position_ecef)
+                 try:
+                    # Use the coregistred quaternion-dataset if it exists
+                    print('Using coregistred quaternion')
+                    quat_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                    dataset_name= h5_folder_quaternion_ecef_coreg)
+                 except:
+                     # If not use the original
+                    quat_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                    dataset_name= h5_folder_quaternion_ecef)
+            else:
+
+                # Just use the regular navigation data
+                # If not use the original
+                pos_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                dataset_name= h5_folder_position_ecef)
+                # Extract the ecef orientations for each frame
+                quat_ref_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                dataset_name=h5_folder_quaternion_ecef)
+            # Extract the timestamps for each frame
+            time_pose = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                            dataset_name= h5_folder_time_pose)
+
+
+            # Using the cal file, we can define lever arm, boresight and camera model geometry (in dictionary)
+            intrinsic_geometry_dict = cal_file_to_rays(filename_cal=hsi_cal_xml)
 
             
             # Define the rays in ECEF for each frame. 
-            hsi_geometry = define_hsi_ray_geometry(pos_ref_ecef = hyp.pos_ref, 
-                                    quat_ref_ecef = hyp.quat_ref, 
-                                    time_pose = hyp.pose_time,
+            hsi_geometry = define_hsi_ray_geometry(pos_ref_ecef, 
+                                    quat_ref_ecef, 
+                                    time_pose,
                                     intrinsic_geometry_dict = intrinsic_geometry_dict)
 
             
-            hsi_geometry.intersect_with_mesh(mesh = mesh, max_ray_length=max_ray_length)
+            hsi_geometry.intersect_with_mesh(mesh = mesh, max_ray_length=max_ray_length, mesh_trans = mesh_trans)
             
             # Computes the view angles in the local NED. Computationally intensive as local NED is defined for each intersection
             hsi_geometry.compute_view_directions_local_tangent_plane()
@@ -179,7 +263,7 @@ def main(iniPath, viz = False):
             hsi_geometry.compute_elevation_mean_sealevel(source_epsg = config['Coordinate Reference Systems']['geocsc_epsg_export'], 
                                                          geoid_path = config['Absolute Paths']['geoid_path'])
             
-            write_intersection_geometry_2_h5_file(hsi_geometry=hsi_geometry, config = config, h5_filename=path_hdf)
+            write_intersection_geometry_2_h5_file(hsi_geometry=hsi_geometry, config = config, h5_filename=h5_filename)
 
             hsi_geometry.write_rgb_point_cloud(config = config, hyp = hyp, transect_string = filename.split('.')[0])
 

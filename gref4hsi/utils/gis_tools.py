@@ -72,6 +72,7 @@ class GeoSpatialAbstractionHSI():
         self.points_proj[:, :, 1] = north.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
         self.points_proj[:, :, 2] = hei.reshape((self.points_proj.shape[0], self.points_proj.shape[1]))
 
+
         
 
 
