@@ -212,9 +212,9 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     #    visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference.main(config_file_mission)
+    georeference.main(config_file_mission)"""
 
-    orthorectification.main(config_file_mission)"""
+    # orthorectification.main(config_file_mission)
     # The coregistration compares to the reference and optimizes geometric parameters which are used to re-georeference.
     if do_coreg:
         # Optional: coregistration
