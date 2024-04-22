@@ -32,6 +32,8 @@ from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, cust
 
 #DATA_DIR = os.path.join(base_fp, "HyperspectralDataAll/UHI/2020-07-01-14-40-15-ArcticSeaIce-Ben-Lange/")
 DATA_DIR = "/media/leo/NESP_1/NTNU/UHI_Data/Gref_Test/processed/"
+
+
 # The configuration file stores the settings for georeferencing
 config_file_mission = os.path.join(DATA_DIR, 'configuration.ini')
 
@@ -75,10 +77,8 @@ config_uhi_preprocess = SettingsPreprocess(dtype_datacube = np.float32,
                                                                     [1, 0, 0],
                                                                     [0, 0, -1]]),
                             # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.
-                            translation_alt_to_body = np.array([0.5, 0, 0]),
+                            translation_alt_to_body = np.array([0, 0, 0]),
                             time_offset_sec =  0,
-                            # Ben's tick s1 starts at 1593614097.992003 -> 22 s delay
-                            # Ben's tick s2 starts at 1593614414.995001 -> 0 s delay
 
                             lon_lat_alt_origin =  np.array([1, 1, 0]),
                             # The beast sets up a fake coordinate system at 1 deg lon/lat.
