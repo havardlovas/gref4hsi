@@ -21,8 +21,9 @@ elif os.name == 'posix':
 #if module_path not in sys.path:
 #    sys.path.append(module_path)
 # Add the path to your local repository to the beginning of the sys.path list
-module_path = os.path.join('/home/leo/Documents/NTNU/Masterthesis/gref4hsi/')
-sys.path.insert(0, module_path)
+"""module_path = os.path.join('/home/leo/Documents/NTNU/Masterthesis/gref4hsi/')
+sys.path.insert(0, module_path)"""
+# Above can be avoided by pip install --editable .
 
 from gref4hsi.utils import parsing_utils, uhi_parsing_utils
 from gref4hsi.scripts import georeference, orthorectification
@@ -31,7 +32,7 @@ from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, cust
 
 
 #DATA_DIR = os.path.join(base_fp, "HyperspectralDataAll/UHI/2020-07-01-14-40-15-ArcticSeaIce-Ben-Lange/")
-DATA_DIR = "/media/leo/NESP_1/NTNU/UHI_Data/Gref_Test/processed/"
+DATA_DIR = "D:/HyperspectralDataAll/UHI/2024-04-06-Svea-DBE"
 
 
 # The configuration file stores the settings for georeferencing

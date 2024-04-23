@@ -828,7 +828,7 @@ def uhi_dbe(config, config_uhi):
     SPATIAL_PIXELS = 1936 # Same for almost all UHI
     
 
-    INPUT_DIR = MISSION_PATH + 'Input/H5/'
+    INPUT_DIR = MISSION_PATH + 'Input/'
 
     h5_folder = config['Absolute Paths']['h5_folder']
     H5_PATTERN = '*.h5'
