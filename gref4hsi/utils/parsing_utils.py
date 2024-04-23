@@ -133,6 +133,7 @@ class Hyperspectral:
 
 
     def digital_counts_2_radiance(self, config):
+        """Calibrate data """
 
         # Only calibrate if data it is not already done
         is_calibrated = eval(config['HDF.hyperspectral']['is_calibrated'])
@@ -140,7 +141,7 @@ class Hyperspectral:
         if is_calibrated == is_calibrated:
             self.dataCubeRadiance = self.dataCube.astype(np.float32)
 
-            # Add the radiance dataset
+            # This is then the path of radiance
             radiance_cube_path = config['HDF.hyperspectral']['dataCube']
         else:
             self.dataCubeRadiance = np.zeros(self.dataCube.shape, dtype = np.float32)
@@ -151,10 +152,8 @@ class Hyperspectral:
             # Add the radiance dataset
             radiance_cube_path = config['HDF.hyperspectral']['dataCube'] + '_radiance'
             
-            # TODO: Write the radiance data to the h5 file
+            # Write the radiance data to the h5 file. Next time this is used is during orthorectification
             Hyperspectral.add_dataset(data = self.dataCubeRadiance, name=radiance_cube_path, h5_filename=self.name)
-        
-        config.set('HDF.hyperspectral', 'radiance_cube', radiance_cube_path)
 
         # For memory efficiency
         del self.dataCube
@@ -175,7 +174,7 @@ class Hyperspectral:
     """
     
     @staticmethod
-    def add_dataset(data, name, h5_filename):
+    def add_dataset(data, name, h5_filename, overwrite = True):
         """
         Method to write a dataset to the h5 file
         :param data: type any permitted (see h5py doc)
@@ -189,10 +188,15 @@ class Hyperspectral:
         # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
         with h5py.File(h5_filename, 'a', libver='latest') as f:
             # Check if the dataset exists
-            if name in f:
-                del f[name]
+            if overwrite:
+                # Overwrite and create new dataset
+                if name in f:
+                    del f[name]
 
-            dset = f.create_dataset(name=name, data = data)
+                dset = f.create_dataset(name=name, data = data)
+            else:
+                # Do nothing
+                pass
 
     """def get_dataset(self, dataset_name):
         

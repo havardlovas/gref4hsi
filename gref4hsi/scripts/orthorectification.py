@@ -39,8 +39,13 @@ def main(iniPath):
     # ECEF point cloud from georeferencing.
     h5_folder_point_cloud_ecef = config['Georeferencing']['points_ecef_crs']
 
-    # Radiance cube
-    h5_folder_radiance_cube = config['HDF.hyperspectral']['datacube']
+    # Radiance cube location depends on whether original data was calibrated:
+    is_calibrated = eval(config['HDF.hyperspectral']['is_calibrated'])
+    if is_calibrated:
+        h5_folder_radiance_cube = config['HDF.hyperspectral']['datacube']
+    else:
+        # This file has two datacubes and the suffix helps to identify the calibrated one.
+        h5_folder_radiance_cube = config['HDF.hyperspectral']['dataCube'] + '_radiance'
 
     # Wavelength centers for all bands
     h5_folder_wavelength_centers = config['HDF.calibration']['band2wavelength']

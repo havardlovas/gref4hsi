@@ -365,9 +365,10 @@ def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename):
     dvl_contents['z'] = dvl_contents['z']-dvl_contents['z'][idx]
     # Convert timestamp column to datetime objects with the specified format
     #dvl_contents.loc[:,'TimestampMeasured'] = pd.to_datetime(dvl_contents.loc[:,'log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ')
-    dvl_contents['TimestampMeasured'] = pd.to_datetime(dvl_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(int) // 10**9
+    # .astype(np.int64) casts datetime to timestamp of unix_time in ns. division by 1e9 converts to sec.
+    dvl_contents['TimestampMeasured'] = pd.to_datetime(dvl_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(np.int64) // 10**9
 
-    # +
+    # 
     """Cell defining all nav data of relevance"""
     nav = NAV()
     nav.roll = TimeData(time = imu_contents['TimestampMeasured'], 
@@ -828,7 +829,7 @@ def uhi_dbe(config, config_uhi):
     SPATIAL_PIXELS = 1936 # Same for almost all UHI
     
 
-    INPUT_DIR = MISSION_PATH + 'Input/'
+    INPUT_DIR = os.path.join(MISSION_PATH, 'Input')
 
     h5_folder = config['Absolute Paths']['h5_folder']
     H5_PATTERN = '*.h5'

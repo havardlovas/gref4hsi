@@ -49,7 +49,9 @@ custom_config = {'Orthorectification':
                     {'resample_rgb_only': True, # Good choice for speed
                     'resample_ancillary': False,
                     'resolutionhyperspectralmosaic': 0.01, # 1 cm
-                    'raster_transform_method': 'north_east'}
+                    'raster_transform_method': 'north_east'},
+                 'HDF.hyperspectral':
+                    {'is_calibrated': False}
 }
 
 # Customizes the config file
