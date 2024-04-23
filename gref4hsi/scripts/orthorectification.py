@@ -56,6 +56,20 @@ def main(iniPath):
     except:
         h5_folder_wavelength_widths = 'undefined'
 
+    
+    try:
+        pixel_mask_by_footprint = eval(config['Orthorectification']['mask_pixel_by_footprint'])
+        if pixel_mask_by_footprint:
+            pixel_mask_method = 'footprint'
+        else:
+            pixel_mask_method = 'nn'
+
+    except:
+        # Defaults to 'nn'
+        pixel_mask_method = 'nn'
+
+
+
     # The necessary data (a dictionary) from H5 file for resampling ancillary data (uses the same grid as datacube)
     anc_dict = config['Georeferencing']
 
@@ -81,7 +95,8 @@ def main(iniPath):
                                                                             'wavelength_unit',
                                                                             'radiometric_unit',
                                                                             'sensor_type',
-                                                                            'interleave'])
+                                                                            'interleave',
+                                                                            'pixel_mask_method'])
     
     config_ortho = SettingsOrtho(ground_resolution = float(config['Orthorectification']['resolutionHyperspectralMosaic']), 
                                  # Rectified grid resolution in meters
@@ -109,9 +124,11 @@ def main(iniPath):
                               # <pfx3> relates to wavelength and is micro (10e-6) or nano (10e-9)
                               sensor_type = config['General']['sensor_type'],
                               # Brand and model
-                              interleave = config['Orthorectification']['interleave']
+                              interleave = config['Orthorectification']['interleave'],
                               # ENVI interleave: either 'bsq', 'bip' or 'bil', see:
-                              # https://envi.geoscene.cn/help/Subsystems/envi/Content/ExploreImagery/ENVIImageFiles.htm
+                              # https://envi.geoscene.cn/help/Subsystems/envi/Content/ExploreImagery/ENVIImageFiles.html
+                              pixel_mask_method = pixel_mask_method
+                              # When resampling how to mask nodata pixels: either 'nn' or 'footprint
                               )
 
 
