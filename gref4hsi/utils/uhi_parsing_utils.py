@@ -37,7 +37,11 @@ class HyperspectralLite:
 class TimeData:
     """Simple way of working with time referenced data. Supports unix and date_num at the moment"""
     def __init__(self, time = None, value = None, time_format = 'date_num'):
+        
         if time is not None and any(time):
+            # Cast to arrays
+            value = np.array(value)
+            time = np.array(time)
             if time_format == 'date_num':
                 # Convert MATLAB-style datenum to Unix epoch
                 converted_times = np.zeros((time.shape))
@@ -59,7 +63,6 @@ class TimeData:
         self.value = value
     def interpolate(self, time_interp):
         self.time_interp = time_interp
-        print(f"self.value[0]: {self.value[0]}")
         self.value_interp = interp1d(x = self.time, y = self.value, kind='nearest', fill_value='extrapolate')(x=self.time_interp)
             
 
@@ -75,8 +78,8 @@ class NAV:
         self.roll = TimeData()
         self.pitch = TimeData()
         self.yaw = TimeData()
-        self.pos_x = TimeData()
-        self.pos_y = TimeData()
+        #self.pos_x = TimeData()
+        #self.pos_y = TimeData()
         self.lon = TimeData()
         self.lat = TimeData()
         self.pos_z = TimeData()
@@ -347,7 +350,7 @@ def read_nav_from_mat(mat_filename):
 
 
 
-def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename):
+def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename, lon0, lat0, h0):
     """Function for reading mat data from the beast format into a NAV object"""
     dvl_contents = {}
     imu_contents = {}
@@ -364,7 +367,6 @@ def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename):
     dvl_contents['y'] = dvl_contents['y']-dvl_contents['y'][idx]
     dvl_contents['z'] = dvl_contents['z']-dvl_contents['z'][idx]
     # Convert timestamp column to datetime objects with the specified format
-    #dvl_contents.loc[:,'TimestampMeasured'] = pd.to_datetime(dvl_contents.loc[:,'log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ')
     # .astype(np.int64) casts datetime to timestamp of unix_time in ns. division by 1e9 converts to sec.
     dvl_contents['TimestampMeasured'] = pd.to_datetime(dvl_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(np.int64) // 10**9
 
@@ -383,24 +385,28 @@ def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename):
                         value = imu_contents['Heading'],
                         time_format='unix')
     
-    nav.pos_x = TimeData(time = dvl_contents['TimestampMeasured'],
+    """nav.pos_x = TimeData(time = dvl_contents['TimestampMeasured'],
                         value = dvl_contents['x'],
                         time_format='unix')
 
     nav.pos_y = TimeData(time = dvl_contents['TimestampMeasured'], 
                         value = dvl_contents['y'], 
-                        time_format='unix')
+                        time_format='unix')"""
+    
+    lat, lon, alt = pm.ned2geodetic(n=dvl_contents['x'], e = dvl_contents['y'], d = dvl_contents['z'], lat0=lat0, lon0=lon0, h0 = h0)
 
+
+    # Real important!!! DVL in Z direction is not trusted so a constant depth is used in it's place.
     nav.pos_z = TimeData(time = dvl_contents['TimestampMeasured'], 
-                        value = dvl_contents['z'],
+                        value = dvl_contents['z']*0,
                         time_format='unix')
     
-    nav.lat = TimeData(time = imu_contents['TimestampMeasured'], 
-                        value = ["77.782882"]*len(imu_contents['TimestampMeasured']), 
+    nav.lat = TimeData(time = dvl_contents['TimestampMeasured'], 
+                        value = lat, 
                         time_format='unix')
 
-    nav.lon = TimeData(time = imu_contents['TimestampMeasured'], 
-                        value = ["15.780755"]*len(imu_contents['TimestampMeasured']), 
+    nav.lon = TimeData(time = dvl_contents['TimestampMeasured'], 
+                        value = lon, 
                         time_format='unix')
 
     nav.altitude = TimeData(time = alti_contents['TimestampMeasured'],
@@ -479,6 +485,9 @@ def altimeter_data_to_point_cloud(nav, config_uhi, lat0, lon0, h0, true_time_hsi
     n = nav.altitude.value.size
 
     # Interpolate all navigation data to the time of altimeter data
+    from scipy.signal import medfilt
+    nav.altitude.value = medfilt(nav.altitude.value)
+
     # TODO: avoid common interpolation of yaw, pitch, roll
     nav.interpolate(time_interp=nav.altitude.time)
 
@@ -855,7 +864,12 @@ def uhi_dbe(config, config_uhi):
     ALTI_PATH = ALTI_FILE_PATHS[0] # Assuming there is only one
 
     # TODO: replace with how you read in data from DVL/H5 folders
-    nav = read_nav_from_dvl_imu_alti(dvl_filename=DVL_PATH, imu_filename=IMU_PATH, alti_filename=ALTI_PATH)
+
+    time_offset = config_uhi.time_offset_sec
+    lon0, lat0, alt0 = config_uhi.lon_lat_alt_origin
+
+
+    nav = read_nav_from_dvl_imu_alti(dvl_filename=DVL_PATH, imu_filename=IMU_PATH, alti_filename=ALTI_PATH, lon0=lon0, lat0 = lat0, h0 = alt0)
 
     
 
@@ -873,8 +887,7 @@ def uhi_dbe(config, config_uhi):
             #'rgb_timestamp' : config['HDF.rgb']['rgb_timestamp']
             }
     
-    time_offset = config_uhi.time_offset_sec
-    lon0, lat0, alt0 = config_uhi.lon_lat_alt_origin
+    
 
     # from gref4hsi.utils.photogrammetry_utils import Photogrammetry
     # agisoft_object = Photogrammetry(project_folder = MISSION_PATH, software_type='agisoft')

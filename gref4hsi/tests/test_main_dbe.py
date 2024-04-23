@@ -44,14 +44,19 @@ config_path_template = os.path.join(DATA_DIR, 'configuration_uhi.ini') #os.path.
 # Copies the template to config_file_mission and sets up the necessary directories
 prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DATA_DIR)
 
-# Non-default settings
+# Override certain settings
 custom_config = {'Orthorectification':
                     {'resample_rgb_only': True, # Good choice for speed
                     'resample_ancillary': False,
                     'resolutionhyperspectralmosaic': 0.01, # 1 cm
                     'raster_transform_method': 'north_east'},
                  'HDF.hyperspectral':
-                    {'is_calibrated': False}
+                    {'is_calibrated': False},
+                'Absolute Paths':
+                {'geoid_path': os.path.join("C:/Users/haavasl/VsCodeProjects/gref4hsi/data/world/geoids/egm08_25.gtx")},
+                'Coordinate Reference Systems':
+                {'proj_epsg' : 32633,
+                'dem_epsg' : 32633}
 }
 
 # Customizes the config file
@@ -72,18 +77,17 @@ SettingsPreprocess = namedtuple('SettingsPreprocessing', ['dtype_datacube',
 config_uhi_preprocess = SettingsPreprocess(dtype_datacube = np.float32,
                             # The fill value for empty cells (select values not occcuring in cube or ancillary data)
                             rotation_matrix_hsi_to_body = np.array([[0, 1, 0],
-                                                                    [1, 0, 0],
-                                                                    [0, 0, -1]]),
+                                                                        [-1, 0, 0],
+                                                                        [0, 0, 1]]),
                             # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.
                             translation_body_to_hsi = np.array([0, 0, 0]),
                             rotation_matrix_alt_to_body = np.array([[0, 1, 0],
-                                                                    [1, 0, 0],
-                                                                    [0, 0, -1]]),
-                            # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.
+                                                                    [-1, 0, 0],
+                                                                    [0, 0, 1]]),                            # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.
                             translation_alt_to_body = np.array([0, 0, 0]),
                             time_offset_sec =  0,
 
-                            lon_lat_alt_origin =  np.array([1, 1, 0]),
+                            lon_lat_alt_origin =  np.array([15.780755, 77.782882, 0]), # SVEA#
                             # The beast sets up a fake coordinate system at 1 deg lon/lat.
                             config_file_name = 'configuration.ini',
                             resolution_dem = 0.2, # The resolution of the Altimeter-based DEM
@@ -115,10 +119,10 @@ def main():
     parsing_utils.export_model(config_file_mission)
 
     # Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    #visualize.show_mesh_camera(config)
+    visualize.show_mesh_camera(config, ref_frame = 'ENU')
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference.main(config_file_mission, viz=False)
+    georeference.main(config_file_mission, viz=True)
 
     orthorectification.main(config_file_mission)
     # Alternatively mode = 'calibrate'

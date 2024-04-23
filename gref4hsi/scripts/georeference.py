@@ -265,12 +265,13 @@ def main(iniPath, viz = False, use_coreg_param = False):
             
             write_intersection_geometry_2_h5_file(hsi_geometry=hsi_geometry, config = config, h5_filename=h5_filename)
 
-            hsi_geometry.write_rgb_point_cloud(config = config, hyp = hyp, transect_string = filename.split('.')[0])
+            hsi_geometry.write_rgb_point_cloud(config = config, hyp = hyp, transect_string = filename.split('.')[0], mesh_trans= mesh_trans)
 
             if viz:
                  visualize.show_projected_hsi_points(HSICameraGeometry=hsi_geometry, 
                                                      config=config, 
-                                                     transect_string = filename.split('.')[0])
+                                                     transect_string = filename.split('.')[0],
+                                                     mesh_trans = mesh_trans)
 
             
 

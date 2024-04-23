@@ -1,3 +1,4 @@
+import json
 import pyvista as pv
 from pyvistaqt import BackgroundPlotter
 import pandas as pd
@@ -47,25 +48,43 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
 
     # Read the mesh
     mesh = pv.read(mesh_path)
+
+    model_meta_path = mesh_path.split('.')[0] + '_meta.json' 
+    with open(model_meta_path, "r") as f:
+        # Load the JSON data from the file
+        metadata_mesh = json.load(f)
+        mesh_off_x = metadata_mesh['offset_x']
+        mesh_off_y = metadata_mesh['offset_y']
+        mesh_off_z = metadata_mesh['offset_z']
+        # Mesh is translated by this much
+        mesh_trans = np.array([mesh_off_x, mesh_off_y, mesh_off_z]).astype(np.float64)
+    
+    # Subtract the offset vector from the positions
+    points_cam_ecef -= mesh_trans
+
+
+    lat0, lon0, hei0 = pm.ecef2geodetic(mesh_off_x, mesh_off_y, mesh_off_z, deg=True)
+    points_mesh_ecef = mesh.points
+
     if ref_frame == 'NED':
         x = np.mean(points_mesh_ecef[:,0])
         y = np.mean(points_mesh_ecef[:,1])
         z = np.mean(points_mesh_ecef[:,2])
         
-        lat0, lon0, hei0 = pm.ecef2geodetic(x, y, z, deg=True)
+        
+
         R_ecef_to_ned = Rotation.from_matrix(rotation_matrix_ecef2ned(lon=lon0, lat=lat0))
 
         R_body_to_ned = R_ecef_to_ned*R_body_to_ecef
+
         rotMats = R_body_to_ned.as_matrix()
 
-        points_mesh_ecef = mesh.points
-
-        # Next part is to make a NED
-        x_cam, y_cam, z_cam = pm.ecef2ned(x = points_cam_ecef[:,0], y = points_cam_ecef[:,1], z = points_cam_ecef[:,2], lon0=lon0, lat0=lat0, h0=hei0)
+        # Next part is to rotate vectors to NED
+        x_cam, y_cam, z_cam = pm.ecef2nedv(points_cam_ecef[:,0], points_cam_ecef[:,1], points_cam_ecef[:,2], lon0=lon0, lat0=lat0, h0=hei0)
 
         points_cam = np.concatenate((x_cam.reshape((-1,1)), y_cam.reshape((-1,1)), z_cam.reshape((-1,1))), axis = 1)
 
-        x_mesh, y_mesh, z_mesh = pm.ecef2ned(x = points_mesh_ecef[:,0], y = points_mesh_ecef[:,1], z = points_mesh_ecef[:,2], lon0=lon0, lat0=lat0, h0=hei0)
+        x_mesh, y_mesh, z_mesh = pm.ecef2nedv(points_mesh_ecef[:,0], points_mesh_ecef[:,1], points_mesh_ecef[:,2], lon0=lon0, lat0=lat0)
 
         points_mesh = np.concatenate((x_mesh.reshape((-1,1)), y_mesh.reshape((-1,1)), z_mesh.reshape((-1,1))), axis = 1)
 
@@ -73,21 +92,24 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
 
 
     elif ref_frame == 'ENU':
-        lat0, lon0, hei0 = pm.ecef2geodetic(x, y, z, deg=True)
+
         R_ecef_to_enu = Rotation.from_matrix(rotation_matrix_ecef2enu(lon=lon0, lat=lat0))
 
         R_body_to_enu = R_ecef_to_enu*R_body_to_ecef
+
         rotMats = R_body_to_enu.as_matrix()
 
-        points_mesh_ecef = mesh.points
+        
 
-        # Next part is to make a NED
-        x_cam, y_cam, z_cam = pm.ecef2enu(x = points_cam_ecef[:,0], y = points_cam_ecef[:,1], z = points_cam_ecef[:,2], lon0=lon0, lat0=lat0, h0=hei0)
+        # Next part is to make a ENU
+        x_cam, y_cam, z_cam = pm.ecef2enuv(points_cam_ecef[:,0], points_cam_ecef[:,1], points_cam_ecef[:,2], lon0=lon0, lat0=lat0)
 
         points_cam = np.concatenate((x_cam.reshape((-1,1)), y_cam.reshape((-1,1)), z_cam.reshape((-1,1))), axis = 1)
+        
+        # Equivalent to rotating mesh and position trajectory to ENU
+        x_mesh, y_mesh, z_mesh = pm.ecef2enuv(points_mesh_ecef[:,0], points_mesh_ecef[:,1], points_mesh_ecef[:,2], lon0=lon0, lat0=lat0)
 
-        x_mesh, y_mesh, z_mesh = pm.ecef2enu(x = points_mesh_ecef[:,0], y = points_mesh_ecef[:,1], z = points_mesh_ecef[:,2], lon0=lon0, lat0=lat0, h0=hei0)
-
+        # Concatenate and modify mesh points by replacement
         points_mesh = np.concatenate((x_mesh.reshape((-1,1)), y_mesh.reshape((-1,1)), z_mesh.reshape((-1,1))), axis = 1)
         mesh.points = points_mesh
     
@@ -159,13 +181,14 @@ def show_camera_geometry(CameraGeometry, config):
     p.show()
     p.app.exec_()
 
-def show_projected_hsi_points(HSICameraGeometry, config, transect_string):
+def show_projected_hsi_points(HSICameraGeometry, config, transect_string, mesh_trans):
     mesh_path = config['Absolute Paths']['model_path']
     
     point_cloud_path = config['Absolute Paths']['rgb_point_cloud_folder'] + transect_string + '.ply'
 
     rotMats = HSICameraGeometry.rotation_hsi.as_matrix()
-    points_cam = HSICameraGeometry.position_ecef
+
+    points_cam = HSICameraGeometry.position_ecef - mesh_trans
 
     mesh = pv.read(mesh_path)
 

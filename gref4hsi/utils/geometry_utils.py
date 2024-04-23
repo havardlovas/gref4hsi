@@ -595,7 +595,7 @@ class CameraGeometry():
             else: # A Good place to write parsers for other formats
                 TypeError
         
-    def write_rgb_point_cloud(self, config, hyp, transect_string, extrapolate = True, minInd = None, maxInd = None):
+    def write_rgb_point_cloud(self, config, hyp, transect_string, mesh_trans, extrapolate = True, minInd = None, maxInd = None):
         wl_red = float(config['General']['red_wave_length'])
         wl_green = float(config['General']['green_wave_length'])
         wl_blue = float(config['General']['blue_wave_length'])
@@ -616,6 +616,11 @@ class CameraGeometry():
 
         points = self.points_ecef_crs[self.points_ecef_crs != 0].reshape((-1,3))
         rgb_points = (rgb[self.points_ecef_crs != 0] / rgb.max()).astype(np.float64).reshape((-1,3))
+
+        # Subtract the mesh offset to avoid rounding errors
+        points -= mesh_trans
+
+
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
         pcd.colors = o3d.utility.Vector3dVector(rgb_points)

@@ -44,6 +44,7 @@ def main(iniPath):
     if is_calibrated:
         h5_folder_radiance_cube = config['HDF.hyperspectral']['datacube']
     else:
+        # Calibrate by calling hyp = Hyperspectral()
         # This file has two datacubes and the suffix helps to identify the calibrated one.
         h5_folder_radiance_cube = config['HDF.hyperspectral']['dataCube'] + '_radiance'
 
@@ -133,8 +134,15 @@ def main(iniPath):
             point_cloud_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                          dataset_name=h5_folder_point_cloud_ecef)
             # Need the radiance cube for resampling
+            if not is_calibrated:
+                # load_datacube will calibrate and write radiance data cube to h5 file (if not already there)
+                hyp = Hyperspectral(filename=h5_filename, config=config, load_datacube=True)
+                del hyp
+
             radiance_cube = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                         dataset_name=h5_folder_radiance_cube)
+                                                            dataset_name=h5_folder_radiance_cube)
+
+
         
             wavelengths = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                             dataset_name=h5_folder_wavelength_centers)
