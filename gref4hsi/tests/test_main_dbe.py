@@ -49,7 +49,8 @@ custom_config = {'Orthorectification':
                     {'resample_rgb_only': True, # Good choice for speed
                     'resample_ancillary': False,
                     'resolutionhyperspectralmosaic': 0.01, # 1 cm
-                    'raster_transform_method': 'north_east'},
+                    'raster_transform_method': 'north_east',
+                    'mask_pixel_by_footprint': True},
                  'HDF.hyperspectral':
                     {'is_calibrated': False},
                 'Absolute Paths':
@@ -107,7 +108,7 @@ def main():
     config.read(config_file_mission)
 
     # The minimum for georeferencing is to parse 1) Mesh model and 2) The pose of the reference
-    uhi_parsing_utils.uhi_dbe(config=config, config_uhi=config_uhi_preprocess)
+    #uhi_parsing_utils.uhi_dbe(config=config, config_uhi=config_uhi_preprocess)
     
     config = parsing_utils.export_pose(config_file_mission)
 
@@ -118,11 +119,12 @@ def main():
     # Exports model
     parsing_utils.export_model(config_file_mission)
 
+
     # Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    visualize.show_mesh_camera(config, ref_frame = 'ENU')
+    #visualize.show_mesh_camera(config, ref_frame = 'ENU')
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference.main(config_file_mission, viz=True)
+    #georeference.main(config_file_mission)
 
     orthorectification.main(config_file_mission)
     # Alternatively mode = 'calibrate'
