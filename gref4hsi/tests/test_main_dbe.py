@@ -32,7 +32,7 @@ from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, cust
 
 
 #DATA_DIR = os.path.join(base_fp, "HyperspectralDataAll/UHI/2020-07-01-14-40-15-ArcticSeaIce-Ben-Lange/")
-DATA_DIR = "D:/HyperspectralDataAll/UHI/2024-04-06-Svea-DBE"
+DATA_DIR = "/media/leo/NESP_1/NTNU/UHI_Data/Gref_2mm/"
 
 
 # The configuration file stores the settings for georeferencing
@@ -46,15 +46,15 @@ prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DA
 
 # Override certain settings
 custom_config = {'Orthorectification':
-                    {'resample_rgb_only': True, # Good choice for speed
+                    {'resample_rgb_only': False, # Good choice for speed
                     'resample_ancillary': False,
-                    'resolutionhyperspectralmosaic': 0.01, # 1 cm
+                    'resolutionhyperspectralmosaic': 0.002, # 2 mm
                     'raster_transform_method': 'north_east',
                     'mask_pixel_by_footprint': True},
                  'HDF.hyperspectral':
                     {'is_calibrated': False},
                 'Absolute Paths':
-                {'geoid_path': os.path.join("C:/Users/haavasl/VsCodeProjects/gref4hsi/data/world/geoids/egm08_25.gtx")},
+                {'geoid_path': os.path.join("/home/leo/Documents/NTNU/Masterthesis/gref4hsi/data/world/geoids/egm08_25.gtx")},
                 'Coordinate Reference Systems':
                 {'proj_epsg' : 32633,
                 'dem_epsg' : 32633}
@@ -108,7 +108,7 @@ def main():
     config.read(config_file_mission)
 
     # The minimum for georeferencing is to parse 1) Mesh model and 2) The pose of the reference
-    #uhi_parsing_utils.uhi_dbe(config=config, config_uhi=config_uhi_preprocess)
+    uhi_parsing_utils.uhi_dbe(config=config, config_uhi=config_uhi_preprocess)
     
     config = parsing_utils.export_pose(config_file_mission)
 
@@ -124,7 +124,7 @@ def main():
     #visualize.show_mesh_camera(config, ref_frame = 'ENU')
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    #georeference.main(config_file_mission)
+    georeference.main(config_file_mission)
 
     orthorectification.main(config_file_mission)
     # Alternatively mode = 'calibrate'
