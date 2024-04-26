@@ -350,7 +350,7 @@ def read_nav_from_mat(mat_filename):
 
 
 
-def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename, lon0, lat0, h0):
+def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename, alti_file, lon0, lat0, h0):
     """Function for reading mat data from the beast format into a NAV object"""
     dvl_contents = {}
     imu_contents = {}
@@ -366,10 +366,14 @@ def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename, lon0, 
     dvl_contents['x'] = dvl_contents['x']-dvl_contents['x'][idx] 
     dvl_contents['y'] = dvl_contents['y']-dvl_contents['y'][idx]
     dvl_contents['z'] = dvl_contents['z']-dvl_contents['z'][idx]
+
+    if alti_file == 'dvl':
+        alti_contents = alti_contents.dropna(subset=['altitude']).reset_index(drop=True)
+        alti_contents = alti_contents.rename(columns={"altitude": "Altitude"})
+        alti_contents['TimestampMeasured'] = pd.to_datetime(alti_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(np.int64) // 10**9
     # Convert timestamp column to datetime objects with the specified format
     # .astype(np.int64) casts datetime to timestamp of unix_time in ns. division by 1e9 converts to sec.
     dvl_contents['TimestampMeasured'] = pd.to_datetime(dvl_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(np.int64) // 10**9
-
     # 
     """Cell defining all nav data of relevance"""
     nav = NAV()
@@ -830,6 +834,7 @@ def uhi_dbe(config, config_uhi):
     :type config_uhi: _type_
     """
     MISSION_PATH = config['General']['mission_dir'] # Where h5 data is 
+    alti_file = config['HDF.raw_nav']['file_type'] # Where alti data is
     
 
     # For writing
@@ -846,7 +851,19 @@ def uhi_dbe(config, config_uhi):
     DVL_DIR = INPUT_DIR
     DVL_PATTERN = 'DVL_*'
     IMU_PATTERN = 'imu*'
-    ALTI_PATTERN = 'alti*'
+    if alti_file == 'alti':
+        ALTI_PATTERN = 'alti*'
+        # Locate alti file with nav data 
+        search_path_alti = os.path.normpath(os.path.join(DVL_DIR, ALTI_PATTERN))
+        ALTI_FILE_PATHS = glob.glob(search_path_alti)
+        ALTI_PATH = ALTI_FILE_PATHS[0] # Assuming there is only one
+    elif alti_file == 'dvl':
+        ALTI_PATTERN = 'DVL_*'
+        # Locate alti file with nav data 
+        search_path_alti = os.path.normpath(os.path.join(DVL_DIR, ALTI_PATTERN))
+        ALTI_FILE_PATHS = glob.glob(search_path_alti)
+        ALTI_PATH = ALTI_FILE_PATHS[0] # Assuming there is only one
+    else: print("Alti_file config is not known.")
 
     # Locate dvl file with nav data 
     search_path_dvl = os.path.normpath(os.path.join(DVL_DIR, DVL_PATTERN))
@@ -857,22 +874,13 @@ def uhi_dbe(config, config_uhi):
     search_path_imu = os.path.normpath(os.path.join(DVL_DIR, IMU_PATTERN))
     IMU_FILE_PATHS = glob.glob(search_path_imu)
     IMU_PATH = IMU_FILE_PATHS[0] # Assuming there is only one
-
-    # Locate alti file with nav data 
-    search_path_alti = os.path.normpath(os.path.join(DVL_DIR, ALTI_PATTERN))
-    ALTI_FILE_PATHS = glob.glob(search_path_alti)
-    ALTI_PATH = ALTI_FILE_PATHS[0] # Assuming there is only one
-
     # TODO: replace with how you read in data from DVL/H5 folders
 
     time_offset = config_uhi.time_offset_sec
     lon0, lat0, alt0 = config_uhi.lon_lat_alt_origin
 
-
-    nav = read_nav_from_dvl_imu_alti(dvl_filename=DVL_PATH, imu_filename=IMU_PATH, alti_filename=ALTI_PATH, lon0=lon0, lat0 = lat0, h0 = alt0)
-
+    nav = read_nav_from_dvl_imu_alti(dvl_filename=DVL_PATH, imu_filename=IMU_PATH, alti_filename=ALTI_PATH, alti_file=alti_file, lon0=lon0, lat0 = lat0, h0 = alt0)
     
-
     # Search the h5 folder (these are the files to iterate)
     search_path_h5 = os.path.normpath(os.path.join(h5_folder, H5_PATTERN))
     H5_FILE_PATHS = glob.glob(search_path_h5)
