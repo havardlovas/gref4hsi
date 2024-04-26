@@ -218,7 +218,7 @@ class GeoSpatialAbstractionHSI():
         self.suffix = suffix
 
         # Create raster mask from the polygon describing the footprint (currently not used for anything)
-        mask_method = 'nn'       
+        mask_method = config_ortho.pixel_mask_method       
         
         geoms = [mapping(self.footprint_shp)]
         mask_footprint = geometry_mask(geoms, out_shape=(height, width), transform=transform)

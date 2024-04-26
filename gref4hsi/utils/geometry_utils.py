@@ -152,9 +152,21 @@ class CameraGeometry():
                 time_concatenated = np.array(time_concatenated).astype(np.float64)
 
                 linearSphericalInterpolator = Slerp(time_concatenated, Rotation_tot)
-
+                
                 self.rotation_nav_interpolated = linearSphericalInterpolator(time_interpolation)
+                
+                """# Check if any timestamps in time_interpolation are outside the range of available data
+                min_timestamp = min(time_concatenated)
+                max_timestamp = max(time_concatenated)
+                time_interpolation = [t for t in time_interpolation if min_timestamp <= t <= max_timestamp]
 
+                # Check if there are any values left in time_interpolation
+                if not time_interpolation:
+                    raise ValueError("No interpolation times within the range of available data")
+
+                # Now, create the linearSphericalInterpolator with the filtered time_interpolation
+                self.rotation_nav_interpolated = linearSphericalInterpolator(time_interpolation)
+                """
 
 
 
