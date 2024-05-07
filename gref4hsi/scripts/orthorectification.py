@@ -51,7 +51,7 @@ def main(iniPath):
         h5_folder_wavelength_widths = 'undefined'
 
     # The necessary data (a dictionary) from H5 file for resampling ancillary data (uses the same grid as datacube)
-    anc_dict = config['Georeferencing']
+    anc_dict = config['Ancillary']
 
     # Settings having to do with coordinate reference systems, described below
     SettingsCRS = namedtuple('SettingsOrthorectification', ['epsg_geocsc', 
@@ -152,7 +152,7 @@ def main(iniPath):
             
             
             
-            
+            # Resample imagery (RGB composite or both)
             gisHSI.resample_datacube(radiance_cube=radiance_cube,
                                      wavelengths=wavelengths,
                                      fwhm=fwhm,

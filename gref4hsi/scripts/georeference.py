@@ -23,7 +23,7 @@ def cal_file_to_rays(filename_cal):
         # Certain imagers deliver geometry "per pixel". This can be resolved by fitting model parameters.
         calHSI = CalibHSI(file_name_cal_xml=filename_cal)
         f = calHSI.f
-        u_c = calHSI.cx
+        cx = calHSI.cx
 
         # Radial distortion parameters
         k1 = calHSI.k1
@@ -46,14 +46,14 @@ def cal_file_to_rays(filename_cal):
         n_pix = calHSI.w
 
         # Define camera model array.
-        u = np.arange(1, n_pix + 1)
+        u = np.arange(0, n_pix) + 1
 
         # Express uhi ray directions in uhi frame using line-camera model
-        x_norm_lin = (u - u_c) / f
+        x_norm_lin = (u - cx) / f
 
-        x_norm_nonlin = -(k1 * ((u - u_c) / 1000) ** 5 + \
-                          k2 * ((u - u_c) / 1000) ** 3 + \
-                          k3 * ((u - u_c) / 1000) ** 2) / f
+        x_norm_nonlin = -(k1 * ((u - cx) / 1000) ** 5 + \
+                          k2 * ((u - cx) / 1000) ** 3 + \
+                          k3 * ((u - cx) / 1000) ** 2) / f
 
         x_norm = x_norm_lin + x_norm_nonlin
 
@@ -169,14 +169,6 @@ def main(iniPath, viz = False, use_coreg_param = False):
 
     mesh = pv.read(path_mesh)
 
-    """metadata_mesh = {
-        "offset_x": offset_x,
-        "offset_y": offset_y,
-        "offset_z": offset_y,
-        "epsg_code": geocsc.to_epsg(),  # Example EPSG code, replace with your actual code
-        "data_type": str(mesh.points.dtype),  # Add other metadata entries here
-    }"""
-
     model_meta_path = path_mesh.split('.')[0] + '_meta.json' 
     with open(model_meta_path, "r") as f:
         # Load the JSON data from the file
@@ -249,6 +241,8 @@ def main(iniPath, viz = False, use_coreg_param = False):
 
             
             hsi_geometry.intersect_with_mesh(mesh = mesh, max_ray_length=max_ray_length, mesh_trans = mesh_trans)
+
+            print(f'Mesh translation is {mesh_trans}')
             
             # Computes the view angles in the local NED. Computationally intensive as local NED is defined for each intersection
             hsi_geometry.compute_view_directions_local_tangent_plane()

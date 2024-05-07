@@ -164,6 +164,11 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                     'HDF.coregistration': {
                             'position_ecef': 'processed/coreg/position_ecef',
                             'quaternion_ecef' : 'processed/coreg/quaternion_ecef'
+                        },
+                    # These are the ancillary layers to be orthorectified (can select from all entities in "Georeferencing")
+                    'Ancillary': {
+                            'pixel_nr_grid': 'processed/georef/pixel_nr_grid', # h5 path
+                            'unix_time_grid' : 'processed/georef/unix_time_grid' # h5 path
                         }
                     
     }
@@ -196,10 +201,10 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # into an h5 file. The nav data is written to "raw/nav/" subfolders, whereas hyperspectral data and calibration data 
     # written to "processed/hyperspectral/" and "processed/calibration/" subfolders
     """specim_parsing_utils.main(config=config,
-                              config_specim=config_specim_preprocess)
+                              config_specim=config_specim_preprocess)"""
     
     # Time interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
-    config = parsing_utils.export_pose(config_file_mission)
+    parsing_utils.export_pose(config_file_mission)
     
     # Formats model to triangular mesh and an earth centered earth fixed / geocentric coordinate system
     parsing_utils.export_model(config_file_mission)
@@ -208,44 +213,72 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
     
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    #if ENABLE_VISUALIZE:
-    #    visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
+    #visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
-    # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
-    georeference.main(config_file_mission)"""
+    # Step 1: Direct georeferencing
+    """georeference.main(config_file_mission)
 
-    # orthorectification.main(config_file_mission)
-    # The coregistration compares to the reference and optimizes geometric parameters which are used to re-georeference.
+    # Step 2: Orthorectify the direct georeferenced data (incl metadata)
+    orthorectification.main(config_file_mission)"""
+    
+
+
+    # Step 3 (optional): Coregistration
+    # The coregistration compares to the reference (requires a reference orthomosaic) and optimizes geometric parameters which are used to re-georeference.
     if do_coreg:
-        # Optional: coregistration
+        # Coregistration requires that Step 1 and 2 were performed and that resample anc = True
         # Match RGB composite to reference, find features and following data, ground control point (gcp) list, for each feature pair:
         # reference point 3D (from reference), position/orientation of vehicle (using resampled time) and pixel coordinate (using resampled pixel coordinate)
-        #coregistration.main(config_file_mission, mode='compare')
+        """coregistration.main(config_file_mission, mode='compare', is_calibrated = False)
 
         # The gcp list allows reprojecting reference points and evaluate the reprojection error,
         # which is used to optimize static geometric parameters (e.g. boresight, camera model...) or dynamic geometric parameters (time-varying nav errors).
         # Settings are currently in coregistration script
-        coregistration.main(config_file_mission, mode='calibrate')
+        coregistration.main(config_file_mission, mode='calibrate', is_calibrated = False)
 
-        # The final orthorectification can be conducted on the datacube too
-        """custom_config['Orthorectification']['resample_rgb_only'] = True
+        # Only resample RGB and aux data 
+        custom_config['Orthorectification']['resample_rgb_only'] = True
+        customize_config(config_path=config_file_mission, dict_custom=custom_config)
 
-        # Georeference with coregistred parameters
+        # Re-georeference with coregistred parameters
         georeference.main(config_file_mission, use_coreg_param=True)
+        
+        # Coregister this stuff
+        orthorectification.main(config_file_mission)
 
-        orthorectification.main(config_file_mission)"""
+        # Second round of comparison
+        coregistration.main(config_file_mission, mode='compare', is_calibrated = True)"""
+        
+        # Check bulk
+        coregistration.main(config_file_mission, mode='calibrate', is_calibrated = True)
 
 
 
 if __name__ == "__main__":
-    # Select a recording folder on drive
-    specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remoy/remoy_202208310800_ntnu_hyperspectral_74m")
+    
     
     # Globally accessible files:
     geoid_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/world/geoids/egm08_25.gtx")
     config_template_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/config_examples/configuration_specim.ini")
     lab_calibration_path = os.path.join(base_fp, "Specim/Lab_Calibrations")
     
-    # The configuration file
+    # Third flight: The configuration file and recording folder on drive
+    """specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remoy/remoy_202208311435_ntnu_hyperspectral_74m")
     config_yaml = os.path.join(specim_mission_folder, "config.seabee.yaml")
+
+    # Run 
+    main(str(config_yaml), str(specim_mission_folder), geoid_path, config_template_path, lab_calibration_path)"""
+
+   # Second flight
+    """specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remoy/remoy_202208311040_ntnu_hyperspectral_74m")
+    config_yaml = os.path.join(specim_mission_folder, "config.seabee.yaml")
+
+    # Run 
+    main(str(config_yaml), str(specim_mission_folder), geoid_path, config_template_path, lab_calibration_path)"""
+
+    # First flight
+    specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remoy/remoy_202208310800_ntnu_hyperspectral_74m")
+    config_yaml = os.path.join(specim_mission_folder, "config.seabee.yaml")
+
+    # Run 
     main(str(config_yaml), str(specim_mission_folder), geoid_path, config_template_path, lab_calibration_path)

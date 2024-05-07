@@ -288,7 +288,7 @@ def add_byte_order_to_envi_header(header_file_path, byte_order_value):
 
 def main(config, config_specim):
     
-    # Script that calibrates data and reforms to h5 file format.
+    # Function that calibrates data and reforms to h5 file format.
     dtype = config_specim.dtype_datacube
     transect_chunk_size = config_specim.lines_per_chunk
     cal_dir = config_specim.cal_dir
@@ -298,8 +298,6 @@ def main(config, config_specim):
     mission_name = Path(mission_dir).name
     out_dir = config_specim.reformatted_missions_dir
     config_file_path = os.path.join(out_dir, config_specim.config_file_name)
-
-    #prepend_data_dir_to_relative_paths(config_path=config_file_path, DATA_DIR=out_dir)
 
     specim_object = Specim(mission_path=mission_dir, config=config)
 
@@ -315,6 +313,10 @@ def main(config, config_specim):
 
     # Read out data
     spectral_image_obj = envi.open(envi_hdr_file_path)
+
+    """import spectral as sp
+    rgb_im = spectral_image_obj[:,:,]
+    sp.imshow(spectral_image_obj, (73, 50, 24))"""
 
     # Read all meta data from header file (currently hard coded, but could be avoided I guess)
     class Metadata:

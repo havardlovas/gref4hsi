@@ -168,12 +168,10 @@ class CameraGeometry():
 
         # An intrinsic transform is a transformation to another reference frame on the moving body, i.e. the IMU or an RGB cam
         self.position_ecef = self.position_nav_interpolated + self.rotation_nav_interpolated.apply(translation_ref_hsi)
-        
-        self.rotation_hsi_rgb = rot_hsi_ref_obj
 
         # Composing rotations. See:
         # https: // docs.scipy.org / doc / scipy / reference / generated / scipy.spatial.transform.Rotation.__mul__.html
-        self.rotation_hsi = self.rotation_nav_interpolated * self.rotation_hsi_rgb 
+        self.rotation_hsi = self.rotation_nav_interpolated * rot_hsi_ref_obj
 
         self.quaternion_ecef = self.rotation_hsi.as_quat()
         
@@ -227,6 +225,7 @@ class CameraGeometry():
 
         self.rayDirectionsGlobal = np.zeros((n, m, 3))
 
+        # Converts data from local frame to global
         for i in range(n):
             self.rayDirectionsGlobal[i, :, :] = self.rotation_hsi[i].apply(dir_local)
     def intersect_with_mesh(self, mesh, max_ray_length, mesh_trans):
