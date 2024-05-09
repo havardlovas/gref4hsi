@@ -370,10 +370,12 @@ def read_nav_from_dvl_imu_alti(dvl_filename, imu_filename, alti_filename, alti_f
     if alti_file == 'dvl':
         alti_contents = alti_contents.dropna(subset=['altitude']).reset_index(drop=True)
         alti_contents = alti_contents.rename(columns={"altitude": "Altitude"})
-        alti_contents['TimestampMeasured'] = pd.to_datetime(alti_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(np.int64) // 10**9
+        try: alti_contents['TimestampMeasured'] = pd.to_datetime(alti_contents['log_time'], format='%Y-%m-%dT%H-%M-%S.%fZ').astype(np.int64) // 10**9
+        except: alti_contents['TimestampMeasured'] = pd.to_datetime(alti_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(np.int64) // 10**9
     # Convert timestamp column to datetime objects with the specified format
     # .astype(np.int64) casts datetime to timestamp of unix_time in ns. division by 1e9 converts to sec.
-    dvl_contents['TimestampMeasured'] = pd.to_datetime(dvl_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(np.int64) // 10**9
+    try: dvl_contents['TimestampMeasured'] = pd.to_datetime(dvl_contents['log_time'], format='%Y-%m-%dT%H-%M-%S.%fZ').astype(np.int64) // 10**9
+    except: dvl_contents['TimestampMeasured'] = pd.to_datetime(dvl_contents['log_time'], format=' %Y-%m-%dT%H-%M-%S.%fZ').astype(np.int64) // 10**9
     # 
     """Cell defining all nav data of relevance"""
     nav = NAV()
