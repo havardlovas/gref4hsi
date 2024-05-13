@@ -1082,7 +1082,8 @@ def main(config_path, mode, is_calibrated):
                           'calibrate_f': False,
                           'calibrate_k1': False,
                           'calibrate_k2': False,
-                          'calibrate_k3': False}
+                          'calibrate_k3': False
+                          }
         
         calibrate_per_transect = True
         estimate_time_varying = True
@@ -1111,13 +1112,9 @@ def main(config_path, mode, is_calibrated):
 
 
         # Whether to plot the error vectors as functions of time
-
+        # TODO: remove these
         plot_err_vec_time = True
         plot_node_spacing = False
-
-
-        
-
 
         # Localize the prior calibration and use as initial parameters as well as constants for parameter xx if calibrate_xx = False
         cal_obj_prior = CalibHSI(file_name_cal_xml=config['Absolute Paths']['hsi_calib_path'])
@@ -1130,16 +1127,16 @@ def main(config_path, mode, is_calibrated):
         is_variab_param_extr = np.zeros(6).astype(np.int64)
 
         param0 = np.array([cal_obj_prior.rx, 
-                                cal_obj_prior.ry, 
-                                cal_obj_prior.rz, 
-                                cal_obj_prior.cx, 
-                                cal_obj_prior.f, 
-                                cal_obj_prior.k1, 
-                                cal_obj_prior.k2, 
-                                cal_obj_prior.k3,
-                                cal_obj_prior.tx,
-                                cal_obj_prior.ty,
-                                cal_obj_prior.tz])
+                            cal_obj_prior.ry, 
+                            cal_obj_prior.rz, 
+                            cal_obj_prior.cx, 
+                            cal_obj_prior.f, 
+                            cal_obj_prior.k1, 
+                            cal_obj_prior.k2, 
+                            cal_obj_prior.k3,
+                            cal_obj_prior.tx,
+                            cal_obj_prior.ty,
+                            cal_obj_prior.tz])
 
         if calibrate_dict ['calibrate_boresight']:
             is_variab_param_intr[0:3] = 1
