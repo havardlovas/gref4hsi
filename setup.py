@@ -3,7 +3,7 @@ import setuptools
 
 setuptools.setup(
     name='gref4hsi',
-    version='0.1.6',    
+    version='0.2.2',    
     description='A Python package for for georeferencing and orthorectifying hyperspectral imagery',
     long_description=pathlib.Path("README.md").read_text(),
     long_description_content_type = "text/markdown",
