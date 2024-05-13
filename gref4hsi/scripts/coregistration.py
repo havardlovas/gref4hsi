@@ -823,7 +823,7 @@ def calculate_cam_and_pose_from_param(h5_filename, param, features_df, param0, i
     # Read the correction data from param
 
 # Function called to apply standard processing on a folder of files
-def main(config_path, mode, is_calibrated):
+def main(config_path, mode, is_calibrated, coreg_dict = {}):
     config = configparser.ConfigParser()
     config.read(config_path)
 
@@ -1054,8 +1054,41 @@ def main(config_path, mode, is_calibrated):
         u_err = gcp_df_all['diff_u']
         v_err = gcp_df_all['diff_v']
 
+        ## Defining the options:
+        
+        # Default options for camera calibration
+        calibrate_dict_default = {'calibrate_boresight': False,
+                          'calibrate_camera': False,
+                          'calibrate_lever_arm': False,
+                          'calibrate_cx': False,
+                          'calibrate_f': False,
+                          'calibrate_k1': False,
+                          'calibrate_k2': False,
+                          'calibrate_k3': False
+                          }
+        # Default options for estimating time varying errors
+        calibrate_dict_extr_default = {'calibrate_pos_x': False,
+                          'calibrate_pos_y': False,
+                          'calibrate_pos_z': False,
+                          'calibrate_roll': False,
+                          'calibrate_pitch': False,
+                          'calibrate_yaw': False}
 
-        hard_threshold_m = 10
+
+        large_number = 1e12
+        hard_threshold_m = coreg_dict.get('hard_threshold_m', large_number) # Hard coded threshold specifying the maximal registration error in meters for filtering. Only important when large portion outliers
+        sigma_obs = coreg_dict.get('sigma_obs', np.array([1, 1])) # In pixels across and along track
+        sigma_param = coreg_dict.get('sigma_param', np.array([2, 2, 5, 0.1, 0.1, 1])) # north [m], east [m], down [m], roll [deg], pitch [deg], yaw [deg]
+        calibrate_dict = coreg_dict.get('calibrate_dict', calibrate_dict_default)
+        calibrate_dict_extr = coreg_dict.get('calibrate_dict_extr', calibrate_dict_extr_default)
+        time_node_spacing = coreg_dict.get('time_node_spacing', large_number) # s. A large number means one single node in time i.e. constant error in the DOF you are estimating
+        time_interpolation_method = coreg_dict.get('time_interpolation_method', 'linear') # Interpolation method. Linear is currently recommended
+        node_partition = coreg_dict.get('node_partition', 'temporal') # ['temporal', 'feature', 'all_features']. The partitioning scheme. Temporal makes equitemporal nodes, while "feature" makes nodes with equal feature count in each time segment
+        pos_err_ref_frame = coreg_dict.get('pos_err_ref_frame', 'ned') # ['ecef' or 'ned']
+        loss_function = coreg_dict.get('loss_function', 'soft_l1') # ['linear', 'huber', 'cauchy'..]. Least squares loss function for scipy least_squares implementation.
+        calibrate_per_transect = coreg_dict.get('calibrate_per_transect', True) # TODO: Make this functional for Option False. An iterative concatenation would do the trick
+
+        # Equivalent threshold in georaster pixel
         hard_threshold_pix = hard_threshold_m/resolution
 
 
@@ -1072,52 +1105,43 @@ def main(config_path, mode, is_calibrated):
         print("\n################ Calibrating camera parameters: ################")
         # Using the accumulated features, we can optimize for the boresight angles, camera parameters and lever arms
         
-        ## Defining the options:
         
-        # Here we define what that is to be calibrated
-        calibrate_dict = {'calibrate_boresight': False,
-                          'calibrate_camera': False,
-                          'calibrate_lever_arm': False,
-                          'calibrate_cx': False,
-                          'calibrate_f': False,
-                          'calibrate_k1': False,
-                          'calibrate_k2': False,
-                          'calibrate_k3': False
-                          }
         
-        calibrate_per_transect = True
+        
+        
         estimate_time_varying = True
 
-        time_node_spacing = 1000 # s.
+        
 
-        # TODO: fix gaussian interpolation
-        time_interpolation_method = 'linear'
+        
 
-        node_partition = 'temporal' # ['temporal', 'feature', 'all_features']
-
-        pos_err_ref_frame = 'ned' # ['ecef' or 'ned']
-
-        # Least squares loss function. Large outliers can be problematic
-        loss_function = 'soft_l1' # ['linear', 'huber', 'cauchy'..]
+        
 
         val_mode = False # Whether to subset 50 percent of data to validation (i.e. not for fitting)
 
-        # Select which time varying degrees of freedom to estimate errors for
-        calibrate_dict_extr = {'calibrate_pos_x': True,
-                          'calibrate_pos_y': True,
-                          'calibrate_pos_z': True,
-                          'calibrate_roll': False,
-                          'calibrate_pitch': False,
-                          'calibrate_yaw': True}
-
-
         # Whether to plot the error vectors as functions of time
         # TODO: remove these
-        plot_err_vec_time = True
+        plot_err_vec_time = False
         plot_node_spacing = False
 
         # Localize the prior calibration and use as initial parameters as well as constants for parameter xx if calibrate_xx = False
-        cal_obj_prior = CalibHSI(file_name_cal_xml=config['Absolute Paths']['hsi_calib_path'])
+        hsi_calib_path_original = config['Absolute Paths']['hsi_calib_path']
+        if not is_calibrated:
+            cal_obj_prior = CalibHSI(file_name_cal_xml=hsi_calib_path_original)
+        else:
+            try:
+                calib_path = config['Absolute Paths']['calib_file_coreg']
+
+                # Use coregistration adjusted version
+                if os.path.exists(calib_path):
+                    cal_obj_prior = CalibHSI(file_name_cal_xml=calib_path)
+                    print('Using the coregistration-adjusted camera calibration')
+                else:
+                    cal_obj_prior = CalibHSI(file_name_cal_xml=hsi_calib_path_original)
+            except:
+                # Fall back to original calib file
+                cal_obj_prior = CalibHSI(file_name_cal_xml=hsi_calib_path_original)
+
 
         # Whether the parameter is toggled for calibration
         # Both these 
@@ -1185,6 +1209,8 @@ def main(config_path, mode, is_calibrated):
         # These are the adjustable parameters (not time-varying)
         param0_variab = param0[is_variab_param_intr==1]
 
+        
+
         # Set the keyword arguments for optimization
         kwargs = {'features_df': None,
                     'param0': param0,
@@ -1193,8 +1219,8 @@ def main(config_path, mode, is_calibrated):
                     'is_variab_param_extr': is_variab_param_extr,
                     'time_interpolation_method': time_interpolation_method,
                     'pos_err_ref_frame': pos_err_ref_frame,
-                    'sigma_obs': np.array([1, 1]), # across track [pixels], along track [pixels]
-                    'sigma_param': np.array([2, 2, 5, 0.1, 0.1, 1]), # north [m], east [m], down [m], roll [deg], pitch [deg], yaw [deg]
+                    'sigma_obs': sigma_obs,
+                    'sigma_param': sigma_param, # north [m], east [m], down [m], roll [deg], pitch [deg], yaw [deg]
                     }
 
         # What we tend to do here
@@ -1203,21 +1229,9 @@ def main(config_path, mode, is_calibrated):
             n_transects = 1 + (df_gcp_filtered['file_count'].max() - df_gcp_filtered['file_count'].min())
             
             # Iterate through transects
-            if plot_err_vec_time:
-                # Do all
-                iter = np.arange(n_transects)
-            if plot_node_spacing:
+            # Do all
+            iter = np.arange(n_transects)
                 
-                iter = [160, 80, 40, 20, 10, 5, 2.5] #
-
-                rmse_list = []
-                MAE_mean_list = []
-                MAE_median_list = []
-                node_number_list = []
-                node_spacing_list = []
-                
-                transect_nr = 1
-                is_first_iter = True
             for i in iter:
                 # Selected Transect
                 if plot_node_spacing:
@@ -1393,42 +1407,6 @@ def main(config_path, mode, is_calibrated):
                 MAE_median = np.median(abs_err)
                 print(f'Original MAE median rp-error is {MAE_median:.2f} pixels')
 
-                if plot_node_spacing:
-                    if is_first_iter:
-                        
-                        MAE_median_list.append(MAE_median)
-                        rmse_list.append(rmse)
-                        MAE_mean_list.append(MAE_mean)
-                        node_number_list.append(0)
-                        node_spacing_list.append(np.nan)
-
-                        fun_rp = res_pre_optim[0:2*n_features]
-
-                        x_err = fun_rp[0:n_features]
-                        x_MAE = np.median(np.abs(x_err))
-
-                        y_err = fun_rp[n_features:2*n_features]
-                        y_MAE = np.median(np.abs(y_err))
-
-                        # Plot the residual time series:
-                        t_start = time_scanlines.min()
-                        t_end = time_scanlines.max()
-                        plt.scatter(time_arr_sorted_features-t_start, x_err, label='x-errors')
-                        plt.scatter(time_arr_sorted_features-t_start, y_err, label='y-errors')
-                        plt.ylim([-15, 15])
-                        plt.xlim([0, t_end-t_start])
-                        plt.ylim([-15, 15])
-                        plt.title(f'No nodes, {x_MAE:.2f}/{y_MAE:.2f} pixels MAE x/y')
-                        plt.xlabel('Time [s]')
-                        plt.ylabel('Reprojection error [pixel]')
-                        plt.legend()
-
-                        fname_plot = f'reprojection_error_{transect_nr}_nonodes.png'
-                        plt.savefig(os.path.join('C:/Users/haavasl/OneDrive - NTNU/GeoHab/Figures', fname_plot))  # Adjust filename as needed
-                        plt.close()
-
-                        is_first_iter = False
-
                 # Optimize the transect and record time duration
                 time_start  = time.time()
 
@@ -1467,25 +1445,6 @@ def main(config_path, mode, is_calibrated):
                 y_err = res.fun[n_train:2*n_train]
                 y_MAE = np.median(np.abs(y_err))
 
-                # Plot the residual time series:
-                t_start = time_scanlines.min()
-                t_end = time_scanlines.max()
-
-                plt.scatter(time_arr_sorted_features[sorted(idx_train)]-t_start, x_err, label='x-errors')
-                plt.scatter(time_arr_sorted_features[sorted(idx_train)]-t_start, y_err, label='y-errors')
-                plt.ylim([-15, 15])
-                plt.xlim([0, t_end-t_start])
-                plt.title(f'{time_node_spacing:.0f} sec node spacing, {number_of_nodes:.0f} nodes, {x_MAE:.2f}/{y_MAE:.2f} pixels MAE x/y')
-                plt.xlabel('Time [s]')
-                plt.ylabel('Reprojection error [pixel]')
-                plt.legend()
-
-                fname_plot = f'reprojection_error_{transect_nr}_{time_node_spacing}_{number_of_nodes}.png'
-                plt.savefig(os.path.join('C:/Users/haavasl/OneDrive - NTNU/GeoHab/Figures', fname_plot))  # Adjust filename as needed
-                plt.close()
-
-                #plt.show()
-
                 ## Run the validation
                 if val_mode:
                     kwargs['features_df'] = df_current.iloc[sorted(idx_val)]
@@ -1517,9 +1476,6 @@ def main(config_path, mode, is_calibrated):
                     MAE_mean_list.append(MAE_mean)
                     node_number_list.append(number_of_nodes)
                     node_spacing_list.append(time_node_spacing)
-                    """plt.scatter(number_of_nodes, rmse, c='r')
-                    plt.scatter(number_of_nodes, MAE_mean, c='g')
-                    plt.scatter(number_of_nodes, MAE_median, c='b')"""
                 
                 # Now, if all features were used to optimize, use gaussian interpolation (KRIGING actually)
                 if node_partition == 'all_features':
@@ -1533,10 +1489,6 @@ def main(config_path, mode, is_calibrated):
                                                                                                                     h5_paths=h5_paths, 
                                                                                                                     plot_err_vec=plot_err_vec_time, 
                                                                                                                     sigma_nodes = None)
-
-                fname_plot = f'error_series_{transect_nr}_{time_node_spacing}_{number_of_nodes}.png'
-                plt.savefig(os.path.join('C:/Users/haavasl/OneDrive - NTNU/GeoHab/Figures', fname_plot))  # Adjust filename as needed
-                plt.close()
 
                 # Now the data has been computed and can be written to h5:
                 if not is_calibrated:
@@ -1571,14 +1523,17 @@ def main(config_path, mode, is_calibrated):
                 plt.ylim(bottom=0)
                 plt.legend()
                 plt.title('')
-                fname_plot = f'rmse_node_spacing_{transect_nr}.png'
-                plt.savefig(os.path.join('C:/Users/haavasl/OneDrive - NTNU/GeoHab/Figures', fname_plot))
-                plt.close()
                 #plt.show()
 
         else:
             
-            n_features = df_gcp_filtered.shape[0]
+            n_features = df_gcp_filtered.shape[0] # All features
+
+            # Sort values by chronology
+            df_current = df_gcp_filtered.sort_values(by='unix_time')
+            
+            # Update the feature info for optimization from specific transect
+            kwargs['features_df'] = df_current
 
             res_pre_optim = objective_fun_reprojection_error(param0_variab, df_gcp_filtered, param0, is_variab_param_intr)
             median_error_x = np.median(np.abs(res_pre_optim[0:n_features]))

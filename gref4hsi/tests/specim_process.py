@@ -183,6 +183,34 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # No need to orthorectify the data cube initially when coregistration with RGB composites is done
     if do_coreg:
         custom_config['Orthorectification']['resample_rgb_only'] = True
+
+        cam_calibrate_dict = {'calibrate_boresight': False,
+                          'calibrate_camera': False,
+                          'calibrate_lever_arm': False,
+                          'calibrate_cx': False,
+                          'calibrate_f': False,
+                          'calibrate_k1': False,
+                          'calibrate_k2': False,
+                          'calibrate_k3': False
+                          }
+
+        # Here you can set which time-varying errors to estimate
+        calibrate_dict_extr = {'calibrate_pos_x': True,
+                          'calibrate_pos_y': True,
+                          'calibrate_pos_z': True,
+                          'calibrate_roll': False,
+                          'calibrate_pitch': False,
+                          'calibrate_yaw': True}
+        
+        coreg_dict = {'calibrate_dict': cam_calibrate_dict,
+                      'calibrate_per_transect': True, # Whether to calibrate on each transect seperately (True) or to use an entire set of transects for calibration (False)
+                      'calibrate_dict_extr': calibrate_dict_extr,
+                      'time_node_spacing': 10, #s
+                      'hard_threshold_m': 10, # m
+                      'pos_err_ref_frame': 'ned', # ['ecef' or 'ned'] The ref frame to estimate position errors in
+                      'time_interpolation_method': 'linear',
+                      'sigma_param' : np.array([2, 2, 5, 0.1, 0.1, 1]) # north [m], east [m], down [m], roll [deg], pitch [deg], yaw [deg] (is different for RTK/PPK!!!!)
+                      }
     
     # 
     if fast_mode:
@@ -250,7 +278,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
         coregistration.main(config_file_mission, mode='compare', is_calibrated = True)"""
         
         # Check bulk
-        coregistration.main(config_file_mission, mode='calibrate', is_calibrated = True)
+        coregistration.main(config_file_mission, mode='calibrate', is_calibrated = True, coreg_dict=coreg_dict)
 
 
 
