@@ -68,7 +68,7 @@ def main(args):
                                                                         [-1, 0, 0],
                                                                         [0, 0, 1]]),                            # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.
                                 translation_alt_to_body = np.array([0, 0, 0]),
-                                time_offset_sec =  0,
+                                time_offset_sec =  args.time_offset_sec,
 
                                 lon_lat_alt_origin =  np.array([15.780755, 77.782882, 0]), # SVEA#
                                 # The beast sets up a fake coordinate system at 1 deg lon/lat.
@@ -106,10 +106,11 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default="/media/leo/NESP_1/NTNU/UHI_Data/Gref_processed/Svea2_Day2/Transect_4/Gref_10mm_dvl_minimal/")
+    parser.add_argument('--data_dir', type=str, default="/home/leo/Documents/NTNU/Masterthesis/Data/UHI_Data/Gref_processed/Svea2_Day1/Transect_6/Gref_10mm_DVL_minimal_inter/")
     parser.add_argument('--resolution', type=float, default=0.01)
     parser.add_argument('--interpolation', type=bool, default=False)
     parser.add_argument('--alti_data', type=str, default="dvl") #raster_transform_method
     parser.add_argument('--raster_transform', type=str, default="minimal_rectangle")
+    parser.add_argument('--time_offset_sec', type=int, default=0)
     args = parser.parse_args()
     main(args)
