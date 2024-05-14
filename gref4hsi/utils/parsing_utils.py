@@ -137,7 +137,7 @@ class Hyperspectral:
         # Only calibrate if data it is not already done
         is_calibrated = eval(config['HDF.hyperspectral']['is_calibrated'])
 
-        if is_calibrated == is_calibrated:
+        if is_calibrated:
             self.dataCubeRadiance = self.dataCube.astype(np.float32)
 
             # Add the radiance dataset

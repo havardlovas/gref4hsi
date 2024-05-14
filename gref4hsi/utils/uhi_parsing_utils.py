@@ -62,7 +62,7 @@ class TimeData:
         self.value = value
     def interpolate(self, time_interp):
         self.time_interp = time_interp
-        self.value_interp = interp1d(x = self.time, y = self.value, kind='nearest', fill_value='extrapolate')(x=self.time_interp)
+        self.value_interp = interp1d(x = self.time, y = self.value, kind='nearest')(x=self.time_interp)
             
 
 class NAV:
