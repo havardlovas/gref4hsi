@@ -71,13 +71,9 @@ class Hyperspectral:
                 radiometricFramePath = config['HDF.calibration']['radiometricFrame']
                 darkFramePath = config['HDF.calibration']['darkFrame']
                 exposureTimePath = config['HDF.hyperspectral']['exposureTime']
-                is_uhi = config['HDF']['is_uhi']
 
                 
-                if eval(is_uhi):
-                    self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
-                else:
-                    self.t_exp = self.f[exposureTimePath][()] / 1000
+                self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
 
                 self.darkFrame = self.f[darkFramePath][()]
                 self.radiometricFrame = self.f[radiometricFramePath][()]

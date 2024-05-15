@@ -62,7 +62,7 @@ class TimeData:
         self.value = value
     def interpolate(self, time_interp):
         self.time_interp = time_interp
-        self.value_interp = interp1d(x = self.time, y = self.value, kind='nearest')(x=self.time_interp)
+        self.value_interp = interp1d(x = self.time, y = self.value, kind='nearest', fill_value='extrapolate')(x=self.time_interp)
             
 
 class NAV:
@@ -88,6 +88,22 @@ class NAV:
         for attr_name, time_data_obj in self.__dict__.items():
             if isinstance(time_data_obj, TimeData):
                 time_data_obj.interpolate(time_interp)
+    
+    
+    def concatenate(self, nav_append):
+        """Adds a navigation block to the instantiated object
+
+        :param nav_append: _description_
+        :type nav_append: _type_
+        """
+        # Iterate through all TimeData objects in NAV and call interpolate method
+        for attr_name, time_data_obj_base in self.__dict__.items():
+            if isinstance(time_data_obj_base, TimeData):
+                # Get corresponding timedata from the object to be appended
+                # Concatenate the numpy array of time and value
+                time_data_obj_append = getattr(nav_append, attr_name)
+                time_data_obj_base.time = np.concatenate((time_data_obj_base.time, time_data_obj_append.time))
+                time_data_obj_base.value = np.concatenate((time_data_obj_base.value, time_data_obj_append.value))
 
 # +
 def loadmat(filename):
@@ -301,51 +317,54 @@ def set_camera_model(config, config_file_path, config_uhi, model_type, binning_s
 
     
 
-def read_nav_from_mat(mat_filename):
+def read_nav_from_mat(mat_filenames):
     """Function for reading mat data from the beast format into a NAV object"""
-    mat_contents = {}
-    mat_contents = loadmat(filename=mat_filename)
+    is_first = True
+    for mat_filename in mat_filenames:
+        mat_contents = {}
+        mat_contents = loadmat(filename=mat_filename)
 
-    m_att = mat_contents['ATTENTION']
-    #m_att['SpotOnTime'][m_att['Note'] == 'UHI s1 start']
+        # The below is specific to the vehicle and puts numpy arrays of navigation data into a nav object
+        nav = NAV()
 
+        nav.roll = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
+                            value = mat_contents['TELEMETRY']['Roll'])
+
+        nav.pitch = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
+                            value = mat_contents['TELEMETRY']['Pitch'])
+
+        nav.yaw = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
+                            value = mat_contents['POSITION_RENAV']['USBLCourse']) # The USBL course
+
+        nav.pos_x = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
+                            value = mat_contents['POSITION_RENAV']['x'])
+
+        nav.pos_y = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
+                            value = mat_contents['POSITION_RENAV']['y'])
+
+        nav.lat = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
+                            value = mat_contents['POSITION_RENAV']['Latitude'])
+
+        nav.lon = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
+                            value = mat_contents['POSITION_RENAV']['Longitude'])
+
+        nav.pos_z = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
+                            value = mat_contents['TELEMETRY']['Depth'])
+
+        nav.altitude = TimeData(time = mat_contents['ALTIMETER']['SpotOnTime'], 
+                            value = mat_contents['ALTIMETER']['Altitude']) # Altimeter readings
+
+        # First time define the total nav object
+        if is_first:
+            # For ease, read position orientation data into structs
+            nav_tot = nav
+            is_first = False
+        else:
+            # After that if multiple MAT files, concatenate new data to the total nav
+            nav_tot.concatenate(nav_append=nav)
     
-
-    
-    # +
-    """Cell defining all nav data of relevance"""
-
-    # For ease, read position orientation data into structs
-    nav = NAV()
-
-    nav.roll = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
-                        value = mat_contents['TELEMETRY']['Roll'])
-
-    nav.pitch = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
-                        value = mat_contents['TELEMETRY']['Pitch'])
-
-    nav.yaw = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
-                        value = mat_contents['POSITION_RENAV']['USBLCourse']) # The USBL course
-
-    nav.pos_x = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
-                        value = mat_contents['POSITION_RENAV']['x'])
-
-    nav.pos_y = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
-                        value = mat_contents['POSITION_RENAV']['y'])
-
-    nav.lat = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
-                        value = mat_contents['POSITION_RENAV']['Latitude'])
-
-    nav.lon = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
-                        value = mat_contents['POSITION_RENAV']['Longitude'])
-
-    nav.pos_z = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
-                        value = mat_contents['TELEMETRY']['Depth'])
-
-    nav.altitude = TimeData(time = mat_contents['ALTIMETER']['SpotOnTime'], 
-                        value = mat_contents['ALTIMETER']['Altitude']) # Altimeter readings
-    
-    return nav
+    # 
+    return nav_tot
 
 def write_nav_data_to_h5(nav, time_offset, config, H5_FILE_PATH):
     
@@ -637,7 +656,7 @@ def uhi_beast(config, config_uhi):
     SPATIAL_PIXELS = 1936 # Same for almost all UHI
     
 
-    INPUT_DIR = MISSION_PATH + 'Input/'
+    INPUT_DIR = os.path.join(MISSION_PATH, 'Input/')
 
     h5_folder = config['Absolute Paths']['h5_folder']
     H5_PATTERN = '*.h5'
@@ -647,10 +666,9 @@ def uhi_beast(config, config_uhi):
 
     # Locate mat file with nav data 
     search_path_mat = os.path.normpath(os.path.join(MAT_DIR, MAT_PATTERN))
-    MAT_FILE_PATHS = glob.glob(search_path_mat)
-    MAT_PATH = MAT_FILE_PATHS[0] # Assuming there is only one
+    MAT_FILE_PATHS = sorted(glob.glob(search_path_mat))
 
-    nav = read_nav_from_mat(mat_filename=MAT_PATH)
+    nav = read_nav_from_mat(mat_filenames=MAT_FILE_PATHS)
 
     
 
