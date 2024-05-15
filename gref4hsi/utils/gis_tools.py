@@ -98,7 +98,7 @@ class GeoSpatialAbstractionHSI():
         ), axis = 0)
 
         # The swiped ground area is defined by the convex hull
-        self.footprint_shp = Polygon(self.hull_line).convex_hull
+        self.footprint_shp = Polygon(self.hull_line)
 
         gdf = gpd.GeoDataFrame(geometry=[self.footprint_shp], crs=self.crs)
 
@@ -218,10 +218,20 @@ class GeoSpatialAbstractionHSI():
         self.suffix = suffix
 
         # Create raster mask from the polygon describing the footprint (currently not used for anything)
-        #geoms = [mapping(self.footprint_shp)]
-        #mask = geometry_mask(geoms, out_shape=(height, width), transform=transform)
+        mask_method = 'nn'       
+        
+        geoms = [mapping(self.footprint_shp)]
+        mask_footprint = geometry_mask(geoms, out_shape=(height, width), transform=transform)
 
-        mask = mask_nn.reshape((height, width))
+        if mask_method == 'nn':
+            mask = mask_nn.reshape((height, width))
+        elif mask_method == 'footprint':
+            mask = mask_footprint.reshape((height, width))
+
+
+        
+        
+        
         self.mask = mask
 
         # Build datacube

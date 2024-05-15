@@ -39,8 +39,14 @@ def main(iniPath):
     # ECEF point cloud from georeferencing.
     h5_folder_point_cloud_ecef = config['Georeferencing']['points_ecef_crs']
 
-    # Radiance cube
-    h5_folder_radiance_cube = config['HDF.hyperspectral']['datacube']
+    # Radiance cube location depends on whether original data was calibrated:
+    is_calibrated = eval(config['HDF.hyperspectral']['is_calibrated'])
+    if is_calibrated:
+        h5_folder_radiance_cube = config['HDF.hyperspectral']['datacube']
+    else:
+        # Calibrate by calling hyp = Hyperspectral()
+        # This file has two datacubes and the suffix helps to identify the calibrated one.
+        h5_folder_radiance_cube = config['HDF.hyperspectral']['dataCube'] + '_radiance'
 
     # Wavelength centers for all bands
     h5_folder_wavelength_centers = config['HDF.calibration']['band2wavelength']
@@ -49,6 +55,20 @@ def main(iniPath):
         h5_folder_wavelength_widths = config['HDF.calibration']['fwhm']
     except:
         h5_folder_wavelength_widths = 'undefined'
+
+    
+    try:
+        pixel_mask_by_footprint = eval(config['Orthorectification']['mask_pixel_by_footprint'])
+        if pixel_mask_by_footprint:
+            pixel_mask_method = 'footprint'
+        else:
+            pixel_mask_method = 'nn'
+
+    except:
+        # Defaults to 'nn'
+        pixel_mask_method = 'nn'
+
+
 
     # The necessary data (a dictionary) from H5 file for resampling ancillary data (uses the same grid as datacube)
     anc_dict = config['Ancillary']
@@ -75,7 +95,8 @@ def main(iniPath):
                                                                             'wavelength_unit',
                                                                             'radiometric_unit',
                                                                             'sensor_type',
-                                                                            'interleave'])
+                                                                            'interleave',
+                                                                            'pixel_mask_method'])
     
     config_ortho = SettingsOrtho(ground_resolution = float(config['Orthorectification']['resolutionHyperspectralMosaic']), 
                                  # Rectified grid resolution in meters
@@ -103,17 +124,21 @@ def main(iniPath):
                               # <pfx3> relates to wavelength and is micro (10e-6) or nano (10e-9)
                               sensor_type = config['General']['sensor_type'],
                               # Brand and model
-                              interleave = config['Orthorectification']['interleave']
+                              interleave = config['Orthorectification']['interleave'],
                               # ENVI interleave: either 'bsq', 'bip' or 'bil', see:
-                              # https://envi.geoscene.cn/help/Subsystems/envi/Content/ExploreImagery/ENVIImageFiles.htm
+                              # https://envi.geoscene.cn/help/Subsystems/envi/Content/ExploreImagery/ENVIImageFiles.html
+                              pixel_mask_method = pixel_mask_method
+                              # When resampling how to mask nodata pixels: either 'nn' or 'footprint
                               )
 
 
     print("\n################ Orthorectifying: ################")
     files = sorted(os.listdir(h5_folder))
-    n_files= len(sorted(os.listdir(h5_folder)))
+    # Filter out files that do not end with ".h5"
+    h5_files = [file for file in files if file.endswith(".h5")]
+    n_files= len(h5_files)    
     file_count = 0
-    for filename in files:
+    for filename in h5_files:
         if filename.endswith('h5') or filename.endswith('hdf'):
 
             progress_perc = 100*file_count/n_files
@@ -126,8 +151,15 @@ def main(iniPath):
             point_cloud_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                          dataset_name=h5_folder_point_cloud_ecef)
             # Need the radiance cube for resampling
+            if not is_calibrated:
+                # load_datacube will calibrate and write radiance data cube to h5 file (if not already there)
+                hyp = Hyperspectral(filename=h5_filename, config=config, load_datacube=True)
+                del hyp
+
             radiance_cube = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                         dataset_name=h5_folder_radiance_cube)
+                                                            dataset_name=h5_folder_radiance_cube)
+
+
         
             wavelengths = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                             dataset_name=h5_folder_wavelength_centers)
@@ -152,7 +184,7 @@ def main(iniPath):
             
             
             
-            # Resample imagery (RGB composite or both)
+            # Resample imagery (RGB composite or both)#! Here is the error
             gisHSI.resample_datacube(radiance_cube=radiance_cube,
                                      wavelengths=wavelengths,
                                      fwhm=fwhm,

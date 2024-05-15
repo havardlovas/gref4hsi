@@ -71,9 +71,12 @@ class Hyperspectral:
                 radiometricFramePath = config['HDF.calibration']['radiometricFrame']
                 darkFramePath = config['HDF.calibration']['darkFrame']
                 exposureTimePath = config['HDF.hyperspectral']['exposureTime']
-
                 
-                self.t_exp = self.f[exposureTimePath][()][0] / 1000  # Recorded in milliseconds
+
+                self.t_exp = self.f[exposureTimePath][()] / 1000 # Assuming milliseconds
+
+                if self.t_exp.size > 1:
+                    self.t_exp = self.t_exp[0]
 
                 self.darkFrame = self.f[darkFramePath][()]
                 self.radiometricFrame = self.f[radiometricFramePath][()]
@@ -103,9 +106,6 @@ class Hyperspectral:
                 self.n_pix = self.dataCube.shape[1]
                 self.n_bands = self.dataCube.shape[1]
 
-                # Calculate radiance cube if this is cube is not calibrated
-                self.digital_counts_2_radiance(config=config)
-
             # Check if the dataset exists
             processed_nav_folder = config['HDF.processed_nav']['folder']
             
@@ -118,6 +118,12 @@ class Hyperspectral:
                     self.pose_time = self.f[processed_nav_config['timestamp']][()]
                 except:
                     pass
+        
+        
+        # This step must be conducted after closing h5 file
+        if load_datacube:
+            # Calculate radiance cube if this is cube is not calibrated
+            self.digital_counts_2_radiance(config=config)
             
 
 
@@ -129,6 +135,7 @@ class Hyperspectral:
 
 
     def digital_counts_2_radiance(self, config):
+        """Calibrate data """
 
         # Only calibrate if data it is not already done
         is_calibrated = eval(config['HDF.hyperspectral']['is_calibrated'])
@@ -136,7 +143,7 @@ class Hyperspectral:
         if is_calibrated:
             self.dataCubeRadiance = self.dataCube.astype(np.float32)
 
-            # Add the radiance dataset
+            # This is then the path of radiance
             radiance_cube_path = config['HDF.hyperspectral']['dataCube']
         else:
             self.dataCubeRadiance = np.zeros(self.dataCube.shape, dtype = np.float32)
@@ -147,31 +154,14 @@ class Hyperspectral:
             # Add the radiance dataset
             radiance_cube_path = config['HDF.hyperspectral']['dataCube'] + '_radiance'
             
-            # TODO: Write the radiance data to the h5 file
-            Hyperspectral.add_dataset(data = self.dataCubeRadiance, name=radiance_cube_path, h5_filename=self.name)
-        
-        config.set('HDF.hyperspectral', 'radiance_cube', radiance_cube_path)
+            # Write the radiance data to the h5 file. Next time this is used is during orthorectification
+            Hyperspectral.add_dataset(data = self.dataCubeRadiance, name=radiance_cube_path, h5_filename=self.name, overwrite=True)
 
         # For memory efficiency
         del self.dataCube
-
-        
-            
-            
-    
-    """def add_dataset(self, data, name):
-        
-        # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
-        with h5py.File(self.name, 'a', libver='latest') as self.f:
-            # Check if the dataset exists
-            if name in self.f:
-                del self.f[name]
-
-            dset = self.f.create_dataset(name=name, data = data)
-    """
     
     @staticmethod
-    def add_dataset(data, name, h5_filename):
+    def add_dataset(data, name, h5_filename, overwrite = True):
         """
         Method to write a dataset to the h5 file
         :param data: type any permitted (see h5py doc)
@@ -185,10 +175,20 @@ class Hyperspectral:
         # The h5 file structure can be studied by unravelling the structure in Python or by using HDFview
         with h5py.File(h5_filename, 'a', libver='latest') as f:
             # Check if the dataset exists
-            if name in f:
-                del f[name]
+            if overwrite:
+                # Overwrite and create new dataset
+                if name in f:
+                    del f[name]
 
-            dset = f.create_dataset(name=name, data = data)
+                dset = f.create_dataset(name=name, data = data)
+            else:
+                if name in f:
+                    # Do nothing
+                    pass
+                else:
+                    # Make new
+                    dset = f.create_dataset(name=name, data = data)
+                pass
 
     """def get_dataset(self, dataset_name):
         

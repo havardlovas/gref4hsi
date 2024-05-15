@@ -182,9 +182,11 @@ def main(iniPath, viz = False, use_coreg_param = False):
     
     print("\n################ Georeferencing: ################")
     files = sorted(os.listdir(dir_r))
-    n_files= len(sorted(os.listdir(dir_r)))
+    # Filter out files that do not end with ".h5"
+    h5_files = [file for file in files if file.endswith(".h5")]
+    n_files= len(h5_files)
     file_count = 0
-    for filename in files:
+    for filename in h5_files:
         if filename.endswith('h5') or filename.endswith('hdf'):
 
             progress_perc = 100*file_count/n_files
@@ -257,12 +259,13 @@ def main(iniPath, viz = False, use_coreg_param = False):
             
             write_intersection_geometry_2_h5_file(hsi_geometry=hsi_geometry, config = config, h5_filename=h5_filename)
 
-            hsi_geometry.write_rgb_point_cloud(config = config, hyp = hyp, transect_string = filename.split('.')[0])
+            hsi_geometry.write_rgb_point_cloud(config = config, hyp = hyp, transect_string = filename.split('.')[0], mesh_trans= mesh_trans)
 
             if viz:
                  visualize.show_projected_hsi_points(HSICameraGeometry=hsi_geometry, 
                                                      config=config, 
-                                                     transect_string = filename.split('.')[0])
+                                                     transect_string = filename.split('.')[0],
+                                                     mesh_trans = mesh_trans)
 
             
 
