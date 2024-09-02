@@ -9,7 +9,7 @@ import yaml
 
 if os.name == 'nt':
     # Windows OS
-    base_fp = 'D:'
+    base_fp = 'E:'
     home = 'C:/Users/haavasl'
 elif os.name == 'posix':
     # This Unix-like systems inl. Mac and fLinux
@@ -305,7 +305,7 @@ if __name__ == "__main__":
     main(str(config_yaml), str(specim_mission_folder), geoid_path, config_template_path, lab_calibration_path)"""
 
     # First flight
-    specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remoy/remoy_202208310800_ntnu_hyperspectral_74m")
+    specim_mission_folder = os.path.join(base_fp, r"HavardData\runde_202209010835_ntnu_hyperspectral_74m\runde_202209010835_ntnu_hyperspectral_74m")
     config_yaml = os.path.join(specim_mission_folder, "config.seabee.yaml")
 
     # Run 

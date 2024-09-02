@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import Path
 import pyvista as pv
 from pyvistaqt import BackgroundPlotter
 import pandas as pd
@@ -9,7 +11,7 @@ import pymap3d as pm
 # A simple visualization of various types of data
 from gref4hsi.utils.geometry_utils import rotation_matrix_ecef2ned, rotation_matrix_ecef2enu
 
-def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'ECEF'):
+def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'ECEF', mesh_idx = 0):
     """
     # Reads the mesh file and pose info, and plots the trajectory next to the mesh.
 
@@ -45,7 +47,35 @@ def show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame = 'EC
 
     R_body_to_ecef = Rotation.from_euler("ZYX", eul_cam, degrees=True)
     
+    
 
+    ## This is the part that would be different:
+
+    try:
+
+        if eval(config['General']['dem_per_transect']):
+            
+            dem_folder_parent = Path(config['Absolute Paths']['dem_folder'])
+
+            # Get all entries (files and directories)
+            all_entries = dem_folder_parent.iterdir()
+
+            # Filter for directories (excluding '.' and '..')
+            transect_folders = [entry for entry in all_entries if entry.is_dir() and not entry.name.startswith('.')]
+
+            transect_count = 0
+            for transect_folder in transect_folders:
+                if transect_count == mesh_idx:
+                    mesh_path = os.path.join(transect_folder, 'model.ply')
+                transect_count += 1
+
+        else:
+            Exception
+
+    except:
+        pass # Do nothing
+
+    
     # Read the mesh
     mesh = pv.read(mesh_path)
 

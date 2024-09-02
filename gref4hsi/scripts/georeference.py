@@ -2,6 +2,7 @@
 import configparser
 import json
 import os
+from pathlib import Path
 import sys
 
 # Third party
@@ -167,17 +168,66 @@ def main(iniPath, viz = False, use_coreg_param = False):
     # Maximal allowed ray length
     max_ray_length = float(config['General']['max_ray_length'])
 
-    mesh = pv.read(path_mesh)
+    dem_per_transect = False
 
-    model_meta_path = path_mesh.split('.')[0] + '_meta.json' 
-    with open(model_meta_path, "r") as f:
-        # Load the JSON data from the file
-        metadata_mesh = json.load(f)
-        mesh_off_x = metadata_mesh['offset_x']
-        mesh_off_y = metadata_mesh['offset_y']
-        mesh_off_z = metadata_mesh['offset_z']
-        # Mesh is translated by this much
-        mesh_trans = np.array([mesh_off_x, mesh_off_y, mesh_off_z]).astype(np.float64)
+    try:
+
+        if eval(config['General']['dem_per_transect']):
+
+            dem_per_transect = True
+
+            dem_folder_parent = Path(config['Absolute Paths']['dem_folder'])
+
+            # Get all entries (files and directories)
+            all_entries = dem_folder_parent.iterdir()
+
+            # Filter for directories (excluding '.' and '..')
+            transect_folders = [entry for entry in all_entries if entry.is_dir() and not entry.name.startswith('.')]
+
+            mesh_dict = {'transect_name_list': [],
+                        'mesh_list': [],
+                        'mesh_trans_list': []}
+
+            for transect_folder in transect_folders:
+                transect_name = transect_folder.name
+
+                mesh_dict['transect_name_list'].append(transect_name)
+
+                
+
+                transect_folder = str(transect_folder)
+                path_mesh = os.path.join(transect_folder, 'model.vtk')
+
+                mesh = pv.read(path_mesh)
+                mesh_dict['mesh_list'].append(mesh)
+
+                model_meta_path = path_mesh.split('.')[0] + '_meta.json' 
+                with open(model_meta_path, "r") as f:
+                    # Load the JSON data from the file
+                    metadata_mesh = json.load(f)
+                    mesh_off_x = metadata_mesh['offset_x']
+                    mesh_off_y = metadata_mesh['offset_y']
+                    mesh_off_z = metadata_mesh['offset_z']
+                # Mesh is translated by this much
+                mesh_trans = np.array([mesh_off_x, mesh_off_y, mesh_off_z]).astype(np.float64)
+                mesh_dict['mesh_trans_list'].append(mesh_trans)
+
+        else:
+            Exception
+
+    except:
+
+        mesh = pv.read(path_mesh)
+
+        model_meta_path = path_mesh.split('.')[0] + '_meta.json' 
+        with open(model_meta_path, "r") as f:
+            # Load the JSON data from the file
+            metadata_mesh = json.load(f)
+            mesh_off_x = metadata_mesh['offset_x']
+            mesh_off_y = metadata_mesh['offset_y']
+            mesh_off_z = metadata_mesh['offset_z']
+            # Mesh is translated by this much
+            mesh_trans = np.array([mesh_off_x, mesh_off_y, mesh_off_z]).astype(np.float64)
 
     
     print("\n################ Georeferencing: ################")
@@ -188,7 +238,7 @@ def main(iniPath, viz = False, use_coreg_param = False):
     file_count = 0
     for filename in h5_files:
         if filename.endswith('h5') or filename.endswith('hdf'):
-
+            print(filename)
             progress_perc = 100*file_count/n_files
             print(f"Georeferencing file {file_count+1}/{n_files}, progress is {progress_perc} %")
 
@@ -242,7 +292,22 @@ def main(iniPath, viz = False, use_coreg_param = False):
                                     intrinsic_geometry_dict = intrinsic_geometry_dict)
 
             
-            hsi_geometry.intersect_with_mesh(mesh = mesh, max_ray_length=max_ray_length, mesh_trans = mesh_trans)
+
+            # Determine which 3D model/mesh to use based on transect name
+            if dem_per_transect:
+                # First find out which transect filename is in and use that mesh
+                string_list = mesh_dict['transect_name_list']
+                mesh_index = next((i for i, string in enumerate(string_list) if string in filename), -1)
+                mesh = mesh_dict['mesh_list'][mesh_index]
+                mesh_trans = mesh_dict['mesh_trans_list'][mesh_index]
+
+
+            try:
+                # If intersection failed here, then skip data point
+                hsi_geometry.intersect_with_mesh(mesh = mesh, max_ray_length=max_ray_length, mesh_trans = mesh_trans)
+            except ValueError:
+                print(f'Skipping transect chuck because of lacking intersections: {filename}')
+                continue
 
             print(f'Mesh translation is {mesh_trans}')
             

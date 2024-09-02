@@ -3,6 +3,7 @@ import sys
 import os
 import configparser
 from os import path
+from pathlib import Path
 
 # Third party libraries
 import numpy as np
@@ -571,7 +572,32 @@ def export_model(config_file):
             print('3D model already exists and overwriting is not supported')
             pass
         else:
-            dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
+
+            try:
+                
+
+                if eval(config['General']['dem_per_transect']):
+                    dem_folder_parent = Path(config['Absolute Paths']['dem_folder'])
+
+                    # Get all entries (files and directories)
+                    all_entries = dem_folder_parent.iterdir()
+
+                    # Filter for directories (excluding '.' and '..')
+                    transect_folders = [entry for entry in all_entries if entry.is_dir() and not entry.name.startswith('.')]
+
+                    for transect_folder in transect_folders:
+                        transect_folder = str(transect_folder)
+                        file_path_3d_model = os.path.join(transect_folder, 'model.vtk')
+                        file_path_dem = os.path.join(transect_folder, 'dem.tif')
+                        dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
+                else:
+                    dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
+                    
+                    
+
+            except Exception as e:
+                print(e)
+                dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
 
     elif model_export_type == 'geoid':
         file_path_dem = config['Absolute Paths']['dem_path']

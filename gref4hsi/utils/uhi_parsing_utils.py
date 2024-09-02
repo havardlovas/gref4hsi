@@ -319,41 +319,45 @@ def set_camera_model(config, config_file_path, config_uhi, model_type, binning_s
     
 
 def read_nav_from_mat(mat_filenames):
-    """Function for reading mat data from the beast format into a NAV object"""
+    """Function for reading mat-data from the beast format into a NAV object"""
     is_first = True
     for mat_filename in mat_filenames:
         mat_contents = {}
         mat_contents = loadmat(filename=mat_filename)
 
         # The below is specific to the vehicle and puts numpy arrays of navigation data into a nav object
-        nav = NAV()
 
-        nav.roll = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
-                            value = mat_contents['TELEMETRY']['Roll'])
+        try: # We try because errors in pre-processing could lead to lacking nav data
+            nav = NAV()
 
-        nav.pitch = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
-                            value = mat_contents['TELEMETRY']['Pitch'])
+            nav.roll = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
+                                value = mat_contents['TELEMETRY']['Roll'])
 
-        nav.yaw = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
-                            value = mat_contents['POSITION_RENAV']['USBLCourse']) # The USBL course
+            nav.pitch = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
+                                value = mat_contents['TELEMETRY']['Pitch'])
 
-        nav.pos_x = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
-                            value = mat_contents['POSITION_RENAV']['x'])
+            nav.yaw = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
+                                value = mat_contents['POSITION_RENAV']['USBLCourse']) # The USBL course
 
-        nav.pos_y = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
-                            value = mat_contents['POSITION_RENAV']['y'])
+            nav.pos_x = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
+                                value = mat_contents['POSITION_RENAV']['x'])
 
-        nav.lat = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
-                            value = mat_contents['POSITION_RENAV']['Latitude'])
+            nav.pos_y = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
+                                value = mat_contents['POSITION_RENAV']['y'])
 
-        nav.lon = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
-                            value = mat_contents['POSITION_RENAV']['Longitude'])
+            nav.lat = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
+                                value = mat_contents['POSITION_RENAV']['Latitude'])
 
-        nav.pos_z = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
-                            value = mat_contents['TELEMETRY']['Depth'])
+            nav.lon = TimeData(time = mat_contents['POSITION_RENAV']['SpotOnTime'], 
+                                value = mat_contents['POSITION_RENAV']['Longitude'])
 
-        nav.altitude = TimeData(time = mat_contents['ALTIMETER']['SpotOnTime'], 
-                            value = mat_contents['ALTIMETER']['Altitude']) # Altimeter readings
+            nav.pos_z = TimeData(time = mat_contents['TELEMETRY']['SpotOnTime'], 
+                                value = mat_contents['TELEMETRY']['Depth'])
+
+            nav.altitude = TimeData(time = mat_contents['ALTIMETER']['SpotOnTime'], 
+                                value = mat_contents['ALTIMETER']['Altitude']) # Altimeter readings
+        except KeyError:
+            continue
 
         # First time define the total nav object
         if is_first:
@@ -581,7 +585,7 @@ def altimeter_data_to_point_cloud(nav, config_uhi, lat0, lon0, h0, true_time_hsi
 
     return points_altimeter_transect
 
-def point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, method='nearest', smooth_DEM=True):
+def point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, method='nearest', smooth_DEM=True, make_per_transect = False, transect_name = None):
     """Converts the sparse point cloud of altimeter data into a digital elevation model.
 
     :param points: _description_
@@ -602,7 +606,16 @@ def point_cloud_to_dem(points, config, resolution_dem, lon0, lat0, h0, method='n
     :type smooth_DEM: bool, optional
     """
     # The name of the digital elevation model
-    output_dem_path = config['Absolute Paths']['dem_path']
+    if make_per_transect:
+        # Make a DEM per transect
+        output_dem_folder = config['Absolute Paths']['dem_folder']
+
+        if not os.path.exists(os.path.join(output_dem_folder, transect_name)):
+            os.mkdir(os.path.join(output_dem_folder, transect_name))
+
+        output_dem_path = os.path.join(output_dem_folder, transect_name, 'dem.tif')
+    else:
+        output_dem_path = config['Absolute Paths']['dem_path']
 
     # The padding (ensuring that all rays hit the model)
     pad_xy = float(config['General']['max_ray_length'])
@@ -761,42 +774,62 @@ def uhi_beast(config, config_uhi):
     # agisoft_object = Photogrammetry(project_folder = MISSION_PATH, software_type='agisoft')
     # TODO:: Add support for concurrent camera given that images are contained in a h5 folder. 
     # Should interface towards ODM as well
+    from pathlib import Path
 
-    for h5_index in range(number_of_h5_files):
-        H5_FILE_PATH = H5_FILE_PATHS[h5_index]
+    # The transect list (identified by file name)
+    transect_list = list( set(['_'.join(Path(H5_FILE_PATH).name.split('_')[0:-1]) for H5_FILE_PATH in H5_FILE_PATHS]) )
+    
+    for transect in transect_list:
 
-        # Read the specified entries
-        hyp = HyperspectralLite(h5_filename=H5_FILE_PATH, h5_tree_dict=h5_dict_read)
+        search_path_transect = os.path.normpath(os.path.join(h5_folder, transect + '*'))
 
-        if h5_index == 0:
-            # Camera model is set once, assuming same spatial binning throughout
-            binning_spatial = int(np.round(SPATIAL_PIXELS/hyp.radiance_cube.shape[1]))
-            # Sets camera model with user specified boresight ...
-            set_camera_model(config=config, 
-                             config_file_path = config_file_path, 
-                             config_uhi=config_uhi, 
-                             model_type = 'cal_txt', 
-                             binning_spatial = binning_spatial)
+        H5_FILE_PATHS_TRANSECT = sorted(glob.glob(search_path_transect))
+        h5_index = 0
+        for H5_FILE_PATH in H5_FILE_PATHS_TRANSECT:
 
-        true_time_hsi = hyp.hsi_frames_timestamp - time_offset
+            # Read the specified entries
+            hyp = HyperspectralLite(h5_filename=H5_FILE_PATH, h5_tree_dict=h5_dict_read)
 
-        # Interpolate nav to roll time, IMU time (considered nav timestamp)
+            if h5_index == 0:
+                # Camera model is set once, assuming same spatial binning throughout
+                binning_spatial = int(np.round(SPATIAL_PIXELS/hyp.radiance_cube.shape[1]))
+                # Sets camera model with user specified boresight ...
+                set_camera_model(config=config, 
+                                config_file_path = config_file_path, 
+                                config_uhi=config_uhi, 
+                                model_type = 'cal_txt', 
+                                binning_spatial = binning_spatial)
+                
 
-        ## write nav data to h5 file
-        write_nav_data_to_h5(nav, time_offset, config, H5_FILE_PATH)
-        
-        # Build a point cloud
-        point_cloud_altimeter = altimeter_data_to_point_cloud(nav=nav, 
-                                                              config_uhi=config_uhi, 
-                                                              true_time_hsi = true_time_hsi, 
-                                                              lon0=lon0, 
-                                                              lat0=lat0, 
-                                                              h0=alt0)
-        if h5_index == 0:
-            point_cloud_altimeter_total = point_cloud_altimeter
-        else:
-            point_cloud_altimeter_total = np.append(point_cloud_altimeter_total, point_cloud_altimeter, axis = 0)
-        
+            true_time_hsi = hyp.hsi_frames_timestamp - time_offset
+
+            # Interpolate nav to roll time, IMU time (considered nav timestamp)
+
+            ## write nav data to h5 file
+            write_nav_data_to_h5(nav, time_offset, config, H5_FILE_PATH)
+            
+            # Build a point cloud
+            point_cloud_altimeter = altimeter_data_to_point_cloud(nav=nav, 
+                                                                config_uhi=config_uhi, 
+                                                                true_time_hsi = true_time_hsi, 
+                                                                lon0=lon0, 
+                                                                lat0=lat0, 
+                                                                h0=alt0)
+            if h5_index == 0:
+                point_cloud_altimeter_total = point_cloud_altimeter
+            else:
+                point_cloud_altimeter_total = np.append(point_cloud_altimeter_total, point_cloud_altimeter, axis = 0)
+            
+            h5_index += 1
+        # Should be done for each transect
+        point_cloud_to_dem(point_cloud_altimeter_total, 
+                                    config, 
+                                    resolution_dem = config_uhi.resolution_dem, 
+                                    lon0=lon0, 
+                                    lat0=lat0, 
+                                    h0=alt0,
+                                    make_per_transect=True,
+                                    transect_name=transect)
 
 
         """# If desirable to write to Agisoft type format
@@ -828,13 +861,7 @@ def uhi_beast(config, config_uhi):
 
 
 
-
-    point_cloud_to_dem(point_cloud_altimeter_total, 
-                                 config, 
-                                 resolution_dem = config_uhi.resolution_dem, 
-                                 lon0=lon0, 
-                                 lat0=lat0, 
-                                 h0=alt0)
+    
 
 
 

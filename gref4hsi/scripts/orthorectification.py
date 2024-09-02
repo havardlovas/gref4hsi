@@ -147,9 +147,13 @@ def main(iniPath):
             h5_filename = h5_folder + filename
 
             # Read the 3D point cloud, radiance cube 
-            # Extract the point cloud
-            point_cloud_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+            # Extract the point cloud (if it was not georeferenced, it will throw an error)
+            try:
+                point_cloud_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                          dataset_name=h5_folder_point_cloud_ecef)
+            except:
+                print('Because chunk failed ray tracing, it is not orthorectified')
+                continue # Move to next h5 file
             # Need the radiance cube for resampling
             if not is_calibrated:
                 # load_datacube will calibrate and write radiance data cube to h5 file (if not already there)

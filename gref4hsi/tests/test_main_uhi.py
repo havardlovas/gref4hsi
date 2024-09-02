@@ -1,8 +1,9 @@
 from collections import namedtuple
 import configparser
 import os
+from pathlib import Path
 import sys
-
+import yaml
 import numpy as np
 
 # Detect OS and set FPs
@@ -27,8 +28,13 @@ from gref4hsi.utils import visualize
 from gref4hsi.utils.config_utils import prepend_data_dir_to_relative_paths, customize_config
 
 def main(mission_dir, config_path_template, config_yaml):
-    # D:\HyperspectralDataAll\UHI\2020-07-01-14-40-15-ArcticSeaIce-Ben-Lange
-    DATA_DIR = mission_dir
+
+    # Read flight-specific yaml file
+    with open(config_yaml, 'r') as file:  
+        config_data = yaml.safe_load(file)
+
+    
+    DATA_DIR = str(mission_dir)
 
     # The configuration file stores the settings for georeferencing
     config_file_mission = os.path.join(DATA_DIR, 'configuration.ini')
@@ -38,12 +44,18 @@ def main(mission_dir, config_path_template, config_yaml):
     # Copies the template to config_file_mission and sets up the necessary directories
     prepend_data_dir_to_relative_paths(config_path=config_path_template, DATA_DIR=DATA_DIR)
 
+    if config_data['is_calibrated'] == True:
+        prefix_h5 = 'processed/radiance/'
+    elif config_data['is_calibrated'] == False:
+        prefix_h5 = 'rawdata/hyperspectral/'
+
     # Non-default settings
     custom_config = {'General':
                         {'mission_dir': DATA_DIR,
                         'model_export_type': 'dem_file', # Infer seafloor structure from altimeter recordings
                         'max_ray_length': 20,
-                        'lab_cal_dir': os.path.join(base_fp, 'HyperspectralDataAll/UHI/Lab_Calibration_Data/NP')}, # Max distance in meters from UHI to seafloor
+                        'lab_cal_dir': os.path.join(base_fp, 'HyperspectralDataAll/UHI/Lab_Calibration_Data/NP'),
+                        'dem_per_transect': True}, # Max distance in meters from UHI to seafloor
 
                     'Coordinate Reference Systems': 
                         {'proj_epsg' : 3395, # The projected CRS for orthorectified data (an arctic CRS)
@@ -52,7 +64,7 @@ def main(mission_dir, config_path_template, config_yaml):
                         'pos_epsg_orig' : 4978}, # The CRS of the positioning data we deliver to the georeferencing
 
                     'Relative Paths':
-                        {'dem_folder': 'Input/GIS/'}, # Using altimeter, we generate one DEM per transect chunk
+                        {'dem_folder': 'Input/GIS/'}, # Using altimeter, we generate one DEM per transect
                     
                     'Absolute Paths':
                         {'geoid_path': os.path.join(home, "VsCodeProjects/gref4hsi/data/world/geoids/egm08_25.gtx")}, # Using altimeter, we generate one DEM per transect chunk
@@ -60,7 +72,7 @@ def main(mission_dir, config_path_template, config_yaml):
                     'Orthorectification':
                         {'resample_rgb_only': True, # Good choice for speed
                         'resample_ancillary': False, # Good choice for speed
-                        'resolutionhyperspectralmosaic': 0.01, # 1 cm
+                        'resolutionhyperspectralmosaic': 0.01, # in meters
                         'raster_transform_method': 'north_east'},
                     
                     'HDF.raw_nav': {'altitude': 'raw/nav/altitude',
@@ -68,16 +80,16 @@ def main(mission_dir, config_path_template, config_yaml):
                         'is_global_rot' : False, # The vehicles orientations are used as Yaw, Pitch, Roll
                         'eul_is_degrees' : True},
 
-                    'HDF.calibration': {'band2wavelength' : 'processed/radiance/calibration/spectral/band2Wavelength',
-                                    'darkframe' : 'processed/radiance/calibration/radiometric/darkFrame',
-                                    'radiometricframe' : 'processed/radiance/calibration/radiometric/radiometricFrame',
-                                    'fov' : 'processed/radiance/calibration/geometric/fieldOfView'},
+                    'HDF.calibration': {'band2wavelength' : prefix_h5 + 'calibration/spectral/band2Wavelength',
+                                    'darkframe' : prefix_h5 + 'calibration/radiometric/darkFrame',
+                                    'radiometricframe' : prefix_h5 + 'calibration/radiometric/radiometricFrame',
+                                    'fov' : prefix_h5 + 'calibration/geometric/fieldOfView'},
                     
                     # Where to find the standard data for the cube. Note that is_calibrated implies whether data is already in correct format
-                    'HDF.hyperspectral': {'datacube' : 'processed/radiance/dataCube',
-                                        'exposuretime' : 'processed/radiance/exposureTime',
-                                        'timestamp' : 'processed/radiance/timestamp',
-                                        'is_calibrated' : False},
+                    'HDF.hyperspectral': {'datacube' : prefix_h5 + 'dataCube',
+                                        'exposuretime' : prefix_h5 + 'exposureTime',
+                                        'timestamp' : prefix_h5 + 'timestamp',
+                                        'is_calibrated' : config_data['is_calibrated']},
 
                     'HDF.rgb' :{'rgb_frames' : 'rawdata/rgb/rgbFrames',
                                 'rgb_frames_timestamp' : 'rawdata/rgb/timestamp'},
@@ -114,8 +126,8 @@ def main(mission_dir, config_path_template, config_yaml):
                                                                         [1, 0, 0],
                                                                         [0, 0, -1]]),
                                 # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.
-                                translation_alt_to_body = np.array([0.5, 0, 0]),
-                                time_offset_sec =  22,
+                                translation_alt_to_body = np.array([0.5, 0, 0]), # 
+                                time_offset_sec =  config_data['time_offset'],
                                 # Ben's tick s1 starts at 1593614097.992003 -> 22 s delay
                                 # Ben's tick s2 starts at 1593614414.995001 -> 0 s delay
 
@@ -151,7 +163,7 @@ def main(mission_dir, config_path_template, config_yaml):
     parsing_utils.export_model(config_file_mission)
 
     # Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
-    #visualize.show_mesh_camera(config)
+    #visualize.show_mesh_camera(config, mesh_idx=1)
 
     # Georeference the line scans of the hyperspectral imager. Utilizes parsed data
     georeference.main(config_file_mission)
@@ -161,13 +173,21 @@ def main(mission_dir, config_path_template, config_yaml):
 
 if __name__ == "__main__":
     config_path_template = os.path.join(home, 'VsCodeProjects/gref4hsi/data/config_examples/configuration_uhi.ini')
-    
-    mission_dir = os.path.join(base_fp, "HyperspectralDataAll/UHI/Mosaic2020/2020-07-01/")
-    config_yaml = os.path.join(mission_dir, 'config.mission.yaml')
-    # First mission
-    main(mission_dir, config_path_template, config_yaml)
 
-    # Second mission
-    mission_dir = os.path.join(base_fp, "HyperspectralDataAll/UHI/2020-07-07/")
-    config_yaml = os.path.join(mission_dir, 'config.mission.yaml')
-    main(mission_dir, config_path_template, config_yaml)
+    # Where all the missions are
+    mission_parent = os.path.join(base_fp, "HyperspectralDataAll/UHI/Mosaic2020/")
+
+    # Process files where the yaml file is present
+    missions_list = [f.parent for f in Path(mission_parent).rglob("config.mission.yaml")]
+
+
+    for i, mission_dir in enumerate(missions_list):
+
+        if i > 4:
+
+            print(mission_dir)
+
+            config_yaml = os.path.join(mission_dir, 'config.mission.yaml')
+
+            # Run the main processing
+            main(mission_dir, config_path_template, config_yaml)
