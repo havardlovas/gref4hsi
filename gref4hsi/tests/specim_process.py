@@ -74,7 +74,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # Do coregistration if there is an orthomosaic to compare under "orthomosaic"
     #do_coreg = True
     ortho_ref_fold = os.path.join(specim_mission_folder, "orthomosaic")
-
+    do_coreg = False
     if not os.path.exists(ortho_ref_fold):
         print('Coregistration is not done, as there was no reference orthomosaic')
         
@@ -137,7 +137,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         'pos_epsg_orig' : 4978}, # The CRS of the positioning data we deliver to the georeferencing
 
                     'Orthorectification':
-                        {'resample_rgb_only': True, # True can be good choice for speed during DEV
+                        {'resample_rgb_only': False, # True can be good choice for speed during DEV
                          'resample_ancillary': True,
                         'resolutionhyperspectralmosaic': RESOLUTION_ORTHOMOSAIC, # Resolution in m
                         'raster_transform_method': 'north_east'}, # North-east oriented rasters.
@@ -148,8 +148,6 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         'eul_is_degrees' : True}, # And given in degrees
                     'Absolute Paths': {
                         'geoid_path' : GEOID_PATH,
-                        #'geoid_path' : 'data/world/geoids/egm08_25.gtx',
-                        'dem_path' : DEM_PATH,
                         'orthomosaic_reference_folder' : os.path.join(specim_mission_folder, "orthomosaic"),
                         'ref_ortho_reshaped' : os.path.join(DATA_DIR, "Intermediate", "RefOrthoResampled"),
                         'ref_gcp_path' : os.path.join(DATA_DIR, "Intermediate", "gcp.csv"),
@@ -167,8 +165,21 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         },
                     # These are the ancillary layers to be orthorectified (can select from all entities in "Georeferencing")
                     'Ancillary': {
+                            'position_ecef' : 'processed/nav/position_hsi_ecef',
+                            'quaternion_ecef' : 'processed/nav/quaternion_hsi_ecef',
+                            'points_ecef_crs' : 'processed/georef/points_ecef_crs',
+                            #'points_hsi_crs' : 'processed/georef/point_hsi_frame',
+                            #'normals_hsi_crs' : 'processed/georef/normals_hsi_frame',
+                            'theta_v' : 'processed/georef/theta_v',
+                            'theta_s' : 'processed/georef/theta_s',
+                            'phi_v' : 'processed/georef/phi_v',
+                            'phi_s' : 'processed/georef/phi_s',
+                            #'normals_ned_crs' : 'processed/georef/normals_ned_crs',
+                            'unix_time_grid' : 'processed/georef/unix_time_grid', # h5 path
                             'pixel_nr_grid': 'processed/georef/pixel_nr_grid', # h5 path
-                            'unix_time_grid' : 'processed/georef/unix_time_grid' # h5 path
+                            #'frame_nr_grid' : 'processed/georef/frame_nr_grid',
+                            #'hsi_tide_gridded' : 'processed/georef/hsi_tide_gridded',
+                            'hsi_alts_msl' : 'processed/georef/hsi_alts_msl'
                         }
                     
     }
@@ -180,10 +191,12 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
         custom_config['Absolute Paths']['dem_path'] = DEM_PATH
 
     
-    # No need to orthorectify the data cube initially when coregistration with RGB composites is done
+    
     if do_coreg:
+        # No need to orthorectify the data cube initially when coregistration with RGB composites is done
         custom_config['Orthorectification']['resample_rgb_only'] = True
-
+        
+        # Here you can set which camera parameters to optimize
         cam_calibrate_dict = {'calibrate_boresight': False,
                           'calibrate_camera': False,
                           'calibrate_lever_arm': False,
@@ -205,12 +218,15 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
         coreg_dict = {'calibrate_dict': cam_calibrate_dict,
                       'calibrate_per_transect': True, # Whether to calibrate on each transect seperately (True) or to use an entire set of transects for calibration (False)
                       'calibrate_dict_extr': calibrate_dict_extr,
-                      'time_node_spacing': 10, #s
+                      'time_node_spacing': 10, #s (set to really large number to yield single node, constant correction)
                       'hard_threshold_m': 10, # m
                       'pos_err_ref_frame': 'ned', # ['ecef' or 'ned'] The ref frame to estimate position errors in
                       'time_interpolation_method': 'linear',
                       'sigma_param' : np.array([2, 2, 5, 0.1, 0.1, 1]) # north [m], east [m], down [m], roll [deg], pitch [deg], yaw [deg] (is different for RTK/PPK!!!!)
                       }
+    else:
+        # When no coregistration is done, then resample datacube
+        custom_config['Orthorectification']['resample_rgb_only'] = False
     
     # 
     if fast_mode:
@@ -229,7 +245,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # into an h5 file. The nav data is written to "raw/nav/" subfolders, whereas hyperspectral data and calibration data 
     # written to "processed/hyperspectral/" and "processed/calibration/" subfolders
     """specim_parsing_utils.main(config=config,
-                              config_specim=config_specim_preprocess)"""
+                              config_specim=config_specim_preprocess)
     
     # Time interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
     parsing_utils.export_pose(config_file_mission)
@@ -237,17 +253,17 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # Formats model to triangular mesh and an earth centered earth fixed / geocentric coordinate system
     parsing_utils.export_model(config_file_mission)
 
-    # Commenting out the georeference step is fine if it has been done
+    # Commenting out the georeference step is fine if it has been done"""
 
     
     ## Visualize the data 3D photo model from RGB images and the time-resolved positions/orientations
     #visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
     # Step 1: Direct georeferencing
-    """georeference.main(config_file_mission)
+    georeference.main(config_file_mission)
 
     # Step 2: Orthorectify the direct georeferenced data (incl metadata)
-    orthorectification.main(config_file_mission)"""
+    orthorectification.main(config_file_mission)
     
 
 
@@ -257,29 +273,31 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
         # Coregistration requires that Step 1 and 2 were performed and that resample anc = True
         # Match RGB composite to reference, find features and following data, ground control point (gcp) list, for each feature pair:
         # reference point 3D (from reference), position/orientation of vehicle (using resampled time) and pixel coordinate (using resampled pixel coordinate)
-        """coregistration.main(config_file_mission, mode='compare', is_calibrated = False)
+        coregistration.main(config_file_mission, mode='compare', is_calibrated = False)
 
         # The gcp list allows reprojecting reference points and evaluate the reprojection error,
         # which is used to optimize static geometric parameters (e.g. boresight, camera model...) or dynamic geometric parameters (time-varying nav errors).
         # Settings are currently in coregistration script
-        coregistration.main(config_file_mission, mode='calibrate', is_calibrated = False)
+        coregistration.main(config_file_mission, mode='calibrate', is_calibrated = False, coreg_dict = coreg_dict)
 
-        # Only resample RGB and aux data 
-        custom_config['Orthorectification']['resample_rgb_only'] = True
+        # Resample full datacube
+        custom_config['Orthorectification']['resample_rgb_only'] = False
         customize_config(config_path=config_file_mission, dict_custom=custom_config)
-
+        
         # Re-georeference with coregistred parameters
         georeference.main(config_file_mission, use_coreg_param=True)
-        
+            
+
         # Coregister this stuff
         orthorectification.main(config_file_mission)
 
         # Second round of comparison
-        coregistration.main(config_file_mission, mode='compare', is_calibrated = True)"""
-        
-        # Check bulk
-        coregistration.main(config_file_mission, mode='calibrate', is_calibrated = True, coreg_dict=coreg_dict)
+        coregistration.main(config_file_mission, mode='compare', is_calibrated = True)
 
+        # Check bulk
+        coregistration.main(config_file_mission, mode='calibrate', is_calibrated = True, coreg_dict = coreg_dict)
+    
+    
 
 
 if __name__ == "__main__":
