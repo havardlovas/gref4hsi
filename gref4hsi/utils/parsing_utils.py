@@ -558,9 +558,7 @@ def export_model(config_file):
     # 1) Agisoft, *.ply file/DEM and None
     model_export_type = config['General']['model_export_type']
 
-    if model_export_type == 'agisoft':
-        agisoft_export_model(config_file=config_file)
-    elif model_export_type == 'ply_file':
+    if model_export_type == 'ply_file':
         # Nothing needs to be done then?
         pass
     elif model_export_type == 'dem_file':
