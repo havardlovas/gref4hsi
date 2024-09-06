@@ -855,8 +855,8 @@ def uhi_beast(config, config_uhi):
     # Use the total point cloud to make a DEM
     
 
-    if config_uhi.agisoft_process:
-        agisoft_object.load_photos_and_reference()
+    """if config_uhi.agisoft_process:
+        agisoft_object.load_photos_and_reference()"""
 
 
 
@@ -986,8 +986,8 @@ def uhi_dbe(config, config_uhi):
     # Use the total point cloud to make a DEM
     
 
-    if config_uhi.agisoft_process:
-        agisoft_object.load_photos_and_reference()
+    """if config_uhi.agisoft_process:
+        agisoft_object.load_photos_and_reference()"""
 
 
 
