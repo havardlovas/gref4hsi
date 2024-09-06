@@ -136,7 +136,7 @@ class GeoSpatialAbstractionHSI():
         chunk_size_GB = config_ortho.chunk_size_cube_GB
 
 
-        # If chunking is to be applied, we can use square chunks. Round to the nearest thousand because of personal OCD
+        # If chunking is to be applied, we can use square chunks
         chunk_square_length = np.sqrt((chunk_size_GB*1024**3) / (k*bytes_per_entry))
         self.chunk_square_length = int(np.round(chunk_square_length/1000)*1000)
 
@@ -169,7 +169,8 @@ class GeoSpatialAbstractionHSI():
         # To let ENVI pick up on which bands are used for red-green-blue vizualization
         self.default_bands_string = '{ '+' , '.join([str(band_ind_R), str(band_ind_G), str(band_ind_B)]) + ' }'
 
-        # Some relevant metadata
+        # Some relevant metadata.
+        # See https://www.nv5geospatialsoftware.com/docs/ENVIHeaderFiles.html for documentation of the entries
         metadata_ENVI = {
             'description': 'Radiance converted, georeferenced data',
             'unit': config_ortho.radiometric_unit,
@@ -177,7 +178,7 @@ class GeoSpatialAbstractionHSI():
             'sensor type': config_ortho.sensor_type,
             'default bands': self.default_bands_string,
             'interleave': config_ortho.interleave,
-            'wavelengths': wavelengths
+            'wavelength': wavelengths
         }
         try:
             # If vector form

@@ -188,7 +188,7 @@ def main(iniPath):
             
             
             
-            # Resample imagery (RGB composite or both)#! Here is the error
+            # Resample imagery (RGB composite or both)#!
             gisHSI.resample_datacube(radiance_cube=radiance_cube,
                                      wavelengths=wavelengths,
                                      fwhm=fwhm,
