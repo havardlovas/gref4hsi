@@ -1470,12 +1470,7 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
                 
                 
 
-                if plot_node_spacing:
-                    MAE_median_list.append(MAE_median)
-                    rmse_list.append(rmse_val)
-                    MAE_mean_list.append(MAE_mean)
-                    node_number_list.append(number_of_nodes)
-                    node_spacing_list.append(time_node_spacing)
+                
                 
                 # Now, if all features were used to optimize, use gaussian interpolation (KRIGING actually)
                 if node_partition == 'all_features':
@@ -1514,16 +1509,7 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
                                 mode = 'w',
                                 param_dict = camera_model_dict_updated)
             
-            if plot_node_spacing:
-                plt.plot(np.array(node_number_list), np.array(rmse_list), label = 'RMSE')
-                plt.plot(np.array(node_number_list), np.array(MAE_mean_list), label = 'MAE (mean)')
-                plt.plot(np.array(node_number_list), np.array(MAE_median_list), label = 'MAE (median)')
-                plt.xlabel('Number of nodes')
-                plt.ylabel('Error [pixels]')
-                plt.ylim(bottom=0)
-                plt.legend()
-                plt.title('')
-                #plt.show()
+            
 
         else:
             
