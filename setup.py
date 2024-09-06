@@ -3,13 +3,13 @@ import setuptools
 
 setuptools.setup(
     name='gref4hsi',
-    version='0.2.3',    
+    version='0.2.5',    
     description='A Python package for for georeferencing and orthorectifying hyperspectral imagery',
     long_description=pathlib.Path("README.md").read_text(),
     long_description_content_type = "text/markdown",
     url='https://github.com/havardlovas/gref4hsi',
     author='Haavard Snefjellaa Loevaas',
-    author_email='havard.s.lovas@ntnu.no',
+    author_email='havard.s.lovas@gmail.no',
     license='EUPL-1.2',
     install_requires=[
         "opencv-python",
@@ -34,7 +34,8 @@ setuptools.setup(
         "trimesh",
         "rtree",
         "embreex",
-        "ephem"
+        "ephem",
+        "pykrige"
     ],
 
     classifiers=[
