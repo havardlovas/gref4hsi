@@ -416,10 +416,17 @@ def reformat_h5_embedded_data_h5(config, config_file):
             timestamp_hsi = hyp.dataCubeTimeStamps.reshape(-1)
 
             # Compute interpolated absolute positions positions and orientation:
-            position_interpolated, quaternion_interpolated = interpolate_poses(timestamp_from=timestamps_imu,
-                                                             pos_from=position_ref,
-                                                             rot_from=rot_obj,
-                                                             timestamps_to=timestamp_hsi)
+            
+            # In special case where data has already been interpolated
+            if np.array_equal(timestamps_imu, timestamp_hsi):
+                position_interpolated = position_ref
+                quaternion_interpolated = quaternion_ref
+                
+            else: # Do interpolation
+                position_interpolated, quaternion_interpolated = interpolate_poses(timestamp_from=timestamps_imu,
+                                                                 pos_from=position_ref,
+                                                                 rot_from=rot_obj,
+                                                                 timestamps_to=timestamp_hsi)
 
             # If the original orientations are with respect to (North-East-Down) NED
             if not is_global_rot:
