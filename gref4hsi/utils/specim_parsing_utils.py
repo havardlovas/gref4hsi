@@ -407,7 +407,7 @@ def main(config, config_specim):
     # Vector from origin of HSI to body origin, expressed in body
     # User set
     t_hsi_body = config_specim.translation_body_to_hsi
-    param_dict['tz'] = t_hsi_body[0]
+    param_dict['tx'] = t_hsi_body[0]
     param_dict['ty'] = t_hsi_body[1]
     param_dict['tz'] = t_hsi_body[2]
 
@@ -505,7 +505,7 @@ def main(config, config_specim):
         
         df_start_stop = pd.DataFrame(start_stop_data)
 
-        df_start_stop.to_csv(path_or_buf = os.path.join(START_STOP_DIR, 'start_stop_lines.txt'), sep=' ')
+        df_start_stop.to_csv(path_or_buf = os.path.join(START_STOP_DIR, 'start_stop_lines.txt'), sep='\s+')
 
 
 
@@ -515,7 +515,7 @@ def main(config, config_specim):
     search_path_lines_start_stop = os.path.normpath(os.path.join(START_STOP_DIR, PATTERN_START_STOP))
     LINES_START_STOP_FILE_PATH = glob.glob(search_path_lines_start_stop)[0]
 
-    df_start_stop = pd.read_csv(filepath_or_buffer=LINES_START_STOP_FILE_PATH, header=0, sep=' ')
+    df_start_stop = pd.read_csv(filepath_or_buffer=LINES_START_STOP_FILE_PATH, header=0, sep='\s+')
 
 
 
@@ -616,6 +616,9 @@ def main(config, config_specim):
 
     # Each line in start_stop defines a transect
     n_transects = df_start_stop.shape[0]
+    
+    print(f'There are {n_transects} transects')
+    
     for transect_number in range(n_transects):
         start_line = df_start_stop['line_start'][transect_number]
         stop_line = df_start_stop['line_stop'][transect_number]
