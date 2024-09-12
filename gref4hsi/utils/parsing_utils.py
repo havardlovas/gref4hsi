@@ -387,6 +387,8 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 eul_ref = hyp.get_dataset(h5_filename=path_hdf,dataset_name=config['HDF.raw_nav']['eul_ZYX'])
                 if eul_ref.shape[0] == 3:
                     eul_ref = np.transpose(eul_ref)
+                
+                # From keyword in config file
                 eul_is_degrees = eval(config['HDF.raw_nav']['eul_is_degrees'])
                 
                 ## Assuming It is given as roll, pitch, yaw

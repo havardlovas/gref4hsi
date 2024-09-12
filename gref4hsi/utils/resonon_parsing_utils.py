@@ -47,12 +47,12 @@ def _img_object_2_h5_file(h5_filename, h5_tree_dict, img_object):
 # Read all meta data from header file (currently hard coded, but could be avoided I guess)
 # An instance of ResononImage will be created for each image
 class ResononImage:
-    def __init__(self, config, config_file, config_specim_preprocess, specim_mission_folder, processing_lvl, afov=None):
+    def __init__(self, config, config_file, config_specim_preprocess, specim_mission_folder, processing_lvl, afov_deg=None):
         self.config = config
         self.config_file = config_file
         self.config_specim_preprocess = config_specim_preprocess
         self.specim_mission_folder = specim_mission_folder
-        self.afov = afov # in radians
+        self.afov = np.deg2rad(afov_deg) # in radians
         self.fov_file = ''
         self.geoid_path = config['Absolute Paths']['geoid_path']
         
@@ -73,7 +73,7 @@ class ResononImage:
                            "pre-processed",
                            'imudata')
         
-        self.n_imgs = len(os.listdir(self.nav_dir))
+        self.n_imgs = len([f for f in os.listdir(self.nav_dir) if not f.startswith('.')]) # Fixes hidden file problem
         
         
         
@@ -118,13 +118,20 @@ class ResononImage:
                     'wavelengths' : self.config['HDF.calibration']['band2wavelength']}
         # Defining the folder in which to put the data
         h5_folder = self.config['Absolute Paths']['h5_folder']
+        
+        is_already_processed = 0 != len([f for f in os.listdir(h5_folder) if not f.startswith('.')])
+        
+        # Exit
+        if is_already_processed:
+            return
 
         for i in range(self.n_imgs):
+            print(self.n_imgs)
             img_id = f"*{i:03d}*"
             transect_nr = f"{i:03d}"
 
             search_path_nav = os.path.normpath(os.path.join(self.nav_dir, img_id + '.json'))
-            search_path_envi_hdr = os.path.normpath(os.path.join(self.capture_dir, img_id + '.hdr'))
+            search_path_envi_hdr = os.path.normpath(os.path.join(self.capture_dir, img_id + '.bip.hdr'))
 
             envi_hdr_file = glob.glob(search_path_envi_hdr)[0]
             nav_file = glob.glob(search_path_nav)[0]
@@ -189,7 +196,8 @@ class ResononImage:
         
         if len(f_list) == 1:
             # Set value in config file:
-            self.config.set('Absolute Paths', 'hsi_calib_path', value = str(f_list[0]))
+            self.config.set('Absolute Paths', 'hsi_calib_path', value = 
+                            os.path.join( str(f_list[0]), file_name_xml))
             # Write the config object 
             with open(self.config_file, 'w') as configfile:
                     self.config.write(configfile)

@@ -124,10 +124,6 @@ def main(iniPath, viz = False, use_coreg_param = False):
     # Directory of H5 files
     dir_r = config['Absolute Paths']['h5_folder']
 
-    
-
-    
-
     # Timestamps here
     h5_folder_time_pose = config['HDF.processed_nav']['timestamp']
 
