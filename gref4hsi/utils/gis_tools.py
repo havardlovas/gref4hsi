@@ -135,7 +135,6 @@ class GeoSpatialAbstractionHSI():
         bytes_per_entry = radiance_cube.itemsize
         chunk_size_GB = config_ortho.chunk_size_cube_GB
 
-
         # If chunking is to be applied, we can use square chunks
         chunk_square_length = np.sqrt((chunk_size_GB*1024**3) / (k*bytes_per_entry))
         self.chunk_square_length = int(np.round(chunk_square_length/1000)*1000)
@@ -150,12 +149,20 @@ class GeoSpatialAbstractionHSI():
         wl_red = config_ortho.wl_red
         wl_green = config_ortho.wl_green
         wl_blue = config_ortho.wl_blue
-
+        
+        # North-east or memory optimal
         raster_transform_method = config_ortho.raster_transform_method
 
         # Set nodata value for ortho-products
-        nodata = config_ortho.nodata_value
-        self.nodata = nodata
+        
+        self.nodata = config_ortho.nodata_value
+        
+        if self.nodata.dtype != radiance_cube.dtype:
+            # In this case, we need to assign a default value
+            self.nodata = _get_max_value(dtype)
+            
+            # To avoid calling nodata on saturated values we do
+            radiance_cube[radiance_cube == self.nodata] = self.nodata - 1
 
         rgb_composite_only = config_ortho.resample_rgb_only
 
@@ -199,8 +206,7 @@ class GeoSpatialAbstractionHSI():
         # Extract relevant info from hyp object
         datacube = radiance_cube[:, :, :].reshape((-1, n_bands))
 
-        # RBG Composite
-        rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+        
 
         # Horizontal coordinates of intersections in projected CRS
         coords = self.points_proj[:, :, 0:2].reshape((-1, 2))
@@ -219,7 +225,10 @@ class GeoSpatialAbstractionHSI():
         self.suffix = suffix
 
         # Create raster mask from the polygon describing the footprint (currently not used for anything)
-        mask_method = 'nn'       
+        
+        # Recommend using the nearest neighbor if transects has turns
+        # the footprint method will render a mosaic without holes, but may lead to a lot of interpolation in rugged terrain
+        mask_method = config_ortho.pixel_mask_method       
         
         geoms = [mapping(self.footprint_shp)]
         mask_footprint = geometry_mask(geoms, out_shape=(height, width), transform=transform)
@@ -240,8 +249,9 @@ class GeoSpatialAbstractionHSI():
 
             # For the later processing, storing the mapping from the rectified grid to the raw datacube makes sense:
             indexes_grid_unmasked = indexes.reshape((height, width))
+            
             # Mask indexes
-            indexes_grid_unmasked[mask == 1] = nodata
+            indexes_grid_unmasked[mask == 1] = self.nodata
 
             # Make masked indices accessible as these allow orthorectification of ancilliary data
             self.index_grid_masked = indexes_grid_unmasked
@@ -252,7 +262,7 @@ class GeoSpatialAbstractionHSI():
                 'indexes': indexes,
                 'index_grid_masked': self.index_grid_masked,
                 'mask': mask,
-                'nodata': nodata,
+                'nodata': self.nodata,
                 'height': height,
                 'width': width,
                 'datacube': datacube,
@@ -260,7 +270,7 @@ class GeoSpatialAbstractionHSI():
             }
 
             GeoSpatialAbstractionHSI.write_datacube_ENVI(memmap_gen_params, 
-                                nodata, 
+                                self.nodata, 
                                 transform, 
                                 datacube_path = envi_cube_dir + self.name + suffix, 
                                 wavelengths=wavelengths,
@@ -270,7 +280,10 @@ class GeoSpatialAbstractionHSI():
                                 interleave = config_ortho.interleave)
 
             
-
+        
+        # RBG Composite as list
+        rgb_cube = datacube[:, [band_ind_R, band_ind_G, band_ind_B]].reshape((-1, 3))
+        
         # Resample RGB image data 
         ortho_rgb = rgb_cube[self.indexes, :].flatten()
 
@@ -278,15 +291,15 @@ class GeoSpatialAbstractionHSI():
         ortho_rgb = ortho_rgb.reshape((height, width, 3))
     
         # Mask RGB
-        ortho_rgb[mask == 1, :] = nodata
+        ortho_rgb[mask == 1, :] = self.nodata
 
-        # Arange datacube or composite in rasterio-friendly structure
+        # Arange composite in rasterio-friendly structure
         ortho_rgb = np.transpose(ortho_rgb, axes = [2, 0, 1])
         
         # Write pseudo-RGB composite to composite folder ../GIS/RGBComposites
         with rasterio.open(rgb_composite_dir + self.name + suffix + '.tif', 'w', driver='GTiff',
                                 height=height, width=width, count=3, dtype=ortho_rgb.dtype,
-                                crs=self.crs, transform=transform, nodata=nodata) as dst:
+                                crs=self.crs, transform=transform, nodata=self.nodata) as dst:
 
             dst.write(ortho_rgb)
         
@@ -1259,4 +1272,20 @@ class GeoSpatialAbstractionHSI():
         wd = (x-x0) * (y-y0)
 
         return wa*Ia + wb*Ib + wc*Ic + wd*Id
+    def _get_max_value(dtype):
+        """Gets the maximum value for a given data type.
+
+        Args:
+            dtype: The data type.
+
+        Returns:
+            The maximum value for the data type.
+        """
+
+        if np.issubdtype(dtype, np.integer):
+            return np.iinfo(dtype).max
+        elif np.issubdtype(dtype, np.floating):
+            return sys.float_info.max
+        else:
+            raise ValueError("Unsupported data type: {}".format(dtype))
 

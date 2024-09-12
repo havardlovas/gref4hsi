@@ -387,6 +387,8 @@ def reformat_h5_embedded_data_h5(config, config_file):
                 eul_ref = hyp.get_dataset(h5_filename=path_hdf,dataset_name=config['HDF.raw_nav']['eul_ZYX'])
                 if eul_ref.shape[0] == 3:
                     eul_ref = np.transpose(eul_ref)
+                
+                # From keyword in config file
                 eul_is_degrees = eval(config['HDF.raw_nav']['eul_is_degrees'])
                 
                 ## Assuming It is given as roll, pitch, yaw
@@ -416,10 +418,17 @@ def reformat_h5_embedded_data_h5(config, config_file):
             timestamp_hsi = hyp.dataCubeTimeStamps.reshape(-1)
 
             # Compute interpolated absolute positions positions and orientation:
-            position_interpolated, quaternion_interpolated = interpolate_poses(timestamp_from=timestamps_imu,
-                                                             pos_from=position_ref,
-                                                             rot_from=rot_obj,
-                                                             timestamps_to=timestamp_hsi)
+            
+            # In special case where data has already been interpolated
+            if np.array_equal(timestamps_imu, timestamp_hsi):
+                position_interpolated = position_ref
+                quaternion_interpolated = quaternion_ref
+                
+            else: # Do interpolation
+                position_interpolated, quaternion_interpolated = interpolate_poses(timestamp_from=timestamps_imu,
+                                                                 pos_from=position_ref,
+                                                                 rot_from=rot_obj,
+                                                                 timestamps_to=timestamp_hsi)
 
             # If the original orientations are with respect to (North-East-Down) NED
             if not is_global_rot:

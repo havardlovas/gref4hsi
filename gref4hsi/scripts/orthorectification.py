@@ -61,7 +61,7 @@ def main(iniPath):
         pixel_mask_by_footprint = eval(config['Orthorectification']['mask_pixel_by_footprint'])
         if pixel_mask_by_footprint:
             pixel_mask_method = 'footprint'
-        else:
+        else: # Defaults to this
             pixel_mask_method = 'nn'
 
     except:
@@ -159,10 +159,10 @@ def main(iniPath):
                 # load_datacube will calibrate and write radiance data cube to h5 file (if not already there)
                 hyp = Hyperspectral(filename=h5_filename, config=config, load_datacube=True)
                 del hyp
-
+            
+            # Todo, don't georeference actual cube, but use dataset
             radiance_cube = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                            dataset_name=h5_folder_radiance_cube)
-
+                                                            dataset_name = h5_folder_radiance_cube)
 
         
             wavelengths = Hyperspectral.get_dataset(h5_filename=h5_filename,
