@@ -407,7 +407,7 @@ def main(config, config_specim):
     # Vector from origin of HSI to body origin, expressed in body
     # User set
     t_hsi_body = config_specim.translation_body_to_hsi
-    param_dict['tz'] = t_hsi_body[0]
+    param_dict['tx'] = t_hsi_body[0]
     param_dict['ty'] = t_hsi_body[1]
     param_dict['tz'] = t_hsi_body[2]
 
