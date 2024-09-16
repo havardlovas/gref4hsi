@@ -23,7 +23,73 @@ from sklearn.utils import resample
 from sklearn.model_selection import train_test_split
 from scipy.signal import medfilt
 
+def _get_time_nodes(node_partition, df, h5_folder_time_scanlines, time_node_spacing):
+    """Finds all the time nodes and scanline timestamps for each feature
+    """
 
+    # Extract the timestamps for each frame
+
+    # Number of transects is found from data frame
+    n_transects = 1 + (df['file_count'].max() - df['file_count'].min())
+    
+    # Iterate through transects
+    # Do all
+    iter = np.arange(n_transects)
+    first_iter = True
+    for i in iter:
+        df_current_unsorted = df[df['file_count'] == i]
+
+        # Sort values by chronology
+        df_current = df_current_unsorted.sort_values(by='unix_time')
+
+        n_features = df_current.shape[0]
+        try:
+            # Read out the file name corresponding to file index i
+            h5_filename = df_current['h5_filename'].iloc[0]
+        except IndexError:
+            break
+
+        time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                dataset_name= h5_folder_time_scanlines)
+        # We can use the feature time:
+        time_arr_sorted_features = np.array(sorted(df_current['unix_time']))
+        
+        transect_duration_sec = time_arr_sorted_features.max() - time_arr_sorted_features.min()
+
+        transect_duration_sec = time_scanlines.max() - time_scanlines.min()
+
+        # Number of nodes calculated from this (except when using "All features")
+        number_of_nodes = int(np.floor(transect_duration_sec/time_node_spacing)) + 1
+
+        if node_partition == 'temporal':
+                            # It divides the transect into equal intervals time-wise, 
+                            # meaning that the intervals can be somewhat different at least for a small number of them.
+                            time_nodes = np.linspace(start=time_scanlines.min(), 
+                                                stop = time_scanlines.max(), 
+                                                num = number_of_nodes)
+                            
+        elif node_partition == 'feature':
+                            # We divide to have an equal number of features in each interval
+                            idx_nodes = np.round(np.linspace(start=0, 
+                                                stop = n_features-1, 
+                                                num = number_of_nodes)).astype(np.int64)
+
+                            # Select corresponding time stamps
+                            time_nodes = time_arr_sorted_features[idx_nodes]
+
+                            # At ends we asign the min/max of the pose to avoid extrapolation
+                            time_nodes[0] = time_scanlines.min()
+                            time_nodes[-1]  = time_scanlines.max()
+        
+        if first_iter:
+            first_iter = False
+            time_nodes_tot = time_nodes
+            time_scanlines_tot = time_scanlines
+        else:
+            time_nodes_tot = np.concatenate((time_nodes_tot, time_nodes))
+            time_scanlines_tot = np.concatenate((time_scanlines_tot, time_scanlines))
+        
+    return time_nodes_tot, time_scanlines_tot
 
 
 
@@ -497,6 +563,7 @@ def calculate_pose_param(is_variab_param_extr, is_variab_param_intr, param, sigm
 
     # The number of pose degrees of freedom to estimate. Estimating posX, posY and yaw would give n_pose_dofs = 3
     n_pose_dofs = is_variab_param_extr.sum()
+
     param_time_var = param[n_variab_param_static:].reshape((n_pose_dofs, -1))
 
     # The errors default to zero
@@ -620,9 +687,10 @@ def objective_fun_reprojection_error(param, features_df, param0, is_variab_param
     rot_ned_ecef = RotLib.from_quat(quat_ned_ecef)
 
     # Whether to estimate time-varying errors
-    if time_nodes is None:
+    if np.all(is_variab_param_extr==0): # No variable extrinsic parameters
         # Assumes that navigation-based poses are correct
-        rot_body_ecef = rot_ned_ecef * rot_body_ned
+        rot_body_ecef_corr = rot_ned_ecef * rot_body_ned
+        pos_body_corr = pos_body
 
     else:
         
@@ -642,6 +710,12 @@ def objective_fun_reprojection_error(param, features_df, param0, is_variab_param
 
         # We compose them with (add them to) the position/orientation estimates from the nav system
         pos_body_corr, rot_body_ecef_corr = compose_pose_errors(param_pose_tot, time_nodes, unix_time_features, rot_body_ned, rot_ned_ecef, pos_body, time_interpolation_method, pos_err_ref_frame, sigma_param)
+
+        # Least squares expects a 1D function evaluation vector
+        m = time_scanlines.size # Number of scanlines
+        n = unix_time_features.size # Number of features
+        k = is_variab_param_extr.sum() # Number of adjusted DOFs
+        rho = (2*n/(k*m)) # Relationship between number of rp observations and penalty terms
 
 
 
@@ -684,16 +758,14 @@ def objective_fun_reprojection_error(param, features_df, param0, is_variab_param
     errorx_norm = errorx / sigma_obs[0]
     errory_norm = errory / sigma_obs[1]
 
-    # The node errors should be weighted heavily 
+    # The node errors should be weighted heavily
 
-
-    # Least squares expects a 1D function evaluation vector
-    m = time_scanlines.size # Number of scanlines
-    n = unix_time_features.size # Number of features
-    k = is_variab_param_extr.sum() # Number of adjusted DOFs
-    rho = (2*n/(k*m)) # Relationship between number of rp observations and penalty terms
     err_vec = np.concatenate((errorx_norm.reshape(-1), 
-                              errory_norm.reshape(-1), 
+                              errory_norm.reshape(-1)))
+
+    # Add penalty term if it exists
+    if 'weighted_error_term' in locals():
+        err_vec = np.concatenate((err_vec, 
                               np.sqrt(rho)*weighted_error_term.reshape(-1)))
     return err_vec
 
@@ -888,149 +960,153 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
     #hsi_composite_files = sorted(os.listdir(path_composites_match))
     hsi_composite_paths = sorted(glob(os.path.join(path_composites_match, "*.tif")))
     hsi_composite_files = [os.path.basename(f) for f in hsi_composite_paths]
-    file_count = 0
+    count_valid = 0
 
     if mode == 'compare':
         print("\n################ Comparing to reference: ################")
         for file_count, hsi_composite_file in enumerate(hsi_composite_files):
             
-            file_base_name = hsi_composite_file.split('.')[0]
+            try:
+                file_base_name = hsi_composite_file.split('.')[0]
 
-            
-            
-            # The match data (hyperspectral)
-            hsi_composite_path = os.path.join(path_composites_match, hsi_composite_file)
-            print(hsi_composite_path)
-
-            # Prior to matching the files are cropped to image grid of hsi_composite_path
-            ref_ortho_reshaped_path = os.path.join(ref_resampled_gis_path, hsi_composite_file)
-            # The DEM is also cropped to grid for easy extraction of data
-            dem_reshaped = os.path.join(ref_resampled_gis_path, file_base_name + '_dem.tif')
-
-            # 
-            GeoSpatialAbstractionHSI.resample_rgb_ortho_to_hsi_ortho(ref_ortho_path, hsi_composite_path, ref_ortho_reshaped_path)
-
-            GeoSpatialAbstractionHSI.resample_dem_to_hsi_ortho(dem_path, hsi_composite_path, dem_reshaped)
-
-            # By comparing the hsi_composite with the reference rgb mosaic we get two feature vectors in the pixel grid and 
-            # the absolute registration error in meters in global coordinates
-            uv_vec_hsi, uv_vec_ref, diff_AE_meters, transform_pixel_projected  = GeoSpatialAbstractionHSI.compare_hsi_composite_with_rgb_mosaic(hsi_composite_path, 
-                                                                                                                                            ref_ortho_reshaped_path)
-            
-
-            # At first the reference observations must be converted to a true 3D system, namely ecef
-            ref_points_ecef = GeoSpatialAbstractionHSI.compute_reference_points_ecef(uv_vec_ref, 
-                                                                                    transform_pixel_projected, 
-                                                                                    dem_reshaped, 
-                                                                                    epsg_proj, 
-                                                                                    epsg_geocsc)
-
-
-
-
-            
-            # Next up we need to get the associated pixel number and frame number. Luckily they are in the same grid as the pixel observations
-            anc_file_path = os.path.join(path_anc_match, file_base_name + '.hdr')
-            anc_image_object = sp.io.envi.open(anc_file_path)
-            anc_band_list = anc_image_object.metadata['band names']
-            anc_nodata = float(anc_image_object.metadata['data ignore value'])
-
-            pixel_nr_grid = anc_image_object[:,:, anc_band_list.index('pixel_nr_grid')].squeeze()
-            unix_time_grid = anc_image_object[:,:, anc_band_list.index('unix_time_grid')].squeeze()
-
-            # Remove the suffixes added in the orthorectification
-            suffixes = ["_north_east", "_minimal_rectangle"]
-            for suffix in suffixes:
-                if file_base_name.endswith(suffix):
-                    file_base_name_h5 = file_base_name[:-len(suffix)]
-
-            # Read the ecef position, quaternion and timestamp
-            h5_filename = os.path.join(config['Absolute Paths']['h5_folder'], file_base_name_h5 + '.h5')
-
-            if is_calibrated:
-                # Extract data from coreg folder
-                position_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                                dataset_name=h5_folder_position_ecef_coreg)
                 
-                quaternion_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                                dataset_name=h5_folder_quaternion_ecef_coreg)
+                
+                # The match data (hyperspectral)
+                hsi_composite_path = os.path.join(path_composites_match, hsi_composite_file)
+                print(hsi_composite_path)
 
-            else:
-                # Extract the ecef positions for each frame
-                position_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                                dataset_name=h5_folder_position_ecef)
-                # Extract the ecef orientations for each frame
-                quaternion_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                                dataset_name=h5_folder_quaternion_ecef)
+                # Prior to matching the files are cropped to image grid of hsi_composite_path
+                ref_ortho_reshaped_path = os.path.join(ref_resampled_gis_path, hsi_composite_file)
+                # The DEM is also cropped to grid for easy extraction of data
+                dem_reshaped = os.path.join(ref_resampled_gis_path, file_base_name + '_dem.tif')
 
+                # 
+                GeoSpatialAbstractionHSI.resample_rgb_ortho_to_hsi_ortho(ref_ortho_path, hsi_composite_path, ref_ortho_reshaped_path)
+
+                GeoSpatialAbstractionHSI.resample_dem_to_hsi_ortho(dem_path, hsi_composite_path, dem_reshaped)
+
+                # By comparing the hsi_composite with the reference rgb mosaic we get two feature vectors in the pixel grid and 
+                # the absolute registration error in meters in global coordinates
+                uv_vec_hsi, uv_vec_ref, diff_AE_meters, transform_pixel_projected  = GeoSpatialAbstractionHSI.compare_hsi_composite_with_rgb_mosaic(hsi_composite_path, 
+                                                                                                                                                ref_ortho_reshaped_path)
+                
+
+                # At first the reference observations must be converted to a true 3D system, namely ecef
+                ref_points_ecef = GeoSpatialAbstractionHSI.compute_reference_points_ecef(uv_vec_ref, 
+                                                                                        transform_pixel_projected, 
+                                                                                        dem_reshaped, 
+                                                                                        epsg_proj, 
+                                                                                        epsg_geocsc)
+
+
+
+
+                
+                # Next up we need to get the associated pixel number and frame number. Luckily they are in the same grid as the pixel observations
+                anc_file_path = os.path.join(path_anc_match, file_base_name + '.hdr')
+                anc_image_object = sp.io.envi.open(anc_file_path)
+                anc_band_list = anc_image_object.metadata['band names']
+                anc_nodata = float(anc_image_object.metadata['data ignore value'])
+
+                pixel_nr_grid = anc_image_object[:,:, anc_band_list.index('pixel_nr_grid')].squeeze()
+                unix_time_grid = anc_image_object[:,:, anc_band_list.index('unix_time_grid')].squeeze()
+
+                # Remove the suffixes added in the orthorectification
+                suffixes = ["_north_east", "_minimal_rectangle"]
+                for suffix in suffixes:
+                    if file_base_name.endswith(suffix):
+                        file_base_name_h5 = file_base_name[:-len(suffix)]
+
+                # Read the ecef position, quaternion and timestamp
+                h5_filename = os.path.join(config['Absolute Paths']['h5_folder'], file_base_name_h5 + '.h5')
+
+                if is_calibrated:
+                    # Extract data from coreg folder
+                    position_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                    dataset_name=h5_folder_position_ecef_coreg)
+                    
+                    quaternion_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                    dataset_name=h5_folder_quaternion_ecef_coreg)
+
+                else:
+                    # Extract the ecef positions for each frame
+                    position_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                    dataset_name=h5_folder_position_ecef)
+                    # Extract the ecef orientations for each frame
+                    quaternion_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                    dataset_name=h5_folder_quaternion_ecef)
+
+                
+                # Extract the timestamps for each frame
+                time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                dataset_name=h5_folder_time_scanlines)
+                
             
-            # Extract the timestamps for each frame
-            time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                            dataset_name=h5_folder_time_scanlines)
-            
-        
 
-            pixel_nr_vec, unix_time_vec, position_vec, quaternion_vec, feature_mask = GeoSpatialAbstractionHSI.compute_position_orientation_features(uv_vec_hsi, 
-                                                                        pixel_nr_grid, 
-                                                                        unix_time_grid, 
-                                                                        position_ecef, 
-                                                                        quaternion_ecef, 
-                                                                        time_scanlines,
-                                                                        nodata = anc_nodata)
-            
-            rot_body = RotLib.from_quat(quaternion_vec)
+                pixel_nr_vec, unix_time_vec, position_vec, quaternion_vec, feature_mask = GeoSpatialAbstractionHSI.compute_position_orientation_features(uv_vec_hsi, 
+                                                                            pixel_nr_grid, 
+                                                                            unix_time_grid, 
+                                                                            position_ecef, 
+                                                                            quaternion_ecef, 
+                                                                            time_scanlines,
+                                                                            nodata = anc_nodata)
+                
+                rot_body = RotLib.from_quat(quaternion_vec)
 
-            geo_pose = GeoPose(timestamps=unix_time_vec, 
-                               rot_obj=rot_body, 
-                               rot_ref='ECEF', 
-                               pos=position_vec, 
-                               pos_epsg=4978)
-            
-            # Divide into two linked rotations
-            quat_body_to_ned = geo_pose.rot_obj_ned.as_quat()
-            quat_ned_to_ecef = geo_pose.rot_obj_ned_2_ecef.as_quat()
+                geo_pose = GeoPose(timestamps=unix_time_vec, 
+                                rot_obj=rot_body, 
+                                rot_ref='ECEF', 
+                                pos=position_vec, 
+                                pos_epsg=4978)
+                
+                # Divide into two linked rotations
+                quat_body_to_ned = geo_pose.rot_obj_ned.as_quat()
+                quat_ned_to_ecef = geo_pose.rot_obj_ned_2_ecef.as_quat()
 
 
-            # Mask the reference points accordingly and the difference vector
-            ref_points_vec = ref_points_ecef[feature_mask, :]
-            diff_AE_valid = diff_AE_meters[feature_mask]
+                # Mask the reference points accordingly and the difference vector
+                ref_points_vec = ref_points_ecef[feature_mask, :]
+                diff_AE_valid = diff_AE_meters[feature_mask]
 
-            diff_uv = uv_vec_hsi[feature_mask, :] - uv_vec_ref[feature_mask, :]
+                diff_uv = uv_vec_hsi[feature_mask, :] - uv_vec_ref[feature_mask, :]
 
-            # Now we have computed the GCPs with coincident metainformation
-            n_cols_df = pixel_nr_vec.size
-            gcp_dict = {'file_count': np.ones(n_cols_df)*file_count,
-                        'h5_filename': np.repeat(h5_filename, n_cols_df),
-                        'pixel_nr': pixel_nr_vec, 
-                        'unix_time': unix_time_vec,
-                        'position_x': position_vec[:,0],
-                        'position_y': position_vec[:,1],
-                        'position_z': position_vec[:,2],
-                        'quat_body_to_ned_x': quat_body_to_ned[:,0],
-                        'quat_body_to_ned_y': quat_body_to_ned[:,1],
-                        'quat_body_to_ned_z': quat_body_to_ned[:,2],
-                        'quat_body_to_ned_w': quat_body_to_ned[:,3],
-                        'quat_ned_to_ecef_x': quat_ned_to_ecef[:,0],
-                        'quat_ned_to_ecef_y': quat_ned_to_ecef[:,1],
-                        'quat_ned_to_ecef_z': quat_ned_to_ecef[:,2],
-                        'quat_ned_to_ecef_w': quat_ned_to_ecef[:,3],
-                        'reference_points_x': ref_points_vec[:,0],
-                        'reference_points_y': ref_points_vec[:,1],
-                        'reference_points_z': ref_points_vec[:,2],
-                        'diff_absolute_error': diff_AE_valid,
-                        'diff_u': diff_uv[:, 0],
-                        'diff_v': diff_uv[:, 1]}
-            
+                # Now we have computed the GCPs with coincident metainformation
+                n_cols_df = pixel_nr_vec.size
+                gcp_dict = {'file_count': np.ones(n_cols_df)*file_count,
+                            'h5_filename': np.repeat(h5_filename, n_cols_df),
+                            'pixel_nr': pixel_nr_vec, 
+                            'unix_time': unix_time_vec,
+                            'position_x': position_vec[:,0],
+                            'position_y': position_vec[:,1],
+                            'position_z': position_vec[:,2],
+                            'quat_body_to_ned_x': quat_body_to_ned[:,0],
+                            'quat_body_to_ned_y': quat_body_to_ned[:,1],
+                            'quat_body_to_ned_z': quat_body_to_ned[:,2],
+                            'quat_body_to_ned_w': quat_body_to_ned[:,3],
+                            'quat_ned_to_ecef_x': quat_ned_to_ecef[:,0],
+                            'quat_ned_to_ecef_y': quat_ned_to_ecef[:,1],
+                            'quat_ned_to_ecef_z': quat_ned_to_ecef[:,2],
+                            'quat_ned_to_ecef_w': quat_ned_to_ecef[:,3],
+                            'reference_points_x': ref_points_vec[:,0],
+                            'reference_points_y': ref_points_vec[:,1],
+                            'reference_points_z': ref_points_vec[:,2],
+                            'diff_absolute_error': diff_AE_valid,
+                            'diff_u': diff_uv[:, 0],
+                            'diff_v': diff_uv[:, 1]}
+                
 
 
-            # Convert to a dataframe
-            gcp_df = pd.DataFrame(gcp_dict)
+                # Convert to a dataframe
+                gcp_df = pd.DataFrame(gcp_dict)
 
-            # Concatanate frames
-            if file_count==0:
-                gcp_df_all = gcp_df
-            else:
-                gcp_df_all = pd.concat([gcp_df_all, gcp_df])
+                # Concatanate frames
+                if count_valid==0:
+                    gcp_df_all = gcp_df
+                    count_valid += 1
+                else:
+                    gcp_df_all = pd.concat([gcp_df_all, gcp_df])
+            except:
+                pass
 
         # Write points to a separate gcp_coreg.csv
         if not is_calibrated:
@@ -1252,8 +1328,11 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
                 n_features = df_current.shape[0]
 
                 # Read out the file name corresponding to file index i
-                h5_filename = df_current['h5_filename'].iloc[0]
-                
+                try:
+                    h5_filename = df_current['h5_filename'].iloc[0]
+                except IndexError:
+                    print('No Matches for image, moving on')
+                    continue
 
                 # If we are to estimate that which is time varying
                 if estimate_time_varying:
@@ -1521,19 +1600,47 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
             # Update the feature info for optimization from specific transect
             kwargs['features_df'] = df_current
 
-            res_pre_optim = objective_fun_reprojection_error(param0_variab, df_gcp_filtered, param0, is_variab_param_intr)
-            median_error_x = np.median(np.abs(res_pre_optim[0:n_features]))
-            median_error_y = np.median(np.abs(res_pre_optim[n_features:2*n_features]))
+            time_nodes, time_scanlines = _get_time_nodes(node_partition, df_gcp_filtered, h5_folder_time_scanlines, time_node_spacing)
+
+            res_pre_optim = objective_fun_reprojection_error(param0_variab, df_gcp_filtered, param0, is_variab_param_intr, is_variab_param_extr, time_nodes, time_interpolation_method, pos_err_ref_frame, sigma_obs, sigma_param, time_scanlines)
+
+
+            median_error_x = np.median(np.abs(res_pre_optim[0:n_features]))*resolution
+            median_error_y = np.median(np.abs(res_pre_optim[n_features:2*n_features]))*resolution
             print(f'Original rp-error in x is {median_error_x} and in y is {median_error_y}')
 
-            res = least_squares(fun = objective_fun_reprojection_error, 
-                                x0 = param0_variab, 
-                                args= (df_gcp_filtered, param0, is_variab_param_intr, ), 
-                                x_scale='jac',
-                                method = 'lm')
+            # The time varying parameters are in total the number of dofs times number of nodes
+            number_of_nodes = time_nodes.size
+            param0_time_varying = np.zeros(n_adjustable_dofs*number_of_nodes)
+
+            # The time-varying parameters are stacked after the intrinsic parameters.
+            # This vector only holds parameters that will be adjusted
+            param0_variab_tot = np.concatenate((param0_variab, 
+                                                param0_time_varying), axis=0)
+
+            kwargs['time_scanlines'] = time_scanlines
+            kwargs['time_nodes'] = time_nodes
+            # Calculate the Jacobian for finding and exploiting sparsity
+            J = numerical_jacobian(fun = objective_fun_reprojection_error, param = param0_variab_tot, **kwargs)
             
-            median_error_x = np.median(np.abs(res.fun[0:n_features]))
-            median_error_y = np.median(np.abs(res.fun[n_features:2*n_features]))
+            # Using list of list representation as recommended by Scipy's least squares
+            sparsity = lil_matrix(J.shape, dtype=int)
+
+            # Setting the non sparse elements (in theory they could be set for small values of J too)
+            sparsity[J != 0] = 1
+            print(param0_variab_tot*180/np.pi)
+            res = least_squares(fun = objective_fun_reprojection_error, 
+                                x0 = param0_variab_tot, 
+                                x_scale='jac',
+                                jac_sparsity=sparsity,
+                                kwargs=kwargs,
+                                loss = loss_function)
+            
+            median_error_x = np.median(np.abs(res.fun[0:n_features]))*resolution
+            median_error_y = np.median(np.abs(res.fun[n_features:2*n_features]))*resolution
+
+            
+            print(res.x*180/np.pi)
             print(f'Optimized MAE rp-error in x is {median_error_x} and in y is {median_error_y}')
 
     
