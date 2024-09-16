@@ -109,7 +109,7 @@ def main(iniPath):
                               raster_transform_method = config['Orthorectification']['raster_transform_method'], 
                               # Describes what raster transform to use. Either "north_east" or "minimal_rectangle". 
                               # Latter is fastest and most memory efficient, but support is lacking for several GIS software.
-                              nodata_value = int(config['Orthorectification']['nodata']),
+                              nodata_value = np.int64(config['Orthorectification']['nodata']),
                               # The fill value for empty cells (select values not occcuring in cube or ancillary data)
                               resample_rgb_only = eval(config['Orthorectification']['resample_rgb_only']),
                               # Boolean being expressing whether to rectify only composite (true) or data cube and composite (false). True is fast.

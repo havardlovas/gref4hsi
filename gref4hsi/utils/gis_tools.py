@@ -159,7 +159,7 @@ class GeoSpatialAbstractionHSI():
         
         if self.nodata.dtype != radiance_cube.dtype:
             # In this case, we need to assign a default value
-            self.nodata = _get_max_value(dtype)
+            self.nodata = _get_max_value(radiance_cube.dtype)
             
             # To avoid calling nodata on saturated values we do
             radiance_cube[radiance_cube == self.nodata] = self.nodata - 1
@@ -859,7 +859,8 @@ class GeoSpatialAbstractionHSI():
         R = raster_hsi_array[0, :, :].reshape((raster_hsi_array.shape[1], raster_hsi_array.shape[2], 1))
         G = raster_hsi_array[1, :, :].reshape((raster_hsi_array.shape[1], raster_hsi_array.shape[2], 1))
         B = raster_hsi_array[2, :, :].reshape((raster_hsi_array.shape[1], raster_hsi_array.shape[2], 1))
-        ortho_hsi = np.concatenate((R, G, B), axis=2)
+        
+        ortho_hsi = np.concatenate((R, G, B), axis=2).astype(np.float64)
 
         # Some form of image processing
 
@@ -872,13 +873,12 @@ class GeoSpatialAbstractionHSI():
             # Enhancing colors somewhat
             max_val = np.percentile(ortho_valid[:,i].reshape(-1), 95)
             min_val = 0
-            
-            mono_im = ortho_hsi[:,:,i]
-            ortho_hsi[:,:,i] = (mono_im-min_val)/(max_val - min_val)
+
+            ortho_hsi[:,:,i] = (ortho_hsi[:,:,i]-min_val)/(max_val - min_val)
 
             # Remove out-of-bounds
-            ortho_hsi[mono_im > 1, i] = 1
-            ortho_hsi[mono_im < 0, i] = 0
+            ortho_hsi[ortho_hsi[:,:,i] > 1, i] = 1
+            ortho_hsi[ortho_hsi[:,:,i] < 0, i] = 0
         
         
         
@@ -898,6 +898,7 @@ class GeoSpatialAbstractionHSI():
         
         hsi_image.clahe_adjustment(is_luma = True)
 
+        # Tendency that RGB images are already transformed
         rgb_image.to_luma(gamma=False, image_array= rgb_image.clahe_adjusted)
 
         uv_vec_hsi, uv_vec_rgb, diff_AE_pixels = GeoSpatialAbstractionHSI.compute_sift_difference(hsi_image.luma_array, rgb_image.luma_array)
@@ -959,7 +960,8 @@ class GeoSpatialAbstractionHSI():
                         dst_transform=dst_transform,
                         dst_crs=dst_crs,
                         resampling=Resampling.cubic)
-
+    
+    @staticmethod
     def resample_dem_to_hsi_ortho(dem_path, hsi_composite_path, dem_reshaped):
         """Reproject a file to match the shape and projection of existing raster.
 
@@ -1272,20 +1274,20 @@ class GeoSpatialAbstractionHSI():
         wd = (x-x0) * (y-y0)
 
         return wa*Ia + wb*Ib + wc*Ic + wd*Id
-    def _get_max_value(dtype):
-        """Gets the maximum value for a given data type.
+def _get_max_value(dtype):
+    """Gets the maximum value for a given data type.
 
-        Args:
-            dtype: The data type.
+    Args:
+        dtype: The data type.
 
-        Returns:
-            The maximum value for the data type.
-        """
+    Returns:
+        The maximum value for the data type.
+    """
 
-        if np.issubdtype(dtype, np.integer):
-            return np.iinfo(dtype).max
-        elif np.issubdtype(dtype, np.floating):
-            return sys.float_info.max
-        else:
-            raise ValueError("Unsupported data type: {}".format(dtype))
+    if np.issubdtype(dtype, np.integer):
+        return np.iinfo(dtype).max
+    elif np.issubdtype(dtype, np.floating):
+        return sys.float_info.max
+    else:
+        raise ValueError("Unsupported data type: {}".format(dtype))
 
