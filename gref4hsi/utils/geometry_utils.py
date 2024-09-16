@@ -1357,10 +1357,10 @@ def crop_geoid_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_2
 
     if spatial_reference.IsProjected():
         # Add padding to 
-        xmin = x.min() - padding
-        ymin = y.min() - padding
-        xmax = x.max() + padding
-        ymax = y.max() + padding
+        minx = x.min() - padding
+        miny = y.min() - padding
+        maxx = x.max() + padding
+        maxy = y.max() + padding
     elif spatial_reference.IsGeographic():
         # Must translate metric padding into increments in lon/lat
         (x_new, y_new, z_new) = pm.enu2geodetic(e= np.array([-padding, padding]), n= np.array([-padding, padding]), u = 0, lon0=np.mean(y), lat0=np.mean(x), h0 = 0)
