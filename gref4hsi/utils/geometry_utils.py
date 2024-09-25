@@ -1182,6 +1182,29 @@ def dem_2_mesh(path_dem, model_path, config):
     :type config: _type_
     """
 
+    ## Step 0: do a size check
+    with rasterio.open(path_dem) as src:
+        w = src.width
+        h = src.height
+    
+    dem_folder = config['Absolute Paths']['dem_folder']
+    
+    # Unfortunately chrashes have been observed on a local machine. 1, 2, 3, 4M has worked.
+    # Chrashes occur at the delaunay_2d() call further down
+    # Observed at 5M, 10M
+    n_points_max = 8e6
+    if w*h > n_points_max:
+        resample_factor = np.ceil(np.sqrt(w*h/n_points_max)).astype(np.int64)
+        # Make a new file
+        resampled_dem_path = os.path.join(dem_folder, 'dem_resampled.tif')
+
+        _resample_raster(raster_path=path_dem, 
+                         resample_factor=resample_factor,
+                         output_path=resampled_dem_path)
+        
+        # Update the path_dem
+        path_dem = resampled_dem_path
+    ##
 
     # The desired CRS for the model must be same as positions, orientations
     epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
