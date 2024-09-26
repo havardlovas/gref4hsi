@@ -1158,16 +1158,16 @@ class GeoSpatialAbstractionHSI():
     
     
         """Computes ECEF reference points from a features detected on the orthomosaic and the DEM"""
-        x = uv_vec_ref[:, 0]
-        y = uv_vec_ref[:, 1]
+        x = uv_vec_ref[:, 0] # In range 0 -> w
+        y = uv_vec_ref[:, 1] # In range 0 -> h
 
         # Sample the terrain raster to get a projected position of data 
         raster_dem = rasterio.open(dem_resampled_path)
         xoff, a, b, yoff, d, e = transform_pixel_projected
 
         # Convert the pixel coordinates into true coordinates (e.g. UTM N/E)
-        xp = a * x + b * y + xoff + 0.5*a 
-        yp = d * x + e * y + yoff + 0.5*e
+        xp = a * x + b * y + xoff
+        yp = d * x + e * y + yoff
         zp = np.zeros(yp.shape)
         for i in range(xp.shape[0]):
             temp = [x for x in raster_dem.sample([(xp[i], yp[i])])]
