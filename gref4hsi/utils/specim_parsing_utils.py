@@ -47,9 +47,9 @@ class Specim():
 
             x_norm_lin = (u - c_x) / f
             # Distortion term if to be used
-            x_norm_nonlin = -(k1 * ((u - c_x) / 1000) ** 5 + \
-                            k2 * ((u - c_x) / 1000) ** 3 + \
-                            k3 * ((u - c_x) / 1000) ** 2) / f
+            x_norm_nonlin = -(k1 * (u - c_x) ** 5 + \
+                            k2 * (u - c_x) ** 3 + \
+                            k3 * (u - c_x) ** 2) / f
 
             
             x_norm = x_norm_lin + x_norm_nonlin

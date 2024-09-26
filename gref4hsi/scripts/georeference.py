@@ -52,9 +52,9 @@ def cal_file_to_rays(filename_cal):
         # Express uhi ray directions in uhi frame using line-camera model
         x_norm_lin = (u - cx) / f
 
-        x_norm_nonlin = -(k1 * ((u - cx) / 1000) ** 5 + \
-                          k2 * ((u - cx) / 1000) ** 3 + \
-                          k3 * ((u - cx) / 1000) ** 2) / f
+        x_norm_nonlin = -(k1 * ((u - cx)) ** 5 + \
+                          k2 * ((u - cx)) ** 3 + \
+                          k3 * ((u - cx)) ** 2) / f
 
         x_norm = x_norm_lin + x_norm_nonlin
 

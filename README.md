@@ -92,17 +92,17 @@ In our computation we use a frame convention akin to the camera frames in comput
 
 
 
-Moreover, the f represent the camera's focal length in pixels, width is the number of spatial pixels, while cx is the principal pixel. Often cx=(width+1)/2, e.g. if you have 5 pixels u = 1,..,5 the middle pixel is cx=3. In other words, our convention is to assign the cell centres of pixels as whole integers (starting at 1), in contrast to OpenCV which starts at 0.5. The k1, k2 are radial distortion coefficients, while k3 is a tangential coefficient. The camera model is adapted from [Sun et al. (2016)](https://opg.optica.org/ao/fulltext.cfm?uri=ao-55-25-6836&id=348983). Expressing a pixel on an undistorted image plane in the HSI frame is done through
+Moreover, the f represent the camera's focal length in pixels, width is the number of spatial pixels, while cx is the principal pixel. Often cx=(width+1)/2, e.g. if you have 5 pixels u = 0.5,1.5,..,4.5 the middle pixel is cx=2.5. In other words, our convention is to assign the cell centres of pixels as whole integers (starting at 1), in contrast to OpenCV which starts at 0.5. The k1, k2 are radial distortion coefficients, while k3 is a tangential coefficient. The camera model is adapted from [Sun et al. (2016)](https://opg.optica.org/ao/fulltext.cfm?uri=ao-55-25-6836&id=348983). Expressing a pixel on an undistorted image plane in the HSI frame is done through
 ```
-u = np.random.randint(1, width + 1) # Pixel numbers left to right (value from 1 to width)
+u = np.random.randint(0, width) + 0.5 # Pixel numbers left to right (value from 1 to width)
 
 # Pinhole part
 x_norm_pinhole = (u - cx) / f
 
 # Distortion part
-x_norm_nonlin = -(k1 * ((u - cx) / 1000) ** 5 + \
-                  k2 * ((u - cx) / 1000) ** 3 + \
-                  k3 * ((u - cx) / 1000) ** 2) / f
+x_norm_nonlin = -(k1 * (u - cx) ** 5 + \
+                  k2 * (u - cx) ** 3 + \
+                  k3 * (u - cx) ** 2) / f
 
 x_norm_hsi = x_norm_pinhole + x_norm_nonlin
 
