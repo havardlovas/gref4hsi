@@ -809,7 +809,7 @@ def compute_camera_rays_from_parameters(pixel_nr, cx, f, k1, k2, k3):
     :rtype: _type_
     """
 
-    u = pixel_nr + 1
+    u = pixel_nr
 
     # Express uhi ray directions in uhi frame using line-camera model
     x_norm_lin = (u - cx) / f

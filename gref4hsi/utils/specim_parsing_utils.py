@@ -43,8 +43,7 @@ class Specim():
             k3 = param[3]
             c_x = param[4]
             n_pix = x_true.size
-            #v_c = n_pix / 2 + 1
-            u = np.arange(1, n_pix + 1).reshape((-1,1))
+            u = np.arange(0, n_pix).reshape((-1,1)) + 0.5
 
             x_norm_lin = (u - c_x) / f
             # Distortion term if to be used

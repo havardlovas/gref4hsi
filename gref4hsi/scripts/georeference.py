@@ -47,7 +47,7 @@ def cal_file_to_rays(filename_cal):
         n_pix = calHSI.w
 
         # Define camera model array.
-        u = np.arange(0, n_pix) + 1
+        u = np.arange(0, n_pix) + 0.5
 
         # Express uhi ray directions in uhi frame using line-camera model
         x_norm_lin = (u - cx) / f
