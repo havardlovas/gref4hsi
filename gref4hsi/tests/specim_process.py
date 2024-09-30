@@ -51,7 +51,18 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # assigning the arguments to variables for simple backwards compatibility
     EPSG_CODE = config_data['mission_epsg']
     RESOLUTION_ORTHOMOSAIC = config_data['resolution_orthomosaic']
+    
+    if 'elevation' in config_data:
+        elevation = config_data['elevation']
+    elif 'flight_altitude' in config_data:
+        elevation = config_data['flight_altitude']
+
     CALIBRATION_DIRECTORY = lab_calibration_path
+
+    if 'dem_ref' in config_data:
+        dem_ref = config_data['dem_ref'] # Either 'geoid' or ellipsoid
+    else:
+        dem_ref = 'ellipsoid' # Default
     
     
     dem_fold = os.path.join(specim_mission_folder, "dem")
