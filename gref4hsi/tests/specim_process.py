@@ -65,7 +65,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
         dem_ref = 'ellipsoid' # Default
     
     
-    dem_fold = os.path.join(specim_mission_folder, "dem")
+    dem_fold = os.path.join(hsi_mission_folder, "dem")
 
     if not os.path.exists(dem_fold):
         print('DEM folder does not exist so Geoid is used as terrain instead')
@@ -138,7 +138,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     custom_config = {'General':
                         {'mission_dir': DATA_DIR,
                         'model_export_type': TERRAIN_TYPE, # Ray trace onto geoid
-                        'max_ray_length': 300}, # Max distance in meters from spectral imager to seafloor. Specim does not fly higher
+                        'max_ray_length': 3*elevation}, # Max distance in meters from spectral imager to seafloor. Used for cropping of elevation and geoid data
 
                     'Coordinate Reference Systems':
                         {'proj_epsg' : EPSG_CODE, # The projected CRS UTM 32, common on mainland norway
