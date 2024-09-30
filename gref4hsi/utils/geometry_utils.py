@@ -1264,6 +1264,27 @@ def dem_2_mesh(path_dem, model_path, config):
                                 x_coord = x_origin + x * x_resolution
                                 y_coord = y_origin + y * y_resolution
                                 xyz_file.write(f"{x_coord} {y_coord} {band_data[y, x]}\n")
+                    
+
+
+
+                    # Step 2 insert corners of geoid file to ensure that all rays hit the target. Helps to ensure all ray intersections
+                    try:
+                        add_geoid_corners = eval(config['General']['add_geoid_corners'])
+                    except:
+                        add_geoid_corners = False
+                    if add_geoid_corners:
+                        # Ensure that 3D model is computed with padding, i.e. add some far-away corners at sea level to fill in terrain model
+                        geoid_cropped_with_padding_file = os.path.join(dem_folder, 'geoid_cropped_with_padding.tif')
+
+                        crop_geoid_to_pose(geoid_cropped_with_padding_file, config, geoid_path = path_geoid)
+
+                        # Find corners of a DEM in DEM CRS and write to point cloud 
+                        corners_3d = _extract_ecef_corners(raster_path=geoid_cropped_with_padding_file, ecef_epsg=epsg_proj)
+                        for i in range(4):
+                            x_coord, y_coord, z_coord = corners_3d[i]
+                            xyz_file.write(f"{x_coord} {y_coord} {z_coord}\n")
+
             else:
                 print('*.xyz already exists, ignoring re-creation')
             # Clean up

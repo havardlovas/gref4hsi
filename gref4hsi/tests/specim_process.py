@@ -191,6 +191,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
     if TERRAIN_TYPE == 'geoid':
         custom_config['Absolute Paths']['geoid_path'] = GEOID_PATH
+        custom_config['General']['add_geoid_corners'] = False # There is no need for adding these interpolation points if using a geoid
         #'geoid_path' : 'data/world/geoids/egm08_25.gtx'
     elif TERRAIN_TYPE == 'dem_file':
         custom_config['Absolute Paths']['dem_path'] = DEM_PATH
