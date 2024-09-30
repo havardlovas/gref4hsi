@@ -1168,7 +1168,7 @@ def read_raster(filename, out_crs="EPSG:3857", use_z=False):
     mesh["data"] = values.reshape(mesh.n_points, -1, order="F")
     return mesh
 
-def dem_2_mesh(path_dem, model_path, config):
+def dem_2_mesh(path_dem, model_path, config, dem_ref_is_geoid = False, path_geoid= None, config_file_path = None):
     """
     A function for converting a specified DEM to a 3D mesh model (*.vtk, *.ply or *.stl). 
     Consequently, mesh should be thought of as 2.5D representation.
