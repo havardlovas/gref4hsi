@@ -47,7 +47,7 @@ def _get_time_nodes(node_partition, df, h5_folder_time_scanlines, time_node_spac
             # Read out the file name corresponding to file index i
             h5_filename = df_current['h5_filename'].iloc[0]
         except IndexError:
-            break
+            continue
 
         time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filename,
                                                                 dataset_name= h5_folder_time_scanlines)
@@ -1517,7 +1517,7 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
                 print(f'Number of features was {n_features}')
                 print(f'Number of scanlines was {time_scanlines.size}')
 
-                # Compute the median absolute error (more informative in outlier precence)
+                # Compute the median absolute error (more informative in outlier presense)
                 x_err = res.fun[0:n_train]
                 x_MAE = np.median(np.abs(x_err))
 
