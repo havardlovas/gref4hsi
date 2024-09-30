@@ -1327,15 +1327,27 @@ def dem_2_mesh(path_dem, model_path, config, dem_ref_is_geoid = False, path_geoi
             band = None
     
 
-    points = np.loadtxt(output_xyz)
-    points_offset = np.mean(points, axis = 0)
-
-    # Create a pyvista point cloud object (just to avoid precision problems)
-    cloud = pv.PolyData(points-points_offset)
+    
     
     # TODO: Apply patch to avoid crash for triangulation when using big DEM files
     # Generate a mesh from points
-    mesh = cloud.delaunay_2d(progress_bar=True)
+
+    ## Old implementation
+    #mesh = cloud.delaunay_2d(progress_bar=True)
+    
+    # Due to some unpredictable errors leading to silent exits, we need to test the delaunay_2d()
+    is_working = False
+
+    mesh, points_offset = _run_delaunay_2d_in_separate_process(output_xyz)
+
+
+
+
+    
+
+    
+    
+    #mesh = cloud.reconstruct_surface(progress_bar=True)
 
     # Transform the mesh points from projected to geocentric ECEF.
     geocsc = CRS.from_epsg(epsg_geocsc)
@@ -1344,6 +1356,8 @@ def dem_2_mesh(path_dem, model_path, config, dem_ref_is_geoid = False, path_geoi
         pass
     else:
         proj = CRS.from_epsg(epsg_proj)
+
+    
 
     transformer = Transformer.from_crs(proj, geocsc)
 
@@ -1442,17 +1456,16 @@ def crop_geoid_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_2
         maxy = y.max() + padding
     elif spatial_reference.IsGeographic():
         # Must translate metric padding into increments in lon/lat
-        (x_new, y_new, z_new) = pm.enu2geodetic(e= np.array([-padding, padding]), n= np.array([-padding, padding]), u = 0, lon0=np.mean(y), lat0=np.mean(x), h0 = 0)
+        (x_new, y_new, z_new) = pm.enu2geodetic(e= np.array([-padding, padding]), n = np.array([-padding, padding]), u = 0, lon0=np.mean(y), lat0=np.mean(x), h0 = 0)
         delta_x = x_new[1] - np.mean(x)
         delta_y = y_new[1] - np.mean(y)
 
         # Swap x and y because x, y above is latitude, longitude and Rasterio expects opposite
-        ymin = x.min() - delta_x
-        xmin = y.min() - delta_y
-        ymax = x.max() + delta_x
-        xmax = y.max() + delta_y
+        miny = x.min() - delta_x
+        maxx = y.min() - delta_y
+        maxy = x.max() + delta_x
+        minx = y.max() + delta_y
 
-        minx, miny, maxx, maxy = [xmin, ymin, xmax, ymax]  # Replace with actual coordinates
 
         
 
@@ -1525,3 +1538,55 @@ def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):
     lat_lon_hei[:, 2] = hei.reshape((position_ecef.shape[0], 1))
 
     return lat_lon_hei
+
+def _run_delaunay_2d_in_separate_process(output_xyz):
+    """A wrapper around the call of the delaunay_2d(), which keeps on trying with half resolution. 
+
+    :param output_xyz: _description_
+    :type output_xyz: _type_
+    :return: _description_
+    :rtype: _type_
+    """
+    # Create a subprocess to run the function
+    python_cmd_str = f'import pyvista as pv; import numpy as np; points = np.loadtxt(r"{output_xyz}"); points_offset = np.mean(points, axis = 0); cloud = pv.PolyData(points-points_offset); mesh = cloud.delaunay_2d(); print("delaunay_2d completed successfully")'
+
+    command = [
+    'python',
+    '-c',
+    python_cmd_str
+    ]
+
+    is_working = False
+
+    while not is_working:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE )
+    
+        for line in process.stdout:
+            msg = line.decode().rstrip()
+            if msg == 'delaunay_2d completed successfully':
+                is_working = True
+        
+        # If it fails, rewrite the xyz-file with half the points 
+        if not is_working:
+            points = np.loadtxt(output_xyz)
+            # Take 
+            point_no_corn_half = points[0:-5:2]
+            corners = points[-5::]
+            points_half = np.row_stack((point_no_corn_half, corners)) # Re
+            n_points = points.shape[0]
+            print(f'{n_points} points failed in delaunay triangulation')
+            _write_xyz_file(file_path=output_xyz, data = points_half)
+        else:
+            points = np.loadtxt(output_xyz)
+            n_points = points.shape[0]
+            print(f'{n_points} points succeeded in delaunay triangulation')
+
+            points_offset = np.mean(points, axis = 0)
+            # Create a pyvista point cloud object (just to avoid precision problems)
+            cloud = pv.PolyData(points-points_offset)
+
+            mesh = cloud.delaunay_2d()
+            is_working = True
+
+    return mesh, points_offset
+
