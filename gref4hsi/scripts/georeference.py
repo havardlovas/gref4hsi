@@ -226,7 +226,7 @@ def main(iniPath, viz = False, use_coreg_param = False):
             mesh_trans = np.array([mesh_off_x, mesh_off_y, mesh_off_z]).astype(np.float64)
 
     
-    print("\n################ Georeferencing with a Brake: ################")
+    print("\n################ Georeferencing: ################")
     files = sorted(os.listdir(dir_r))
     # Filter out files that do not end with ".h5"
     h5_files = [file for file in files if file.endswith(".h5")]
@@ -305,7 +305,7 @@ def main(iniPath, viz = False, use_coreg_param = False):
                 print(f'Skipping transect chuck because of lacking intersections: {filename}')
                 continue
 
-            print(f'Mesh translation is {mesh_trans}')
+            
             
             # Computes the view angles in the local NED. Computationally intensive as local NED is defined for each intersection
             hsi_geometry.compute_view_directions_local_tangent_plane()

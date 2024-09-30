@@ -73,7 +73,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     
     # Do coregistration if there is an orthomosaic to compare under "orthomosaic"
     #do_coreg = True
-    ortho_ref_fold = os.path.join(specim_mission_folder, "orthomosaic")
+    ortho_ref_fold = os.path.join(hsi_mission_folder, "orthomosaic")
     do_coreg = False
     if not os.path.exists(ortho_ref_fold):
         print('Coregistration is not done, as there was no reference orthomosaic')
@@ -104,9 +104,9 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
 
     config_specim_preprocess = SettingsPreprocess(dtype_datacube = np.float32, # The data type for the datacube
                                 lines_per_chunk= 2000,  # Raw datacube is chunked into this many lines. GB_per_chunk = lines_per_chunk*n_pixels*n_bands*4 bytes
-                                specim_raw_mission_dir = specim_mission_folder, # Folder containing several mission
+                                specim_raw_mission_dir = hsi_mission_folder, # Folder containing several mission
                                 cal_dir = CALIBRATION_DIRECTORY,  # Calibration directory holding all calibrations at all binning levels
-                                reformatted_missions_dir = os.path.join(specim_mission_folder, 'processed'), # The fill value for empty cells (select values not occcuring in cube or ancillary data)
+                                reformatted_missions_dir = os.path.join(hsi_mission_folder, 'processed'), # The fill value for empty cells (select values not occcuring in cube or ancillary data)
                                 rotation_matrix_hsi_to_body = np.array([[0, 1, 0],
                                                                         [-1, 0, 0],
                                                                         [0, 0, 1]]), # Rotation matrix R rotating so that vec_body = R*vec_hsi.
@@ -142,7 +142,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         'raster_transform_method': 'north_east'}, # North-east oriented rasters.
                     'Absolute Paths': {
                         'geoid_path' : GEOID_PATH,
-                        'orthomosaic_reference_folder' : os.path.join(specim_mission_folder, "orthomosaic"),
+                        'orthomosaic_reference_folder' : os.path.join(hsi_mission_folder, "orthomosaic"),
                         'ref_ortho_reshaped' : os.path.join(DATA_DIR, "Intermediate", "RefOrthoResampled"),
                         'ref_gcp_path' : os.path.join(DATA_DIR, "Intermediate", "gcp.csv"),
                         'calib_file_coreg' : os.path.join(DATA_DIR, "Output", "HSI_coreg.xml"),
@@ -260,7 +260,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
         res_img = ResononImage(config, 
                                config_file,
                                config_specim_preprocess,
-                               specim_mission_folder, 
+                               hsi_mission_folder, 
                                processing_lvl, 
                                afov_deg=float(config['General']['afov']))
         res_img.format_2_gref4hsi()
@@ -278,10 +278,10 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     #visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
     # Step 1: Direct georeferencing
-    #georeference.main(config_file)
+    georeference.main(config_file)
 
     # Step 2: Orthorectify the direct georeferenced data (incl metadata) i.e. resampling
-    #orthorectification.main(config_file)
+    orthorectification.main(config_file)
     
 
 
@@ -381,7 +381,7 @@ if __name__ == "__main__":
 
 
     main(str(config_yaml), 
-                        str(specim_mission_folder), 
+                        str(hsi_mission_folder), 
                         geoid_path, 
                         config_template_path, 
                         lab_calibration_path,

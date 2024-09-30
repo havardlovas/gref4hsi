@@ -47,11 +47,11 @@ def _img_object_2_h5_file(h5_filename, h5_tree_dict, img_object):
 # Read all meta data from header file (currently hard coded, but could be avoided I guess)
 # An instance of ResononImage will be created for each image
 class ResononImage:
-    def __init__(self, config, config_file, config_specim_preprocess, specim_mission_folder, processing_lvl, afov_deg=None):
+    def __init__(self, config, config_file, config_specim_preprocess, hsi_mission_folder, processing_lvl, afov_deg=None):
         self.config = config
         self.config_file = config_file
         self.config_specim_preprocess = config_specim_preprocess
-        self.specim_mission_folder = specim_mission_folder
+        self.hsi_mission_folder = hsi_mission_folder
         self.afov = np.deg2rad(afov_deg) # in radians
         self.fov_file = ''
         self.geoid_path = config['Absolute Paths']['geoid_path']
@@ -64,12 +64,12 @@ class ResononImage:
                        "2b": "2b_reflectance_gc"} # key word, subfolder name
         
         # Locate the paths to the ENVI data cubes
-        self.capture_dir = os.path.join(specim_mission_folder,
+        self.capture_dir = os.path.join(hsi_mission_folder,
                            "pre-processed",
                            preprocess_lvl_dict[processing_lvl])
         
         # Locate the nav data
-        self.nav_dir =  os.path.join(specim_mission_folder,
+        self.nav_dir =  os.path.join(hsi_mission_folder,
                            "pre-processed",
                            'imudata')
         
@@ -88,20 +88,20 @@ class ResononImage:
         # First copy the 0_raw and calibration folder into a pre-processed folder to avoid too many folders at highest level
         # Folder structure is hardcoded
         try:
-            shutil.copytree(os.path.join(self.specim_mission_folder, "0_raw"), 
-                            os.path.join(self.specim_mission_folder, "pre-processed", "0_raw"))
-            shutil.copytree(os.path.join(self.specim_mission_folder, "calibration"), 
-                            os.path.join(self.specim_mission_folder, "pre-processed", "calibration"))
-            shutil.copy(os.path.join(self.specim_mission_folder, "config.seabee.yaml"), 
-                            os.path.join(self.specim_mission_folder, "pre-processed", "config.seabee.yaml"))
+            shutil.copytree(os.path.join(self.hsi_mission_folder, "0_raw"), 
+                            os.path.join(self.hsi_mission_folder, "pre-processed", "0_raw"))
+            shutil.copytree(os.path.join(self.hsi_mission_folder, "calibration"), 
+                            os.path.join(self.hsi_mission_folder, "pre-processed", "calibration"))
+            shutil.copy(os.path.join(self.hsi_mission_folder, "config.seabee.yaml"), 
+                            os.path.join(self.hsi_mission_folder, "pre-processed", "config.seabee.yaml"))
         except:
             return # Presumably it already has been processed
         
         # Perform the pre-processing from pre-processed folder
-        processor = PipelineProcessor(os.path.join(self.specim_mission_folder, "pre-processed"))
+        processor = PipelineProcessor(os.path.join(self.hsi_mission_folder, "pre-processed"))
         processor.run(mosaic_geotiffs = False)
         # Remove the copied config file to avoid any problems
-        os.remove(os.path.join(self.specim_mission_folder, "pre-processed", "config.seabee.yaml"))
+        os.remove(os.path.join(self.hsi_mission_folder, "pre-processed", "config.seabee.yaml"))
     
     def format_2_gref4hsi(self):
         """Run through and process the hyperspectral data to a format for """
@@ -192,7 +192,7 @@ class ResononImage:
         file_name_xml = 'HSI_' + str(self.binning_spatial) + 'b.xml'
         
         # First check if it exists within tree:
-        f_list = [f.parent for f in Path(self.specim_mission_folder).rglob(file_name_xml)]
+        f_list = [f.parent for f in Path(self.hsi_mission_folder).rglob(file_name_xml)]
         
         if len(f_list) == 1:
             # Set value in config file:
