@@ -1204,7 +1204,42 @@ def dem_2_mesh(path_dem, model_path, config):
         
         # Update the path_dem
         path_dem = resampled_dem_path
+
+        # Update for config file
+        config['Absolute Paths']['dem_path'] = path_dem
+
+        with open(config_file_path, 'w') as configfile:
+            config.write(configfile)
     ##
+
+
+
+    # Step 1: If the dem is given with respect to Geoid, the two rasters (DEM and GEoid) need to be added
+    if dem_ref_is_geoid:
+        # To add reasters, first crop Geoid to grid of DEM
+        geoid_cropped_to_dem = os.path.join(dem_folder, 'geoid_cropped_to_dem.tif')
+
+        # Resample geoid to shape of DEM
+        geohsi.resample_dem_to_hsi_ortho(path_geoid, path_dem, geoid_cropped_to_dem)
+
+        dem_wrt_ellipsoid = os.path.join(dem_folder, 'dem_wrt_ellipsoid.tif')
+
+        # Add them together to get height wrt ellipsoid
+        add_rasters_with_nodata_mask(raster1_path = geoid_cropped_to_dem, raster2_path = path_dem, output_path=dem_wrt_ellipsoid)
+
+        # Update dem patha
+        path_dem = dem_wrt_ellipsoid
+
+        # Update for config file
+        config['Absolute Paths']['dem_path'] = path_dem
+
+        with open(config_file_path, 'w') as configfile:
+            config.write(configfile)
+
+        
+    
+    
+
 
     # The desired CRS for the model must be same as positions, orientations
     epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
