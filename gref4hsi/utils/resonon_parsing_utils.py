@@ -30,7 +30,14 @@ def _get_geoid_undulation(src, latitude, longitude):
     """
 
     # Transform coordinates to raster pixel coordinates
-    row, col = src.index(longitude, latitude)
+    if src.crs.is_projected:
+        geodetic_epsg = 4326
+        transformer = pyproj.Transformer.from_crs(geodetic_epsg, src.crs, always_xy=True)
+        x, y, _ = transformer.transform(longitude, latitude, 0*np.ones(longitude.shape))
+        row, col = src.index(x, y)
+
+    else:
+        row, col = src.index(longitude, latitude)
 
     # Extract pixel value (geoid undulation)
     geoid_undulation = src.read(1)[row, col]
