@@ -140,7 +140,13 @@ class ResononImage:
             search_path_nav = os.path.normpath(os.path.join(self.nav_dir, img_id + '.json'))
             search_path_envi_hdr = os.path.normpath(os.path.join(self.capture_dir, img_id + '.bip.hdr'))
 
-            envi_hdr_file = glob.glob(search_path_envi_hdr)[0]
+            if self.processing_lvl != '0':
+                envi_hdr_file = glob.glob(search_path_envi_hdr)[0]
+
+            else:
+                # This will occur if user chooses processing level 0
+                envi_hdr_file = [str(item) for item in Path(self.capture_dir).rglob(f'*_{i+1}.bil.hdr')][0]
+
             nav_file = glob.glob(search_path_nav)[0]
 
             self.process_envi_hdr(envi_hdr_file)
