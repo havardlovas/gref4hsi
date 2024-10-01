@@ -1539,6 +1539,49 @@ def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):
 
     return lat_lon_hei
 
+def _extract_ecef_corners(raster_path, ecef_epsg = "EPSG:4979"):
+    """Extracts the corners of a DEM and returns their ECEF coordinates.
+
+    Args:
+        raster_path (str): Path to the DEM raster file.
+
+    Returns:
+        list: A list of ECEF coordinates (x, y, z) for the four corners.
+    """
+
+    with rasterio.open(raster_path) as src:
+        # Get the raster's CRS and bounds
+        crs = src.crs
+        left, bottom, right, top = src.bounds
+        elevation_data = src.read(1)  # Assuming elevation is in the first band
+
+
+        # Calculate corner coordinates
+        corners = [
+            (left, bottom),
+            (left, top),
+            (right, top),
+            (right, bottom)
+        ]
+        w,h  = src.width, src.height
+        corner_indices = [
+            (h-1, 0),
+            (0, 0),
+            (0, w-1),
+            (h-1, w-1)
+        ]
+        elevations = [elevation_data[int(row), int(col)] for row, col in corner_indices]
+
+
+        # Convert to ECEF coordinates using pyproj
+        ecef_corners = []
+        transformer = pyproj.Transformer.from_crs(crs, ecef_epsg, always_xy=True)
+        for xy, elevation in zip(corners, elevations):
+            x, y, z = transformer.transform(xy[0], xy[1], elevation)
+            ecef_corners.append((x, y, z))
+
+    return ecef_corners
+
 def _run_delaunay_2d_in_separate_process(output_xyz):
     """A wrapper around the call of the delaunay_2d(), which keeps on trying with half resolution. 
 
