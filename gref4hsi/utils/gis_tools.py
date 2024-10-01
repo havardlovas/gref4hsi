@@ -157,13 +157,18 @@ class GeoSpatialAbstractionHSI():
         
         self.nodata = config_ortho.nodata_value
         
-        if self.nodata.dtype != radiance_cube.dtype:
-            # In this case, we need to assign a default value
-            self.nodata = _get_max_value(radiance_cube.dtype)
-            
-            # To avoid calling nodata on saturated values we do
-            radiance_cube[radiance_cube == self.nodata] = self.nodata - 1
+        # If dtype is integer and not same type of int as radiance cube
+        # This avoids annoying error
+        if np.issubdtype(radiance_cube.dtype, np.integer):
+            if self.nodata.dtype != radiance_cube.dtype:
+                # If they are incompatible use the max value to fix the problem
+                self.nodata = _get_max_value(radiance_cube.dtype)
+                
+                # To avoid calling nodata on saturated values we do
+                radiance_cube[radiance_cube == self.nodata] = self.nodata - 1
 
+        
+        #
         rgb_composite_only = config_ortho.resample_rgb_only
 
         
