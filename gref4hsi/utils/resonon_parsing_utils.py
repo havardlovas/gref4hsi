@@ -62,6 +62,7 @@ class ResononImage:
         self.afov = np.deg2rad(afov_deg) # in radians
         self.fov_file = ''
         self.geoid_path = config['Absolute Paths']['geoid_path']
+        self.processing_lvl = processing_lvl
         
         self.pre_process_mission_folder()
         
@@ -170,7 +171,7 @@ class ResononImage:
         
         self.spectral_image_obj = envi.open(envi_hdr_file_path)
         # Verbosely written out so that user can see available meta
-        self.n_lines = int(self.spectral_image_obj.metadata['lines'])
+        """self.n_lines = int(self.spectral_image_obj.metadata['lines'])
         self.n_bands = int(self.spectral_image_obj.metadata['bands'])
         self.n_pix = int(self.spectral_image_obj.metadata['samples'])
         self.binning_spatial = int(self.spectral_image_obj.metadata['sample binning'])
@@ -192,8 +193,18 @@ class ResononImage:
 
         self.target = self.spectral_image_obj.metadata['target']
         self.wavelengths = np.array(self.spectral_image_obj.metadata['wavelength']).astype(np.float32)
-        
+        """
         self.datacube = self.spectral_image_obj[:,:,:] # Load the datacube
+        # Load metadata
+        for key, value in self.spectral_image_obj.metadata.items():
+            # Replace spaces with underscores
+            key = key.replace(" ", "_")
+            setattr(self, key, value)
+        
+        self.t_exp_ms = self.shutter
+        # For some reason interpreted as strings
+        self.wavelengths = np.array(self.wavelength).astype(np.float64)
+
         
     def generate_camera_model(self, fov_file = '', afov = None):
         """Generate camera model for the particular mission. Assuming that spatial binning is constant"""
@@ -202,7 +213,7 @@ class ResononImage:
         #"HSI_1b.xml", "HSI_2b.xml" file etc depending on the binning level and placing it on the top level
         
         
-        file_name_xml = 'HSI_' + str(self.binning_spatial) + 'b.xml'
+        file_name_xml = 'HSI_' + str(self.sample_binning) + 'b.xml'
         
         # First check if it exists within tree:
         f_list = [f.parent for f in Path(self.hsi_mission_folder).rglob(file_name_xml)]
@@ -232,7 +243,7 @@ class ResononImage:
         if fov_file == '':
             # This means that there is no manufacturer precise calibration for the FOV. Assume a pinhole model:
             # See https://github.com/havardlovas/gref4hsi for info
-            width = self.n_pix
+            width = int(self.samples)
             cx = width/2
             f = width / (2*np.tan(afov/2))
             k1, k2, k3 = 0, 0, 0
