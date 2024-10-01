@@ -286,6 +286,16 @@ def add_byte_order_to_envi_header(header_file_path, byte_order_value):
 
 
 def main(config, config_specim):
+
+     # Defining the folder in which to put the data
+    h5_folder = config['Absolute Paths']['h5_folder']
+    
+    is_already_processed = 0 != len([f for f in os.listdir(h5_folder) if not f.startswith('.')])
+    
+    # Exit
+    if is_already_processed:
+        print('Data has already been parsed')
+        return
     
     # Function that calibrates data and reforms to h5 file format.
     dtype = config_specim.dtype_datacube
