@@ -450,7 +450,7 @@ class GeoSpatialAbstractionHSI():
         anc_data_array = anc_data_array.reshape((-1, n_bands))
         
         # Grid of indices
-        indexes_grid_unmasked = self.indexes.reshape((self.height, self.width))
+        indexes_grid_unmasked = self.indexes.copy().reshape((self.height, self.width))
 
         # Mask indexes
         indexes_grid_unmasked[self.mask == 1] = self.nodata
