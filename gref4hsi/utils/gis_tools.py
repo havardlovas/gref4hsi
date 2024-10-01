@@ -1,6 +1,7 @@
 # Python standard lib
 import os
 from concurrent.futures import ThreadPoolExecutor
+import sys
 
 # Third party
 import cv2 as cv
@@ -8,6 +9,7 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 from pyproj import CRS, Transformer
+import pyproj
 import rasterio
 from rasterio.features import geometry_mask
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -193,7 +195,7 @@ class GeoSpatialAbstractionHSI():
             'wavelength': wavelengths
         }
         try:
-            # If vector form
+            # If vector form is avai
             if fwhm.any() == np.nan:
                 pass
             else:
@@ -564,7 +566,7 @@ class GeoSpatialAbstractionHSI():
         s_x = resolution
         s_y = resolution
 
-        S = np.diag(np.array([s_x, s_y, 1]))
+        S = np.diag(np.array([s_x, s_y, 1])) # Scale
 
         # Reflection matrix to account for opposite row/up direction
         Ref = np.diag(np.array([1, -1, 1]))
@@ -969,6 +971,7 @@ class GeoSpatialAbstractionHSI():
     @staticmethod
     def resample_dem_to_hsi_ortho(dem_path, hsi_composite_path, dem_reshaped):
         """Reproject a file to match the shape and projection of existing raster.
+        see https://rasterio.readthedocs.io/en/stable/topics/reproject.html
 
         Parameters
         ----------
@@ -978,11 +981,12 @@ class GeoSpatialAbstractionHSI():
         """
 
         infile = dem_path
-        match = hsi_composite_path
+        matchfile = hsi_composite_path
         outfile = dem_reshaped
         # open input
+        
         with rasterio.open(infile) as src:
-            src_transform = src.transform
+            src_transform = src.transform # DEM
 
             # open input to match
             with rasterio.open(matchfile) as match:
@@ -1039,6 +1043,7 @@ class GeoSpatialAbstractionHSI():
                     match.height,  # input height
                     *match.bounds,  # unpacks input outer boundaries (left, bottom, right, top)
                 )
+                
 
             # set properties for output
             dst_kwargs = src.meta.copy()
@@ -1122,86 +1127,6 @@ class GeoSpatialAbstractionHSI():
         return uv_vec_hsi, uv_vec_rgb, diff_AE
 
 
-
-    def map_pixels_back_to_datacube(self, w_datacube):
-        """The projected formats can be transformed back with four integer transforms and interpolated accordingly"""
-        """As a simple strategy we perform bilinear interpolation"""
-
-        indexes_grid = np.flip(self.indexes.reshape((self.height_rectified, self.width_rectified)), axis = 0)
-
-        v = self.feature_uv_hsi[:, 0]
-        u = self.feature_uv_hsi[:, 1]
-
-        v_rgb = self.feature_uv_rgb[:, 0]
-        u_rgb = self.feature_uv_rgb[:, 1]
-
-        # Should transform rgb coordinates directly to world coordinates
-        ## Conversion to global coordinates
-        x = self.feature_uv_rgb[:, 0]
-        y = self.feature_uv_rgb[:, 1]
-
-        xoff, a, b, yoff, d, e = self.transform_pixel_projected
-
-
-        xp = a * x + b * y + xoff + 0.5*a # The origin of the image coordinate system is located at 0.5,0.5
-        yp = d * x + e * y + yoff + 0.5*e
-        zp = np.zeros(yp.shape)
-        for i in range(xp.shape[0]):
-            temp = [x for x in self.raster_dem.sample([(xp[i], yp[i])])]
-            zp[i] = float(temp[0])
-
-        if self.is_global != True:
-            self.features_points = np.concatenate((xp.reshape((-1,1)), yp.reshape((-1,1)), zp.reshape((-1,1))), axis = 1)
-        else:
-            geocsc = CRS.from_epsg(self.epsg_geocsc)
-            proj = CRS.from_epsg(self.epsg_proj)
-            transformer = Transformer.from_crs(proj, geocsc)
-            self.features_points = np.zeros((xp.shape[0], 3))
-
-
-
-            (x_ecef, y_ecef, z_ecef) = transformer.transform(xx=xp, yy=yp, zz=zp)
-
-            self.features_points[:, 0] = x_ecef
-            self.features_points[:, 1] = y_ecef
-            self.features_points[:, 2] = z_ecef
-
-
-
-
-        #
-
-        self.v_datacube_hsi = np.zeros((v.shape[0], 4))
-        self.u_datacube_hsi = np.zeros((v.shape[0], 4))
-
-        # See wikipedia
-        for i in range(4):
-            if i == 0:
-                u1 = np.floor(u).astype(np.int32)  # row
-                v1 = np.floor(v).astype(np.int32)  # col
-            elif i == 1:
-                u1 = np.floor(u).astype(np.int32)  # row
-                v1 = np.ceil(v).astype(np.int32)  # col
-            elif i == 2:
-                u1 = np.ceil(u).astype(np.int32)  # row
-                v1 = np.floor(v).astype(np.int32)  # col
-            else:
-                u1 = np.ceil(u).astype(np.int32)  # row
-                v1 = np.ceil(v).astype(np.int32)  # col
-
-            ind_datacube_hsi = indexes_grid[u1, v1] # 1D Indexer til rå datakube
-
-            self.v_datacube_hsi[:, i] = ind_datacube_hsi % w_datacube
-            self.u_datacube_hsi[:, i]  = (ind_datacube_hsi - self.v_datacube_hsi[:, i]) / w_datacube
-
-
-        self.x1_x_hsi = v - np.floor(v)
-        self.y1_y_hsi = u - np.floor(u)
-
-        #self.x1_x_rgb = v_rgb - np.floor(v_rgb)
-        #self.y1_y_rgb = u_rgb - np.floor(u_rgb)
-
-
     def compute_reference_points_ecef(uv_vec_ref, transform_pixel_projected, dem_resampled_path, epsg_proj, epsg_geocsc=4978):
     
     
@@ -1277,21 +1202,7 @@ class GeoSpatialAbstractionHSI():
 
         
 
-    @staticmethod
-    def feature_matches_to_GCP(features_hsi, features_ref, pixel_nr_raster, time_raster):
-        """Function to establish 2D feature positions u, j in raw cube, as well as true reference positions X, Y, Z
 
-        :param features_hsi: _description_
-        :type features_hsi: _type_
-        :param features_ref: _description_
-        :type features_ref: _type_
-        :param pixel_nr_raster: _description_
-        :type pixel_nr_raster: _type_
-        :param time_raster: _description_
-        :type time_raster: _type_
-        """
-
-        return None
 
 
     # COPIED from https://stackoverflow.com/questions/12729228/simple-efficient-bilinear-interpolation-of-images-in-numpy-and-python
@@ -1322,6 +1233,10 @@ class GeoSpatialAbstractionHSI():
         wd = (x-x0) * (y-y0)
 
         return wa*Ia + wb*Ib + wc*Ic + wd*Id
+
+
+    
+
 def _get_max_value(dtype):
     """Gets the maximum value for a given data type.
 
@@ -1335,7 +1250,7 @@ def _get_max_value(dtype):
     if np.issubdtype(dtype, np.integer):
         return np.iinfo(dtype).max
     elif np.issubdtype(dtype, np.floating):
-        return sys.float_info.max
+        return np.finfo(dtype).max
     else:
         raise ValueError("Unsupported data type: {}".format(dtype))
 
