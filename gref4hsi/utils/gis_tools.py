@@ -985,8 +985,51 @@ class GeoSpatialAbstractionHSI():
             src_transform = src.transform
 
             # open input to match
-            with rasterio.open(match) as match:
-                dst_crs = match.crs
+            with rasterio.open(matchfile) as match:
+                dst_crs = match.crs # desired crs and transform
+
+                # calculate the output transform matrix
+
+                if src.crs.is_geographic:
+                    tmp_file = 'tmp.tif'
+
+                    # calculate the output transform matrix
+                    dst_transform, dst_width, dst_height = calculate_default_transform(
+                        src.crs,  # input CRS
+                        dst_crs,  # output CRS
+                        src.width,  # input width
+                        src.height,  # input height
+                        *src.bounds,  # unpacks input outer boundaries (left, bottom, right, top)
+                    )
+
+                    # Set properties for tmp:
+                    dst_kwargs = src.meta.copy()
+                    dst_kwargs.update({"crs": dst_crs,
+                                    "transform": dst_transform,
+                                    "width": dst_width,
+                                    "height": dst_height,
+                                    "nodata": 0})
+
+                    with rasterio.open(tmp_file, 'w', **dst_kwargs) as src_prj:
+                        # Reproject the DEM data in-place
+                        reproject(
+                            source=rasterio.band(src, 1),
+                            destination=rasterio.band(src_prj, 1),
+                            src_transform=src.transform,
+                            src_crs=src.crs,
+                            dst_transform=None,# No cropping
+                            dst_crs=dst_crs,
+                            resampling=Resampling.cubic)
+
+                    src.close()
+                    match.close()
+                    
+                    # Now that the file is written, we can recursively call
+                    GeoSpatialAbstractionHSI.resample_dem_to_hsi_ortho(tmp_file, matchfile, outfile)
+
+                    os.remove(tmp_file)
+                    return 
+
 
                 # calculate the output transform matrix
                 dst_transform, dst_width, dst_height = calculate_default_transform(
