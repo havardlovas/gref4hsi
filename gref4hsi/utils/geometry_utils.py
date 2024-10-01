@@ -1,7 +1,10 @@
 # Third party
+import subprocess
 import numpy as np
 import numpy.matlib
 from osgeo import gdal, osr
+import psutil
+import pyproj
 import rasterio
 from scipy.spatial.transform import Rotation as RotLib
 from scipy.spatial.transform import Slerp
@@ -25,6 +28,9 @@ import time
 from datetime import datetime
 from dateutil import parser
 import json
+
+# Internals:
+from gref4hsi.utils.gis_tools import GeoSpatialAbstractionHSI as geohsi
 
 # A file were we define geometry and geometric transforms
 class CalibHSI:
@@ -1405,6 +1411,15 @@ def dem_2_mesh(path_dem, model_path, config, dem_ref_is_geoid = False, path_geoi
 
 
 def crop_geoid_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_25.gtx'):
+    """Crops out a DEM from the geoid using the pose of the vehicle
+
+    :param path_dem: where to write the new dem
+    :type path_dem: str
+    :param config: dictionary of configurations
+    :type config: dictionary from *.ini file
+    :param geoid_path: Where the geoid to use comes from, defaults to 'data/world/geoids/egm08_25.gtx'
+    :type geoid_path: str, optional
+    """
     # The desired CRS for the model must be same as positions, orientations
     epsg_geocsc = config['Coordinate Reference Systems']['geocsc_epsg_export']
 
@@ -1438,8 +1453,9 @@ def crop_geoid_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_2
 
     coords_horz = np.concatenate((x_proj.reshape((-1,1)), y_proj.reshape((-1,1))), axis = 1)
 
-    # Determine bounding rectangle ()
+    # Determine bounding rectangle of poses ()
     polygon = MultiPoint(coords_horz).envelope
+    
     # Corners
     x, y = polygon.exterior.xy
     x = np.array(x)
@@ -1539,6 +1555,81 @@ def position_transform_ecef_2_llh(position_ecef, epsg_from, epsg_to, config):
 
     return lat_lon_hei
 
+def add_rasters_with_nodata_mask(raster1_path, raster2_path, output_path):
+    """Adds two rasters with "NoData" masking. The input rasters must have the same CRS and geotransform
+
+    Args:
+        raster1_path (str): Path to the first raster.
+        raster2_path (str): Path to the second raster.
+        output_path (str): Path to save the output raster.
+    """
+
+    with rasterio.open(raster1_path) as src1, rasterio.open(raster2_path) as src2:
+
+        # Create a new dataset with the same profile
+        profile = src1.profile.copy()
+        with rasterio.open(output_path, 'w', **profile) as dst:
+            # Read raster data
+            array1 = src1.read(1)
+            array2 = src2.read(1)
+
+            # Get NoData values
+            nodata1 = src1.nodata
+            nodata2 = src2.nodata
+
+            # Create masks
+            mask1 = (array1 != nodata1)
+            mask2 = (array2 != nodata2)
+
+            # Combine masks
+            combined_mask = mask1 & mask2
+
+            # Apply masks and add
+            result = (array1 * combined_mask) + (array2 * combined_mask)
+
+            # Write to output raster
+            dst.write(result, 1)
+def _resample_raster(raster_path, resample_factor, output_path):
+    """Resamples a raster by a given factor and saves the result to a new file.
+
+    Args:
+        raster_path: Path to the input raster file.
+        resample_factor: Factor by which to resample the raster.
+        output_path: Path to the output raster file.
+
+    Returns:
+        None.
+    """
+
+    with rasterio.open(raster_path) as src:
+        width, height = src.width, src.height
+        transform = src.transform
+
+        new_width, new_height = int(width / resample_factor), int(height / resample_factor)
+
+        # Calculate new cell size based on resampling and original extent
+        original_cell_x = transform[0]
+        original_cell_y = transform[4]
+
+        new_cell_x = original_cell_x * resample_factor
+        new_cell_y = original_cell_y * resample_factor
+
+        print(f"Resampling raster from {width}x{height} to {new_width}x{new_height}")
+
+        # Create a new dataset with the resampled dimensions
+        profile = src.profile.copy()
+        profile.update(width=new_width, height=new_height, transform=[
+            new_cell_x, transform[1], transform[2],
+            transform[3], new_cell_y, transform[5]
+        ])
+        with rasterio.open(output_path, "w", **profile) as dst:
+            data = src.read()
+            dst.write(data)
+
+            # Resample the data using nearest neighbor resampling
+            #resampled_data = dst.read()
+            #dst.write(resampled_data)
+
 def _extract_ecef_corners(raster_path, ecef_epsg = "EPSG:4979"):
     """Extracts the corners of a DEM and returns their ECEF coordinates.
 
@@ -1633,3 +1724,16 @@ def _run_delaunay_2d_in_separate_process(output_xyz):
 
     return mesh, points_offset
 
+
+
+def _write_xyz_file(file_path, data):
+    """Writes a NumPy array to an XYZ file.
+
+    Args:
+        file_path (str): Path to the output XYZ file.
+        data (np.ndarray): The XYZ data to write.
+    """
+
+    with open(file_path, 'w') as f:
+        for row in data:
+            f.write(' '.join(map(str, row)) + '\n')

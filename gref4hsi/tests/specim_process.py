@@ -42,7 +42,7 @@ This script is meant to be used for testing the processing pipeline of airborne 
 
 
 
-def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, lab_calibration_path, device, processing_lvl, fast_mode = False, cam_calibrate_dict = None, calibrate_dict_extr=None, coreg_dict=None):
+def main(config_yaml, hsi_mission_folder, geoid_path, config_template_path, lab_calibration_path, device, processing_lvl, fast_mode = False, cam_calibrate_dict = None, calibrate_dict_extr=None, coreg_dict=None):
     # Read flight-specific yaml file
     with open(config_yaml, 'r') as file:  
         config_data = yaml.safe_load(file)
@@ -141,10 +141,11 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         'max_ray_length': 3*elevation}, # Max distance in meters from spectral imager to seafloor. Used for cropping of elevation and geoid data
 
                     'Coordinate Reference Systems':
-                        {'proj_epsg' : EPSG_CODE, # The projected CRS UTM 32, common on mainland norway
+                        {'proj_epsg' : EPSG_CODE, # The projected CRS UTM system
                         'geocsc_epsg_export' : 4978, # 3D cartesian system for earth consistent with GPS frame (but inconsistent with eurasian techtonic plate)
                         'dem_epsg' : EPSG_CODE, # (Optional) If you have a DEM this can be used
-                        'pos_epsg_orig' : 4978}, # The CRS of the positioning data we deliver to the georeferencing
+                        'pos_epsg_orig' : 4978,
+                        'dem_ref': dem_ref}, # The CRS of the positioning data we deliver to the georeferencing
 
                     'Orthorectification':
                         {'resample_rgb_only': False, # True can be good choice for speed during DEV
@@ -156,11 +157,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
                         'orthomosaic_reference_folder' : os.path.join(hsi_mission_folder, "orthomosaic"),
                         'ref_ortho_reshaped' : os.path.join(DATA_DIR, "Intermediate", "RefOrthoResampled"),
                         'ref_gcp_path' : os.path.join(DATA_DIR, "Intermediate", "gcp.csv"),
-                        'calib_file_coreg' : os.path.join(DATA_DIR, "Output", "HSI_coreg.xml"),
-                        # (above) The georeferencing allows processing using norwegian geoid NN2000 and worldwide EGM2008. Also, use of seafloor terrain models are supported. '
-                        # At the moment refractive ray tracing is not implemented, but it could be relatively easy by first ray tracing with geoid+tide, 
-                        # and then ray tracing from water
-                        #'tide_path' : 'D:/HyperspectralDataAll/HI/2022-08-31-060000-Remoy-Specim/Input/tidevann_nn2000_NMA.txt'
+                        'calib_file_coreg' : os.path.join(DATA_DIR, "Output", "HSI_coreg.xml")
                         },
                     
                     # If coregistration is done, then the data must be stored after processing somewhere
@@ -239,7 +236,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # 
     if fast_mode:
         custom_config['Orthorectification']['resample_rgb_only'] = True
-        custom_config['Orthorectification']['resolutionhyperspectralmosaic'] = 0.05
+        custom_config['Orthorectification']['resolutionhyperspectralmosaic'] = 1
 
 
     # Customizes the config file according to settings if it does not exist
@@ -259,9 +256,6 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     # This function parses raw specim data including (spectral, radiometric, geometric) calibrations and nav data
     # into an h5 file. The nav data is written to "raw/nav/" subfolders, whereas hyperspectral data and calibration data 
     # written to "processed/hyperspectral/" and "processed/calibration/" subfolders
-    
-    
-    
         
     
     if device == 'specim':
@@ -290,7 +284,7 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
     #visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
     # Step 1: Direct georeferencing
-    georeference.main(config_file)
+    #georeference.main(config_file)
 
     # Step 2: Orthorectify the direct georeferenced data (incl metadata) i.e. resampling
     orthorectification.main(config_file)
@@ -315,17 +309,17 @@ def main(config_yaml, specim_mission_folder, geoid_path, config_template_path, l
         customize_config(config_path=config_file, dict_custom=custom_config)
         
         # Re-georeference with coregistred parameters
-        #georeference.main(config_file, use_coreg_param=True)
+        georeference.main(config_file, use_coreg_param=True)
             
 
         # Coregister this stuff
-        #orthorectification.main(config_file)
+        orthorectification.main(config_file)
 
         # Second round of comparison
-        #coregistration.main(config_file, mode='compare', is_calibrated = True)
+        coregistration.main(config_file, mode='compare', is_calibrated = True)
 
         # Check bulk
-        #coregistration.main(config_file, mode='calibrate', is_calibrated = True, coreg_dict = coreg_dict)
+        coregistration.main(config_file, mode='calibrate', is_calibrated = True, coreg_dict = coreg_dict)
     
     
 
@@ -334,36 +328,58 @@ if __name__ == "__main__":
     
     
     # Globally accessible files:
-    geoid_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/world/geoids/no_kv_HREF2018C_NN2000_EUREF89.tif")
-    config_template_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/config_examples/configuration_resonon.ini")
-    lab_calibration_path = os.path.join(base_fp, "Specim/Lab_Calibrations")
-    lab_calibration_path = ''
-    # Third flight: The configuration file and recording folder on drive
-    """specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remoy/remoy_202208311435_ntnu_hyperspectral_74m")
-    config_yaml = os.path.join(specim_mission_folder, "config.seabee.yaml")
-
-    # Run 
-    main(str(config_yaml), str(specim_mission_folder), geoid_path, config_template_path, lab_calibration_path)"""
-
-   # Second flight
-    """specim_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remoy/remoy_202208311040_ntnu_hyperspectral_74m")
-    config_yaml = os.path.join(specim_mission_folder, "config.seabee.yaml")
-
-    # Run 
-    main(str(config_yaml), str(specim_mission_folder), geoid_path, config_template_path, lab_calibration_path)"""
-
-    # First flight
-    specim_mission_folder = os.path.join(base_fp, r"E:\HavardData\massimal_bodo_saltstraumen_202203121143-small_hsi")
-    config_yaml = os.path.join(specim_mission_folder, "config.seabee.yaml")
+    geoid_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/world/geoids/no_kv_HREF2018A_NN2000_EUREF89.tif")
 
     device = 'resonon'
-    processing_lvl = '1a'
+
+    if device == 'resonon':
+        config_template_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/config_examples/configuration_resonon.ini")
+        lab_calibration_path = ''
+
+        hsi_mission_folder = os.path.join(base_fp, r"E:\HavardData\massimal_bodo_saltstraumen_202203121143-small_hsi")
+        
+        processing_lvl = '0'
+
+    elif device == 'specim':
+        config_template_path = os.path.join(home, "VsCodeProjects/gref4hsi/data/config_examples/configuration_specim.ini")
+        lab_calibration_path = os.path.join(base_fp, "E:HavardData/Lab_Calibrations")
+        hsi_mission_folder = os.path.join(base_fp, r"E:HavardData\runde_202209010835_ntnu_hyperspectral_74m\runde_202209010835_ntnu_hyperspectral_74m")
+        processing_lvl = None
+    
+    config_yaml = os.path.join(hsi_mission_folder, "config.seabee.yaml")
+
+
+    
+    
+
+
+
+
+
+    
+    
+    # Third flight: The configuration file and recording folder on drive
+    """hsi_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remoy/remoy_202208311435_ntnu_hyperspectral_74m")
+    config_yaml = os.path.join(hsi_mission_folder, "config.seabee.yaml")
+
+    # Run 
+    main(str(config_yaml), str(hsi_mission_folder), geoid_path, config_template_path, lab_calibration_path)"""
+
+   # Second flight
+    """hsi_mission_folder = os.path.join(base_fp, r"Specim/Missions/2022-08-31-Remoy/remoy_202208311040_ntnu_hyperspectral_74m")
+    config_yaml = os.path.join(hsi_mission_folder, "config.seabee.yaml")
+
+    # Run 
+    main(str(config_yaml), str(hsi_mission_folder), geoid_path, config_template_path, lab_calibration_path)"""
+
+    # First flight
+    
     
     cam_calibrate_dict = {'calibrate_boresight': True,
                             'calibrate_camera': True,
-                            'calibrate_lever_arm': True,
+                            'calibrate_lever_arm': False,
                             'calibrate_cx': False,
-                            'calibrate_f': False,
+                            'calibrate_f': True,
                             'calibrate_k1': False,
                             'calibrate_k2': False,
                             'calibrate_k3': False
@@ -372,10 +388,10 @@ if __name__ == "__main__":
     # Here you can set which time-varying errors to estimate
     calibrate_dict_extr = {'calibrate_pos_x': False,
                     'calibrate_pos_y': False,
-                    'calibrate_pos_z': False,
+                    'calibrate_pos_z': True,
                     'calibrate_roll': False,
                     'calibrate_pitch': False,
-                    'calibrate_yaw': False}
+                    'calibrate_yaw': True}
             
     coreg_dict = {'calibrate_dict': cam_calibrate_dict,
                 'calibrate_per_transect': False, # Whether to calibrate on each transect seperately (True) or to use an entire set of transects for calibration (False)
@@ -399,4 +415,4 @@ if __name__ == "__main__":
                         lab_calibration_path,
                         device,
                         processing_lvl,
-                        fast_mode = True, **kwargs)
+                        fast_mode = False, **kwargs)
