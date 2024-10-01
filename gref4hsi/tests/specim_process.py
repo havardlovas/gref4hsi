@@ -284,7 +284,7 @@ def main(config_yaml, hsi_mission_folder, geoid_path, config_template_path, lab_
     #visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
     # Step 1: Direct georeferencing
-    #georeference.main(config_file)
+    georeference.main(config_file)
 
     # Step 2: Orthorectify the direct georeferenced data (incl metadata) i.e. resampling
     orthorectification.main(config_file)
@@ -297,7 +297,7 @@ def main(config_yaml, hsi_mission_folder, geoid_path, config_template_path, lab_
         # Coregistration requires that Step 1 and 2 were performed and that resample anc = True
         # Match RGB composite to reference, find features and following data, ground control point (gcp) list, for each feature pair:
         # reference point 3D (from reference), position/orientation of vehicle (using resampled time) and pixel coordinate (using resampled pixel coordinate)
-        #coregistration.main(config_file, mode='compare', is_calibrated = False)
+        coregistration.main(config_file, mode='compare', is_calibrated = False)
 
         # The gcp list allows reprojecting reference points and evaluate the reprojection error,
         # which is used to optimize static geometric parameters (e.g. boresight, camera model...) or dynamic geometric parameters (time-varying nav errors).
