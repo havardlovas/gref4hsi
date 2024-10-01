@@ -573,16 +573,24 @@ def export_model(config_file):
     elif model_export_type == 'dem_file':
         file_path_dem = config['Absolute Paths']['dem_path']
         file_path_3d_model = config['Absolute Paths']['model_path']
+        file_path_geoid = config['Absolute Paths']['geoid_path']
+
+        # Important to check if the DEM is given with respect to 'geoid' or 'ellipsoid'
+        try:
+            dem_ref = config['Coordinate Reference Systems']['dem_ref']
+        except:
+            # If entry is non-existent, it is assumed that it is wrt ellipsoid
+            dem_ref = 'ellipsoid'
         # Make new only once.
 
         if os.path.exists(file_path_3d_model):
             print('3D model already exists and overwriting is not supported')
             pass
         else:
-
             try:
                 
-
+                # If for some reason you have better DEM data on a per-transect basis
+                # E.g. with range measuring sensors underwater
                 if eval(config['General']['dem_per_transect']):
                     dem_folder_parent = Path(config['Absolute Paths']['dem_folder'])
 
@@ -597,14 +605,18 @@ def export_model(config_file):
                         file_path_3d_model = os.path.join(transect_folder, 'model.vtk')
                         file_path_dem = os.path.join(transect_folder, 'dem.tif')
                         dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
-                else:
-                    dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
+                
                     
                     
-
+            # Only one dem
             except Exception as e:
-                print(e)
-                dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config)
+                if dem_ref == 'geoid':
+                    # First add raster from DEM folder with Geoid
+                    dem_ref_is_geoid = True
+                else:
+                    dem_ref_is_geoid = False
+
+                dem_2_mesh(path_dem=file_path_dem, model_path=file_path_3d_model, config=config, dem_ref_is_geoid=dem_ref_is_geoid, path_geoid=file_path_geoid, config_file_path=config_file)
 
     elif model_export_type == 'geoid':
         file_path_dem = config['Absolute Paths']['dem_path']
