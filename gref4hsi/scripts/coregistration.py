@@ -213,9 +213,9 @@ def _get_time_nodes(node_partition, df, h5_folder_time_scanlines, time_node_spac
             else:
                 time_nodes_tot = np.concatenate((time_nodes_tot, time_nodes))
                 time_scanlines_tot = np.concatenate((time_scanlines_tot, time_scanlines))
-                                # At ends we asign the min/max of the pose to avoid extrapolation
-                                time_nodes[0] = time_scanlines.min()
-                                time_nodes[-1]  = time_scanlines.max()
+                # At ends we asign the min/max of the pose to avoid extrapolation
+                time_nodes[0] = time_scanlines.min()
+                time_nodes[-1]  = time_scanlines.max()
             
             if first_iter:
                 first_iter = False
@@ -975,8 +975,6 @@ def calculate_cam_and_pose_from_param(h5_filename, param, features_df, param0, i
     
     
     
-
-    if time_nodes is not None:
 
     
     
