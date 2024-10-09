@@ -23,6 +23,52 @@ from sklearn.utils import resample
 from sklearn.model_selection import train_test_split
 from scipy.signal import medfilt
 
+import re
+
+def tryint(s):
+    try:
+        return int(s)
+    except:
+        return s
+
+def alphanum_key(s):
+    """ Turn a string into a list of string and number chunks.
+        "z23a" -> ["z", 23, "a"]
+    """
+    return [ tryint(c) for c in re.split('([0-9]+)', s) ]
+
+def sort_nicely(l):
+    """ Sort the given list in the way that humans expect.
+    """
+    l.sort(key=alphanum_key)
+
+
+def infer_transect_structure(h5_dir, h5_folder_time_scanlines):
+
+
+    transect = {}
+    timestamp_prev = -1
+    
+    for h5_filename in sorted(os.listdir(h5_dir), key=alphanum_key):
+        h5_filepath = os.path.join(h5_dir, h5_filename)
+        # Assuming sorted dir
+        time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filepath,
+                                                                dataset_name= h5_folder_time_scanlines)
+        
+        if timestamp_prev == -1: # meaning first iteration
+            current_transect_nr = 0
+            transect[current_transect_nr] = [h5_filename]
+            
+        elif time_scanlines[0] - timestamp_prev < 1: # second (arbitrary)
+            transect[current_transect_nr].append(h5_filename)
+        else: # New transect
+            current_transect_nr += 1
+            transect[current_transect_nr] = [h5_filename]
+
+        timestamp_prev = time_scanlines[-1]
+
+    return transect
+
 def _get_time_nodes(node_partition, df, h5_folder_time_scanlines, time_node_spacing):
     """Finds all the time nodes and scanline timestamps for each feature
     """
@@ -30,7 +76,7 @@ def _get_time_nodes(node_partition, df, h5_folder_time_scanlines, time_node_spac
     # Extract the timestamps for each frame
 
     # Number of transects is found from data frame
-    n_transects = 1 + (df['file_count'].max() - df['file_count'].min())
+    n_transects = 1 + df['file_count'].max()
     
     # Iterate through transects
     # Do all
@@ -38,58 +84,58 @@ def _get_time_nodes(node_partition, df, h5_folder_time_scanlines, time_node_spac
     first_iter = True
     for i in iter:
         df_current_unsorted = df[df['file_count'] == i]
+        if not df_current_unsorted.empty:
+            # Sort values by chronology
+            df_current = df_current_unsorted.sort_values(by='unix_time')
 
-        # Sort values by chronology
-        df_current = df_current_unsorted.sort_values(by='unix_time')
+            n_features = df_current.shape[0]
+            try:
+                # Read out the file name corresponding to file index i
+                h5_filename = df_current['h5_filename'].iloc[0]
+            except IndexError:
+                continue
 
-        n_features = df_current.shape[0]
-        try:
-            # Read out the file name corresponding to file index i
-            h5_filename = df_current['h5_filename'].iloc[0]
-        except IndexError:
-            continue
+            time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                    dataset_name= h5_folder_time_scanlines)
+            # We can use the feature time:
+            time_arr_sorted_features = np.array(sorted(df_current['unix_time']))
+            
+            transect_duration_sec = time_arr_sorted_features.max() - time_arr_sorted_features.min()
 
-        time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                                dataset_name= h5_folder_time_scanlines)
-        # We can use the feature time:
-        time_arr_sorted_features = np.array(sorted(df_current['unix_time']))
+            transect_duration_sec = time_scanlines.max() - time_scanlines.min()
+
+            # Number of nodes calculated from this (except when using "All features")
+            number_of_nodes = int(np.floor(transect_duration_sec/time_node_spacing)) + 1
+
+            if node_partition == 'temporal':
+                                # It divides the transect into equal intervals time-wise, 
+                                # meaning that the intervals can be somewhat different at least for a small number of them.
+                                time_nodes = np.linspace(start=time_scanlines.min(), 
+                                                    stop = time_scanlines.max(), 
+                                                    num = number_of_nodes)
+                                
+            elif node_partition == 'feature':
+                                # We divide to have an equal number of features in each interval
+                                idx_nodes = np.round(np.linspace(start=0, 
+                                                    stop = n_features-1, 
+                                                    num = number_of_nodes)).astype(np.int64)
+
+                                # Select corresponding time stamps
+                                time_nodes = time_arr_sorted_features[idx_nodes]
+
+                                # At ends we asign the min/max of the pose to avoid extrapolation
+                                time_nodes[0] = time_scanlines.min()
+                                time_nodes[-1]  = time_scanlines.max()
+            
+            if first_iter:
+                first_iter = False
+                time_nodes_tot = time_nodes
+                time_scanlines_tot = time_scanlines
+            else:
+                time_nodes_tot = np.concatenate((time_nodes_tot, time_nodes))
+                time_scanlines_tot = np.concatenate((time_scanlines_tot, time_scanlines))
         
-        transect_duration_sec = time_arr_sorted_features.max() - time_arr_sorted_features.min()
-
-        transect_duration_sec = time_scanlines.max() - time_scanlines.min()
-
-        # Number of nodes calculated from this (except when using "All features")
-        number_of_nodes = int(np.floor(transect_duration_sec/time_node_spacing)) + 1
-
-        if node_partition == 'temporal':
-                            # It divides the transect into equal intervals time-wise, 
-                            # meaning that the intervals can be somewhat different at least for a small number of them.
-                            time_nodes = np.linspace(start=time_scanlines.min(), 
-                                                stop = time_scanlines.max(), 
-                                                num = number_of_nodes)
-                            
-        elif node_partition == 'feature':
-                            # We divide to have an equal number of features in each interval
-                            idx_nodes = np.round(np.linspace(start=0, 
-                                                stop = n_features-1, 
-                                                num = number_of_nodes)).astype(np.int64)
-
-                            # Select corresponding time stamps
-                            time_nodes = time_arr_sorted_features[idx_nodes]
-
-                            # At ends we asign the min/max of the pose to avoid extrapolation
-                            time_nodes[0] = time_scanlines.min()
-                            time_nodes[-1]  = time_scanlines.max()
-        
-        if first_iter:
-            first_iter = False
-            time_nodes_tot = time_nodes
-            time_scanlines_tot = time_scanlines
-        else:
-            time_nodes_tot = np.concatenate((time_nodes_tot, time_nodes))
-            time_scanlines_tot = np.concatenate((time_scanlines_tot, time_scanlines))
-        
-    return time_nodes_tot, time_scanlines_tot
+    return np.sort(time_nodes_tot), np.sort(time_scanlines_tot)
 
 
 
@@ -203,6 +249,8 @@ def interpolate_time_nodes(time_from, value, time_to, method = 'linear'):
             vals_ex = interp1d(time_from, value, kind='nearest', fill_value = "extrapolate")(time_to_ex)
 
             vals[:, np.isnan(vals[0,:])] = vals_ex
+        
+
 
         return vals
     elif method in ['gaussian']:
@@ -831,20 +879,22 @@ def calculate_cam_and_pose_from_param(h5_filename, param, features_df, param0, i
         calib_param_intr = None
 
 
-    # Read the original poses and time stamps from h5
-        
-    position_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                    dataset_name=h5_paths['h5_folder_position_ecef'])
-    # Extract the ecef orientations for each frame
-    quaternion_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                    dataset_name=h5_paths['h5_folder_quaternion_ecef'])
-    # Extract the timestamps for each frame
-    time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                    dataset_name=h5_paths['h5_folder_time_scanlines'])
+    
     
     
 
     if time_nodes is not None:
+
+        # Read the original poses and time stamps from h5
+        
+        position_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                        dataset_name=h5_paths['h5_folder_position_ecef'])
+        # Extract the ecef orientations for each frame
+        quaternion_ecef = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                        dataset_name=h5_paths['h5_folder_quaternion_ecef'])
+        # Extract the timestamps for each frame
+        time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                        dataset_name=h5_paths['h5_folder_time_scanlines'])
 
         # Calculate the pose vector
         param_pose_tot, _ = calculate_pose_param(is_variab_param_extr, is_variab_param_intr, param)
@@ -1303,6 +1353,11 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
         if calibrate_per_transect:
             # Number of transects is found from data frame
             n_transects = 1 + (df_gcp_filtered['file_count'].max() - df_gcp_filtered['file_count'].min())
+
+
+            # An alternative way to find transects
+            transect = infer_transect_structure(h5_dir=config['Absolute Paths']['h5_folder'],
+                                    h5_folder_time_scanlines=h5_folder_time_scanlines)
             
             # Iterate through transects
             # Do all
@@ -1316,7 +1371,7 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
                 else:
                     transect_nr = i
                 
-                
+                # The df should be sorted based on transect, not based on chunk 
                 df_current_unsorted = df_gcp_filtered[df_gcp_filtered['file_count'] == transect_nr]
 
                 # Sort values by chronology
@@ -1602,7 +1657,20 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
 
             time_nodes, time_scanlines = _get_time_nodes(node_partition, df_gcp_filtered, h5_folder_time_scanlines, time_node_spacing)
 
-            res_pre_optim = objective_fun_reprojection_error(param0_variab, df_gcp_filtered, param0, is_variab_param_intr, is_variab_param_extr, time_nodes, time_interpolation_method, pos_err_ref_frame, sigma_obs, sigma_param, time_scanlines)
+            # Number of nodes calculated from this (except when using "All features")
+            number_of_nodes = time_nodes.size
+
+            # The time varying parameters are in total the number of dofs times number of nodes
+            param0_time_varying = np.zeros(n_adjustable_dofs*number_of_nodes)
+
+            # The time-varying parameters are stacked after the intrinsic parameters.
+            # This vector only holds parameters that will be adjusted
+            param0_variab_tot = np.concatenate((param0_variab, 
+                                                param0_time_varying), axis=0)
+
+            # Concatenate the parameters
+
+            res_pre_optim = objective_fun_reprojection_error(param0_variab_tot, df_gcp_filtered, param0, is_variab_param_intr, is_variab_param_extr, time_nodes, time_interpolation_method, pos_err_ref_frame, sigma_obs, sigma_param, time_scanlines)
 
 
             median_error_x = np.median(np.abs(res_pre_optim[0:n_features]))*resolution
@@ -1638,6 +1706,15 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
             
             median_error_x = np.median(np.abs(res.fun[0:n_features]))*resolution
             median_error_y = np.median(np.abs(res.fun[n_features:2*n_features]))*resolution
+
+            camera_model_dict_updated = calculate_intrinsic_param(is_variab_param_intr, param0_variab_tot, param0, as_calib_obj = True)
+
+            # Width is not a parameter and is inherited from the original file
+            camera_model_dict_updated['width'] = cal_obj_prior.w
+
+            CalibHSI(file_name_cal_xml= calib_file_coreg, 
+                    mode = 'w',
+                    param_dict = camera_model_dict_updated)
 
             
             print(res.x*180/np.pi)
