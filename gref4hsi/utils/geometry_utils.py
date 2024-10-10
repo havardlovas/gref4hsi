@@ -1325,7 +1325,7 @@ def dem_2_mesh(path_dem, model_path, config, dem_ref_is_geoid = False, path_geoi
 
                         # Find corners of a DEM in DEM CRS and write to point cloud 
                         corners_3d = _extract_ecef_corners(raster_path=geoid_cropped_with_padding_file, ecef_epsg=epsg_proj)
-                        for i in range(4):
+                        for i in range(len(corners_3d)):
                             x_coord, y_coord, z_coord = corners_3d[i]
                             xyz_file.write(f"{x_coord} {y_coord} {z_coord}\n")
 
@@ -1484,7 +1484,7 @@ def crop_geoid_to_pose(path_dem, config, geoid_path = 'data/world/geoids/egm08_2
         maxx = y.min() - delta_y
         maxy = x.max() + delta_x
         minx = y.max() + delta_y
-
+    
 
         
 
@@ -1634,7 +1634,7 @@ def _resample_raster(raster_path, resample_factor, output_path):
             #dst.write(resampled_data)
 
 def _extract_ecef_corners(raster_path, ecef_epsg = "EPSG:4979"):
-    """Extracts the corners of a DEM and returns their ECEF coordinates.
+    """Extracts the corners of a DEM and returns their ECEF coordinates. DEM is expected to be geodetic
 
     Args:
         raster_path (str): Path to the DEM raster file.
@@ -1666,13 +1666,61 @@ def _extract_ecef_corners(raster_path, ecef_epsg = "EPSG:4979"):
         ]
         elevations = [elevation_data[int(row), int(col)] for row, col in corner_indices]
 
+        corners_only = False
 
-        # Convert to ECEF coordinates using pyproj
-        ecef_corners = []
-        transformer = pyproj.Transformer.from_crs(crs, ecef_epsg, always_xy=True)
-        for xy, elevation in zip(corners, elevations):
-            x, y, z = transformer.transform(xy[0], xy[1], elevation)
-            ecef_corners.append((x, y, z))
+        if corners_only:
+            # Convert to ECEF coordinates using pyproj
+            ecef_corners = []
+            transformer = pyproj.Transformer.from_crs(crs, ecef_epsg, always_xy=True)
+            for xy, elevation in zip(corners, elevations):
+                x, y, z = transformer.transform(xy[0], xy[1], elevation)
+                ecef_corners.append((x, y, z))
+
+        else:
+            edge_point_spacing = 50 # m
+
+            (lat_new, lon_new, z_new) = pm.enu2geodetic(e= edge_point_spacing, n = edge_point_spacing, u = 0, lon0=left, lat0=top, h0 = 0)
+            delta_lon = lon_new - left
+            delta_lat = lat_new - top
+
+            x_new = np.linspace(left, right, num=int((right-left)/delta_lon))
+            y_new = np.linspace(top, bottom, num=int((top-bottom)/delta_lat))
+
+            z_ulc = elevations[1]
+            z_urc = elevations[2]
+
+            z_llc = elevations[0]
+            z_lrc = elevations[3]
+
+
+            ecef_corners = []
+            transformer = pyproj.Transformer.from_crs(crs, ecef_epsg, always_xy=True)
+            for i in range(4):
+
+                if i == 0: # left-right top
+                    x = x_new
+                    y = y_new[0]*np.ones(x_new.shape)#top
+                    z = interp1d(np.array([left, right]), np.array([z_ulc, z_urc]))(x)
+                elif i == 1: # top-bottom left
+                    x = x_new[0]*np.ones(y_new.shape) # left
+                    y = y_new#top-bottom
+                    z = interp1d(np.array([top, bottom]), np.array([z_ulc, z_llc]))(y)
+                elif i == 2: # left-right bottom
+                    x = x_new
+                    y = y_new[-1]*np.ones(y_new.shape)# bottom
+                    z = interp1d(np.array([left, right]), np.array([z_llc, z_lrc]))(x)
+                
+                elif i == 3: # top-bottom right
+                    x = x_new[-1]*np.ones(y_new.shape) # right
+                    y = y_new#top-bottom
+                    z = interp1d(np.array([top, bottom]), np.array([z_urc, z_lrc]))(y)
+                
+                for j in range(z.size):
+                    xp, yp, zp = transformer.transform(x[j], y[j], z[j])
+                    ecef_corners.append((xp, yp, zp))
+
+
+
 
     return ecef_corners
 
@@ -1723,6 +1771,7 @@ def _run_delaunay_2d_in_separate_process(output_xyz):
             cloud = pv.PolyData(points-points_offset)
 
             mesh = cloud.delaunay_2d()
+
             is_working = True
 
     return mesh, points_offset
