@@ -135,35 +135,42 @@ class ResononImage:
 
         for i in range(self.n_imgs):
             print(self.n_imgs)
-            img_id = f"*{i:03d}*"
-            transect_nr = f"{i:03d}"
+            try:
+                img_id = f"*{i:03d}*"
+                transect_nr = f"{i:03d}"
 
-            search_path_nav = os.path.normpath(os.path.join(self.nav_dir, img_id + '.json'))
-            search_path_envi_hdr = os.path.normpath(os.path.join(self.capture_dir, img_id + '.bip.hdr'))
+                search_path_nav = os.path.normpath(os.path.join(self.nav_dir, img_id + '.json'))
+                search_path_envi_hdr = os.path.normpath(os.path.join(self.capture_dir, img_id + '.bip.hdr'))
 
-            if self.processing_lvl != '0':
-                envi_hdr_file = glob.glob(search_path_envi_hdr)[0]
+                if self.processing_lvl != '0':
+                    envi_hdr_file = glob.glob(search_path_envi_hdr)[0]
 
-            else:
-                # This will occur if user chooses processing level 0
-                envi_hdr_file = [str(item) for item in Path(self.capture_dir).rglob(f'*_{i+1}.bil.hdr')][0]
+                else:
+                    # This will occur if user chooses processing level 0
+                    envi_hdr_file = [str(item) for item in Path(self.capture_dir).rglob(f'*_{i+1}.bil.hdr')][0]
 
-            nav_file = glob.glob(search_path_nav)[0]
+                nav_file = glob.glob(search_path_nav)[0]
 
-            self.process_envi_hdr(envi_hdr_file)
-            self.generate_camera_model(fov_file = self.fov_file, afov = self.afov)
-            self.process_nav_json(nav_file, self.geoid_path)
+                self.process_envi_hdr(envi_hdr_file)
+                self.generate_camera_model(fov_file = self.fov_file, afov = self.afov)
+                self.process_nav_json(nav_file, self.geoid_path)
+
+                # Same name as ENVI file, just different extention
+                transect_name = os.path.basename(envi_hdr_file).split(sep = '.')[0] # To remove suffix
+                h5_filename = h5_folder + transect_name + '.h5'
+
+                # Write to h5 file
+                _img_object_2_h5_file(h5_filename=h5_filename, 
+                                         h5_tree_dict=self.h5_dict_write, 
+                                         img_object=self)
+                print(f"Image nr {i:03d}")
+            except Exception as e:
+                print(e)
+                print(f"Image nr {i:03d} failed to georeference. Moving on")
+                pass
+                
+
             
-            # Same name as ENVI file, just different extention
-            transect_name = os.path.basename(envi_hdr_file).split(sep = '.')[0] # To remove suffix
-            h5_filename = h5_folder + transect_name + '.h5'
-            
-            # Write to h5 file
-            _img_object_2_h5_file(h5_filename=h5_filename, 
-                                     h5_tree_dict=self.h5_dict_write, 
-                                     img_object=self)
-
-            print(f"Image nr {i:03d}")
         
         
     def process_envi_hdr(self, envi_hdr_file_path):
