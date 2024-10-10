@@ -1790,20 +1790,6 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
             # Concatenate the parameters
 
             res_pre_optim = objective_fun_reprojection_error(param0_variab_tot, df_gcp_filtered, param0, is_variab_param_intr, is_variab_param_extr, time_nodes, time_interpolation_method, pos_err_ref_frame, sigma_obs, sigma_param, time_scanlines)
-            # Number of nodes calculated from this (except when using "All features")
-            number_of_nodes = time_nodes.size
-
-            # The time varying parameters are in total the number of dofs times number of nodes
-            param0_time_varying = np.zeros(n_adjustable_dofs*number_of_nodes)
-
-            # The time-varying parameters are stacked after the intrinsic parameters.
-            # This vector only holds parameters that will be adjusted
-            param0_variab_tot = np.concatenate((param0_variab, 
-                                                param0_time_varying), axis=0)
-
-            # Concatenate the parameters
-
-            res_pre_optim = objective_fun_reprojection_error(param0_variab_tot, df_gcp_filtered, param0, is_variab_param_intr, is_variab_param_extr, time_nodes, time_interpolation_method, pos_err_ref_frame, sigma_obs, sigma_param, time_scanlines)
 
 
             median_error_x = np.median(np.abs(res_pre_optim[0:n_features]))*resolution
