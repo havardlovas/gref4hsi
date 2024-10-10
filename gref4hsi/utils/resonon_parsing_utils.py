@@ -295,7 +295,11 @@ class ResononImage:
                             mode = 'w', 
                             param_dict = param_dict)
 
-        
+    
+
+
+            
+
         
     
 # The processing in massipipe nicely renders the necessary navigation data in a json format
@@ -319,7 +323,7 @@ class ResononImage:
         pitch = np.array(data['pitch'])
         yaw = np.array(data['yaw'])
         
-        timestamp = np.array(data['time']).reshape((-1, 1)) # Only relative time
+        timestamp = np.array(data['time']).reshape((-1, 1)) 
         
         # If your nav system gave you geodetic positions, convert them to earth centered earth fixed (ECEF). Make sure to use ellipsoid height (not height above mean sea level (MSL) aka geoid)
         x, y, z = pm.geodetic2ecef(lat = lat, lon = lon, alt = alt_ell, deg=True)

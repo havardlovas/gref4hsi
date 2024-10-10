@@ -133,7 +133,7 @@ def main(config_yaml, hsi_mission_folder, geoid_path, config_template_path, lab_
 
 
     
-
+    print(RESOLUTION_ORTHOMOSAIC)
     # Non-default settings
     custom_config = {'General':
                         {'mission_dir': DATA_DIR,
@@ -272,7 +272,7 @@ def main(config_yaml, hsi_mission_folder, geoid_path, config_template_path, lab_
         res_img.format_2_gref4hsi()
             
     # Time interpolates and reformats the pose (of the vehicle body) to "processed/nav/" folder.
-    parsing_utils.export_pose(config_file)
+    #parsing_utils.export_pose(config_file)
     
     # Formats model to triangular mesh and an earth centered earth fixed / geocentric coordinate system
     parsing_utils.export_model(config_file)
@@ -284,10 +284,10 @@ def main(config_yaml, hsi_mission_folder, geoid_path, config_template_path, lab_
     #visualize.show_mesh_camera(config, show_mesh = True, show_pose = True, ref_frame='ENU')
 
     # Step 1: Direct georeferencing
-    georeference.main(config_file)
+    #georeference.main(config_file)
 
     # Step 2: Orthorectify the direct georeferenced data (incl metadata) i.e. resampling
-    orthorectification.main(config_file)
+    #orthorectification.main(config_file)
     
 
 
@@ -297,7 +297,7 @@ def main(config_yaml, hsi_mission_folder, geoid_path, config_template_path, lab_
         # Coregistration requires that Step 1 and 2 were performed and that resample anc = True
         # Match RGB composite to reference, find features and following data, ground control point (gcp) list, for each feature pair:
         # reference point 3D (from reference), position/orientation of vehicle (using resampled time) and pixel coordinate (using resampled pixel coordinate)
-        coregistration.main(config_file, mode='compare', is_calibrated = False)
+        #coregistration.main(config_file, mode='compare', is_calibrated = False)
 
         # The gcp list allows reprojecting reference points and evaluate the reprojection error,
         # which is used to optimize static geometric parameters (e.g. boresight, camera model...) or dynamic geometric parameters (time-varying nav errors).
@@ -309,7 +309,7 @@ def main(config_yaml, hsi_mission_folder, geoid_path, config_template_path, lab_
         customize_config(config_path=config_file, dict_custom=custom_config)
         
         # Re-georeference with coregistred parameters
-        georeference.main(config_file, use_coreg_param=True)
+        """georeference.main(config_file, use_coreg_param=True)
             
 
         # Coregister this stuff
@@ -319,7 +319,7 @@ def main(config_yaml, hsi_mission_folder, geoid_path, config_template_path, lab_
         coregistration.main(config_file, mode='compare', is_calibrated = True)
 
         # Check bulk
-        coregistration.main(config_file, mode='calibrate', is_calibrated = True, coreg_dict = coreg_dict)
+        coregistration.main(config_file, mode='calibrate', is_calibrated = True, coreg_dict = coreg_dict)"""
     
     
 
@@ -381,17 +381,17 @@ if __name__ == "__main__":
                             'calibrate_cx': False,
                             'calibrate_f': True,
                             'calibrate_k1': False,
-                            'calibrate_k2': False,
+                            'calibrate_k2': True,
                             'calibrate_k3': False
                             }
     
     # Here you can set which time-varying errors to estimate
     calibrate_dict_extr = {'calibrate_pos_x': False,
                     'calibrate_pos_y': False,
-                    'calibrate_pos_z': True,
+                    'calibrate_pos_z': False,
                     'calibrate_roll': False,
                     'calibrate_pitch': False,
-                    'calibrate_yaw': True}
+                    'calibrate_yaw': False}
             
     coreg_dict = {'calibrate_dict': cam_calibrate_dict,
                 'calibrate_per_transect': False, # Whether to calibrate on each transect seperately (True) or to use an entire set of transects for calibration (False)
