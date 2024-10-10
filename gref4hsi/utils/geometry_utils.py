@@ -266,8 +266,10 @@ class CameraGeometry():
 
         
         try:
+            import pyembree
             # This will only work if exact Python version is rigght and you have PyEmbree
             points, rays, cells = mesh.multi_ray_trace(origins=start, directions=dir, first_point=True, retry=True)
+            
         except:
             # If you instead use embreex, python>3.6 will do
             
@@ -282,11 +284,11 @@ class CameraGeometry():
             ray_mesh_intersector = trimesh.ray.ray_pyembree.RayMeshIntersector(geometry=tri_mesh)
 
             # Intersect data
-            count = 0
             cells, rays, points = ray_mesh_intersector.intersects_id(ray_origins=start,  
                                                                 ray_directions=dir, 
                                                                 multiple_hits=False,
                                                                 return_locations=True)
+            
             
         n_points = int(np.size(points)/3)
         n_rays = int(np.size(start)/3)
@@ -295,6 +297,7 @@ class CameraGeometry():
         # This equivalent to the retry=True in 
         # https://docs.pyvista.org/version/stable/api/core/_autosummary/pyvista.PolyDataFilters.multi_ray_trace.html#pyvista.PolyDataFilters.multi_ray_trace
         if n_points != n_rays:
+            
             n_missing = n_rays - n_points
             print(f'Trimesh failed to find intersections for {n_missing} rays')
             print(f'Ray tracing for these rays is retried in pyvista')
