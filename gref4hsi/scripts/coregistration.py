@@ -1146,6 +1146,8 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
                 # 
                 GeoSpatialAbstractionHSI.resample_rgb_ortho_to_hsi_ortho(ref_ortho_path, hsi_composite_path, ref_ortho_reshaped_path)
 
+                
+
                 GeoSpatialAbstractionHSI.resample_dem_to_hsi_ortho(dem_path, hsi_composite_path, dem_reshaped)
 
                 # By comparing the hsi_composite with the reference rgb mosaic we get two feature vectors in the pixel grid and 
@@ -1826,7 +1828,9 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
             median_error_x = np.median(np.abs(res.fun[0:n_features]))*resolution
             median_error_y = np.median(np.abs(res.fun[n_features:2*n_features]))*resolution
 
-            camera_model_dict_updated = calculate_intrinsic_param(is_variab_param_intr, param0_variab_tot, param0, as_calib_obj = True)
+            param_optimixed = res.x
+
+            camera_model_dict_updated = calculate_intrinsic_param(is_variab_param_intr, param_optimixed, param0, as_calib_obj = True)
 
             # Width is not a parameter and is inherited from the original file
             camera_model_dict_updated['width'] = cal_obj_prior.w
