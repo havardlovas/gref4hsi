@@ -1068,6 +1068,13 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
 
     dem_path = config['Absolute Paths']['dem_path']
 
+    dem_ref = config['Coordinate Reference Systems']['dem_ref']# geoid or ellipsoid
+
+    # Then the pipeline has a new version which is with respect to the ellipsoid
+    if dem_ref == 'geoid':
+        dem_folder = config['Absolute Paths']['dem_folder']
+        dem_path = os.path.join(dem_folder, 'dem_wrt_ellipsoid.tif')
+
     # Establish match data (HSI), including composite and anc data
     path_composites_match = config['Absolute Paths']['rgb_composite_folder']
     path_anc_match = config['Absolute Paths']['anc_folder']
