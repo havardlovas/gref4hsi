@@ -1068,6 +1068,13 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
 
     dem_path = config['Absolute Paths']['dem_path']
 
+    dem_ref = config['Coordinate Reference Systems']['dem_ref']# geoid or ellipsoid
+
+    # Then the pipeline has a new version which is with respect to the ellipsoid
+    if dem_ref == 'geoid':
+        dem_folder = config['Absolute Paths']['dem_folder']
+        dem_path = os.path.join(dem_folder, 'dem_wrt_ellipsoid.tif')
+
     # Establish match data (HSI), including composite and anc data
     path_composites_match = config['Absolute Paths']['rgb_composite_folder']
     path_anc_match = config['Absolute Paths']['anc_folder']
@@ -1138,6 +1145,8 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
 
                 # 
                 GeoSpatialAbstractionHSI.resample_rgb_ortho_to_hsi_ortho(ref_ortho_path, hsi_composite_path, ref_ortho_reshaped_path)
+
+                
 
                 GeoSpatialAbstractionHSI.resample_dem_to_hsi_ortho(dem_path, hsi_composite_path, dem_reshaped)
 
@@ -1783,20 +1792,6 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
             # Concatenate the parameters
 
             res_pre_optim = objective_fun_reprojection_error(param0_variab_tot, df_gcp_filtered, param0, is_variab_param_intr, is_variab_param_extr, time_nodes, time_interpolation_method, pos_err_ref_frame, sigma_obs, sigma_param, time_scanlines)
-            # Number of nodes calculated from this (except when using "All features")
-            number_of_nodes = time_nodes.size
-
-            # The time varying parameters are in total the number of dofs times number of nodes
-            param0_time_varying = np.zeros(n_adjustable_dofs*number_of_nodes)
-
-            # The time-varying parameters are stacked after the intrinsic parameters.
-            # This vector only holds parameters that will be adjusted
-            param0_variab_tot = np.concatenate((param0_variab, 
-                                                param0_time_varying), axis=0)
-
-            # Concatenate the parameters
-
-            res_pre_optim = objective_fun_reprojection_error(param0_variab_tot, df_gcp_filtered, param0, is_variab_param_intr, is_variab_param_extr, time_nodes, time_interpolation_method, pos_err_ref_frame, sigma_obs, sigma_param, time_scanlines)
 
 
             median_error_x = np.median(np.abs(res_pre_optim[0:n_features]))*resolution
@@ -1833,7 +1828,9 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
             median_error_x = np.median(np.abs(res.fun[0:n_features]))*resolution
             median_error_y = np.median(np.abs(res.fun[n_features:2*n_features]))*resolution
 
-            camera_model_dict_updated = calculate_intrinsic_param(is_variab_param_intr, param0_variab_tot, param0, as_calib_obj = True)
+            param_optimixed = res.x
+
+            camera_model_dict_updated = calculate_intrinsic_param(is_variab_param_intr, param_optimixed, param0, as_calib_obj = True)
 
             # Width is not a parameter and is inherited from the original file
             camera_model_dict_updated['width'] = cal_obj_prior.w

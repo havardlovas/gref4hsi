@@ -142,7 +142,7 @@ def main(iniPath, viz = False, use_coreg_param = False):
 
         # Set the camera model to the calibrated one if it exists
         hsi_cal_xml_coreg = config['Absolute Paths']['calib_file_coreg']
-        if os.path.exists(hsi_cal_xml_coreg):
+        if os.path.exists(hsi_cal_xml_coreg): # If it exists
              hsi_cal_xml = hsi_cal_xml_coreg
 
         # Optimized position
