@@ -183,6 +183,44 @@ def _get_time_nodes(node_partition, df, h5_folder_time_scanlines, time_node_spac
     return np.sort(time_nodes_tot), np.sort(time_scanlines_tot)
     return np.sort(time_nodes_tot), np.sort(time_scanlines_tot)
 
+def apply_cam_and_pose_params(is_calibrated, h5_filename, param_optimized, h5_paths, plot_err_vec_time, kwargs, 
+                              h5_folder_position_ecef_coreg,
+                              h5_folder_quaternion_ecef_coreg,
+                              calib_file_coreg,
+                              cal_obj_prior,
+                              sigma_nodes = None):
+    
+    # Calculate the updated parameters 
+    camera_model_dict_updated, position_updated, quaternion_updated = calculate_cam_and_pose_from_param(h5_filename, 
+                                                                                                                    param_optimized, 
+                                                                                                                    **kwargs, 
+                                                                                                                    h5_paths=h5_paths, 
+                                                                                                                    plot_err_vec=plot_err_vec_time, 
+                                                                                                                    sigma_nodes = sigma_nodes)
+    # Now the data has been computed and can be written to h5:
+    if not is_calibrated:
+        if position_updated is None:
+            pass
+        else:
+            Hyperspectral.add_dataset(data=position_updated, 
+                                    name = h5_folder_position_ecef_coreg,
+                                    h5_filename=h5_filename)
+        if position_updated is None:
+            pass
+        else:
+            Hyperspectral.add_dataset(data = quaternion_updated, 
+                                    name = h5_folder_quaternion_ecef_coreg,
+                                    h5_filename = h5_filename)
+            
+        if camera_model_dict_updated is None:
+            pass
+        else:
+            # Width is not a parameter and is inherited from the original file
+            camera_model_dict_updated['width'] = cal_obj_prior.w
+
+            CalibHSI(file_name_cal_xml= calib_file_coreg, 
+                    mode = 'w',
+                    param_dict = camera_model_dict_updated)
 
 
 def numerical_jacobian(fun, param, eps=1e-6, **kwargs):
@@ -1481,6 +1519,7 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
                     if super_transects:
                         time_scanlines_list = [Hyperspectral.get_dataset(h5_filename=h5_filename, dataset_name=h5_folder_time_scanlines)
                          for h5_filename in transect_dict[i]]
+                        
                         n_sub_transects = time_scanlines_list.__len__()
 
                         time_scanlines = np.concatenate(time_scanlines_list)
@@ -1703,36 +1742,46 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
                 
                 param_optimized = res.x # Error curves
 
-                camera_model_dict_updated, position_updated, quaternion_updated = calculate_cam_and_pose_from_param(h5_filename, 
-                                                                                                                    param_optimized, 
-                                                                                                                    **kwargs, 
-                                                                                                                    h5_paths=h5_paths, 
-                                                                                                                    plot_err_vec=plot_err_vec_time, 
-                                                                                                                    sigma_nodes = None)
 
-                # Now the data has been computed and can be written to h5:
-                if not is_calibrated:
-                    if position_updated is None:
-                        pass
-                    else:
-                        Hyperspectral.add_dataset(data=position_updated, 
-                                                name = h5_folder_position_ecef_coreg,
-                                                h5_filename=h5_filename)
-                    if position_updated is None:
-                        pass
-                    else:
-                        Hyperspectral.add_dataset(data = quaternion_updated, 
-                                                name = h5_folder_quaternion_ecef_coreg,
-                                                h5_filename = h5_filename)
-                    if camera_model_dict_updated is None:
-                        pass
-                    else:
-                        # Width is not a parameter and is inherited from the original file
-                        camera_model_dict_updated['width'] = cal_obj_prior.w
 
-                        CalibHSI(file_name_cal_xml= calib_file_coreg, 
-                                mode = 'w',
-                                param_dict = camera_model_dict_updated)
+
+                ## This bit should be done differently depending on whether it is chunk-level or transect level
+                if not super_transects:
+
+                    # Apply corrected cam and pose parameters
+
+                    apply_cam_and_pose_params(is_calibrated, 
+                                              h5_filename, 
+                                              param_optimized, 
+                                              h5_paths, 
+                                              plot_err_vec_time, 
+                                              kwargs, 
+                                              h5_folder_position_ecef_coreg,
+                                              h5_folder_quaternion_ecef_coreg,
+                                              calib_file_coreg,
+                                              cal_obj_prior,
+                                              sigma_nodes = None)
+                    
+                else:
+                    # Iterate the data and put back the corrected parameters into the appropriate h5-files
+                    for h5_filename in transect_dict[i]:
+                        # Select the right time stamps
+                        kwargs['time_scanlines'] = Hyperspectral.get_dataset(h5_filename=h5_filename, dataset_name=h5_folder_time_scanlines)
+
+                        apply_cam_and_pose_params(is_calibrated, 
+                                              h5_filename, 
+                                              param_optimized, 
+                                              h5_paths, 
+                                              plot_err_vec_time, 
+                                              kwargs, 
+                                              h5_folder_position_ecef_coreg,
+                                              h5_folder_quaternion_ecef_coreg,
+                                              calib_file_coreg,
+                                              cal_obj_prior,
+                                              sigma_nodes = None)
+
+
+                
             
             
 
