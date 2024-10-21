@@ -57,63 +57,18 @@ def infer_transect_structure(h5_dir, h5_folder_time_scanlines):
         
         if timestamp_prev == -1: # meaning first iteration
             current_transect_nr = 0
-            transect[current_transect_nr] = [h5_filename]
+            transect[current_transect_nr] = [h5_filepath]
             
         elif time_scanlines[0] - timestamp_prev < 1: # second (arbitrary)
-            transect[current_transect_nr].append(h5_filename)
+            transect[current_transect_nr].append(h5_filepath)
         else: # New transect
             current_transect_nr += 1
-            transect[current_transect_nr] = [h5_filename]
+            transect[current_transect_nr] = [h5_filepath]
 
         timestamp_prev = time_scanlines[-1]
 
     return transect
 
-import re
-
-def tryint(s):
-    try:
-        return int(s)
-    except:
-        return s
-
-def alphanum_key(s):
-    """ Turn a string into a list of string and number chunks.
-        "z23a" -> ["z", 23, "a"]
-    """
-    return [ tryint(c) for c in re.split('([0-9]+)', s) ]
-
-def sort_nicely(l):
-    """ Sort the given list in the way that humans expect.
-    """
-    l.sort(key=alphanum_key)
-
-
-def infer_transect_structure(h5_dir, h5_folder_time_scanlines):
-
-
-    transect = {}
-    timestamp_prev = -1
-    
-    for h5_filename in sorted(os.listdir(h5_dir), key=alphanum_key):
-        h5_filepath = os.path.join(h5_dir, h5_filename)
-        # Assuming sorted dir
-        time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filepath,
-                                                                dataset_name= h5_folder_time_scanlines)
-        
-        if timestamp_prev == -1: # meaning first iteration
-            current_transect_nr = 0
-            transect[current_transect_nr] = [h5_filename]
-            
-        elif time_scanlines[0] - timestamp_prev < 1: # second (arbitrary)
-            transect[current_transect_nr].append(h5_filename)
-        else: # New transect
-            current_transect_nr += 1
-            transect[current_transect_nr] = [h5_filename]
-
-        timestamp_prev = time_scanlines[-1]
-
-    return transect
 
 def _get_time_nodes(node_partition, df, h5_folder_time_scanlines, time_node_spacing):
     """Finds all the time nodes and scanline timestamps for each feature
@@ -1470,18 +1425,21 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
             n_transects = 1 + (df_gcp_filtered['file_count'].max() - df_gcp_filtered['file_count'].min())
 
 
-            # An alternative way to find transects
-            transect = infer_transect_structure(h5_dir=config['Absolute Paths']['h5_folder'],
-                                    h5_folder_time_scanlines=h5_folder_time_scanlines)
+          
 
 
             # An alternative way to find transects
-            transect = infer_transect_structure(h5_dir=config['Absolute Paths']['h5_folder'],
+            transect_dict = infer_transect_structure(h5_dir=config['Absolute Paths']['h5_folder'],
                                     h5_folder_time_scanlines=h5_folder_time_scanlines)
             
-            # Iterate through transects
-            # Do all
-            iter = np.arange(n_transects)
+            super_transects = True
+            if super_transects:
+                iter = np.arange(transect_dict.__len__())
+            else:
+
+                # Iterate through transects
+                # Do all
+                iter = np.arange(n_transects)
                 
             for i in iter:
                 # Selected Transect
@@ -1492,8 +1450,11 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
                     transect_nr = i
                 
                 # The df should be sorted based on transect, not based on chunk 
-                # The df should be sorted based on transect, not based on chunk 
-                df_current_unsorted = df_gcp_filtered[df_gcp_filtered['file_count'] == transect_nr]
+                if super_transects:
+                    sub_transect_nr_list = [int(h5_fn.split('_')[-1].split('.')[0]) for h5_fn in transect_dict[i]] # List
+                    df_current_unsorted = df_gcp_filtered[df_gcp_filtered['file_count'].isin(sub_transect_nr_list)]
+                else:
+                    df_current_unsorted = df_gcp_filtered[df_gcp_filtered['file_count'] == transect_nr]
 
                 # Sort values by chronology
                 df_current = df_current_unsorted.sort_values(by='unix_time')
@@ -1516,8 +1477,17 @@ def main(config_path, mode, is_calibrated, coreg_dict = {}):
                     #times_samples = df_current['unix_time']
 
                     # Extract the timestamps for each frame
-                    time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filename,
-                                                                    dataset_name=h5_folder_time_scanlines)
+
+                    if super_transects:
+                        time_scanlines_list = [Hyperspectral.get_dataset(h5_filename=h5_filename, dataset_name=h5_folder_time_scanlines)
+                         for h5_filename in transect_dict[i]]
+                        n_sub_transects = time_scanlines_list.__len__()
+
+                        time_scanlines = np.concatenate(time_scanlines_list)
+                        print('')
+                    else:
+                        time_scanlines = Hyperspectral.get_dataset(h5_filename=h5_filename,
+                                                                        dataset_name=h5_folder_time_scanlines)
                     kwargs['time_scanlines'] = time_scanlines
 
                     # We can use the feature time:
