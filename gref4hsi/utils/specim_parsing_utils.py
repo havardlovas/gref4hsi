@@ -220,10 +220,10 @@ class Specim():
                     gnss_data.append(gnss_data_row)
                 elif line_arr[0] == '$SPTSMP':
                     """Recordings of time sync messages, tied to the hyperspectral frames"""
-                    hsi_frame_number_new = int(line_arr[2]) - 1 # Seems they start with a 1-base (like MATLAB)
+                    hsi_frame_number_new = int(line_arr[2]) - 1 # They start with a 1-base (like MATLAB)
 
                     if hsi_frame_number_new < hsi_frame_nr_prev: # When frame counter resets
-                        restart_counts += (hsi_frame_nr_prev - hsi_frame_number_new) + self.metadata_obj.fps # 9950 + 50
+                        restart_counts += (hsi_frame_nr_prev - hsi_frame_number_new) + self.metadata_obj.fps
 
 
                     hsi_frame_number = hsi_frame_number_new
@@ -320,8 +320,31 @@ def main(config, config_specim):
     search_path_envi = os.path.normpath(os.path.join(capture_dir, PATTERN_ENVI))
     envi_hdr_file_path = glob.glob(search_path_envi)[0]
 
+    
+    try:
     # Read out data
-    spectral_image_obj = envi.open(envi_hdr_file_path)
+        spectral_image_obj = envi.open(envi_hdr_file_path)
+    except envi.MissingEnviHeaderParameter: # Assuming we are missing lines
+        hdr_dict = envi.read_envi_header(envi_hdr_file_path)
+        # Infer lines from *.raw size
+        file_size = os.path.getsize(envi_hdr_file_path.split('.')[0] + '.raw')
+        n_pix = int(hdr_dict['samples'])
+        n_bands = int(hdr_dict['bands'])
+        # Assuming data type is 2-byte or unsigned int
+        if hdr_dict['data type'] == '12':
+            bytes_per_measurement = 2
+        n_lines = int(file_size / (bytes_per_measurement*n_pix*n_bands))
+
+        autodarkstartline = n_lines - 99
+
+        hdr_dict['lines'] = str(n_lines)
+        hdr_dict['autodarkstartline '] = str(autodarkstartline)
+        envi.write_envi_header(envi_hdr_file_path, header_dict = hdr_dict)
+
+        # Then try again :)
+        spectral_image_obj = envi.open(envi_hdr_file_path)
+
+
 
     """import spectral as sp
     rgb_im = spectral_image_obj[:,:,]
@@ -484,6 +507,11 @@ def main(config, config_specim):
     data_dark = spectral_image_obj[metadata_obj.autodarkstartline:metadata_obj.n_lines, :, :]
     dark_frame = np.median(data_dark, axis = 0)
 
+    import matplotlib.pyplot as plt
+
+    plt.imshow(spectral_image_obj[metadata_obj.autodarkstartline-1000:metadata_obj.n_lines, :, 70])
+
+    plt.show()
     specim_object.dark_frame = dark_frame
 
     # -
@@ -514,7 +542,7 @@ def main(config, config_specim):
         
         df_start_stop = pd.DataFrame(start_stop_data)
 
-        df_start_stop.to_csv(path_or_buf = os.path.join(START_STOP_DIR, 'start_stop_lines.txt'), sep='\s+')
+        df_start_stop.to_csv(path_or_buf = os.path.join(START_STOP_DIR, 'start_stop_lines.txt'), sep='\t')
 
 
 
@@ -524,7 +552,7 @@ def main(config, config_specim):
     search_path_lines_start_stop = os.path.normpath(os.path.join(START_STOP_DIR, PATTERN_START_STOP))
     LINES_START_STOP_FILE_PATH = glob.glob(search_path_lines_start_stop)[0]
 
-    df_start_stop = pd.read_csv(filepath_or_buffer=LINES_START_STOP_FILE_PATH, header=0, sep='\s+')
+    df_start_stop = pd.read_csv(filepath_or_buffer=LINES_START_STOP_FILE_PATH, header=0, sep='\t')
 
 
 
@@ -651,6 +679,10 @@ def main(config, config_specim):
 
             # Possible to name files with <PREFIX>_<time_start>_<Transect#>_<Chunk#>.h5
             h5_filename = h5_folder + mission_name + '_transectnr_' + str(int(transect_number)) + '_chunknr_' + str(int(chunk_number)) + '.h5'
+
+            # Could happen in the case that header file is missing aka that recording is somewhat broken
+            if specim_object.hsi_timestamps.max() > specim_object.nav_timestamp.max():
+                break
 
             specim_object_2_h5_file(h5_filename=h5_filename, h5_tree_dict=h5_dict_write, specim_object=specim_object)
 
